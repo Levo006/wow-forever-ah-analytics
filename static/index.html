@@ -20,8 +20,12 @@
       <a href="#/data" data-route="data">Daten</a>
     </nav>
     <div class="topctl">
-      <label class="sr" for="houseSel">Auktionshaus</label>
-      <select id="houseSel" title="Auktionshaus"></select>
+      <div class="market" id="market" role="group" aria-label="Markt">
+        <button type="button" data-k="alle" title="Alle Fraktions-Auktionshäuser (Allianz + Horde) zusammengefasst">Alle AHs</button>
+        <button type="button" data-k="neutral" title="Neutrale Auktionshäuser (Schwarzmeerräuber: Beutebucht, Gadgetzan, Everlook)">Neutral</button>
+        <label class="sr" for="houseSel">Einzelnes Auktionshaus</label>
+        <select id="houseSel" title="Auf ein einzelnes Auktionshaus filtern"></select>
+      </div>
       <a id="fresh" class="pill fresh" href="#/data" hidden></a>
       <form id="quickSearch" class="quick" role="search">
         <input id="quickInput" type="search" placeholder="Item suchen … (DE/EN oder ID)" autocomplete="off" aria-label="Item suchen">

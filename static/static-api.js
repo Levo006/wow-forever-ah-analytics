@@ -317,7 +317,8 @@ const StaticAPI = (() => {
       f._houses = raw.map((r) => {
         const h = m.houses.find((x) => x.id === r.house_id) || {};
         return { ...r, item_id: f.item.id, name: f.item.name, name_en: f.item.name_en, quality: f.item.quality, icon: f.item.icon,
-          house_name: h.name, region: h.region, faction: h.faction, granularity: h.granularity };
+          house_name: h.name, region: h.region, faction: h.faction, granularity: h.granularity,
+          kind: h.kind, label: h.label, short: h.short, verbund: h.verbund };
       });
     }
     return f._houses;

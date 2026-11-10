@@ -89,6 +89,16 @@ def house_latest(con, house_id):
 
 
 def _default_house(con):
+    # bevorzugt: Sammelgruppe "Alle Auktionshäuser" mit aktuellen Daten
+    for (hid, src, ext) in con.execute(
+            "SELECT h.id, h.source, h.ext_id FROM houses h WHERE EXISTS "
+            "(SELECT 1 FROM snapshots s WHERE s.house_id=h.id) ORDER BY h.id"):
+        if db.house_kind(src, ext) == "alle":
+            return hid
+    return _default_house_fallback(con)
+
+
+def _default_house_fallback(con):
     # bevorzugt: aktuelle Daten (letzte 2 Tage), dann die meisten Items, dann die meisten Snapshots
     r = con.execute("""SELECT h.id FROM houses h JOIN snapshots s ON s.house_id=h.id
                        GROUP BY h.id
@@ -160,7 +170,60 @@ def houses(con, params):
                   (SELECT COUNT(*) FROM item_summary x WHERE x.house_id = h.id) items
            FROM houses h LEFT JOIN snapshots s ON s.house_id = h.id
            GROUP BY h.id ORDER BY h.region, h.faction, h.name""").fetchall()
-    return {"houses": [dict(r) for r in rows], "default": _default_house(con)}
+    return {"houses": decorate_houses([dict(r) for r in rows]), "default": _default_house(con)}
+
+
+_HOUSE_CACHE: dict = {}
+
+
+def _house_info(con) -> dict:
+    ver = db.data_version(con)
+    if _HOUSE_CACHE.get("ver") != ver or _HOUSE_CACHE.get("con") is not con:
+        _HOUSE_CACHE.update(ver=ver, con=con, info={h["id"]: h for h in houses(con, {})["houses"]})
+    return _HOUSE_CACHE["info"]
+
+
+def decorate_houses(hs: list[dict]) -> list[dict]:
+    """Ergänzt kind (alle|neutral|haus|scan), verbund (A, B, …) und lesbare Bezeichnungen.
+
+    Die Battle.net-Häuser von Forever kommen in Dreiergruppen (Allianz/Horde/Neutral
+    eines Server-Verbunds): 110/113/116, 111/114/117, 112/115/118, danach 119–121,
+    123–125 usw. Die Buchstaben werden nur unter den Verbünden mit Daten vergeben.
+    """
+    def vkey(h):
+        try:
+            n = int(str(h["ext_id"]).rsplit("-", 1)[-1])
+        except ValueError:
+            return None
+        if 110 <= n <= 118:
+            return (n - 110) % 3
+        if n >= 119:
+            return 3 + (n - 119) // 4
+        return None
+
+    for h in hs:
+        h["kind"] = db.house_kind(h.get("source", ""), h.get("ext_id", ""))
+    keys = sorted({vkey(h) for h in hs if h["kind"] == "haus" and h.get("snapshots") and vkey(h) is not None})
+    letters = {k: chr(65 + i) for i, k in enumerate(keys)}
+    for h in hs:
+        k = h["kind"]
+        if k == "alle":
+            h["label"], h["short"] = "Alle Auktionshäuser", "Alle AHs"
+        elif k == "neutral":
+            h["label"], h["short"] = "Neutral · Schwarzmeerräuber", "Neutral"
+        elif k == "scan":
+            h["label"], h["short"] = f"Eigene Scans · {h['name']}", "Eigene Scans"
+        else:
+            v = letters.get(vkey(h))
+            h["verbund"] = v
+            num = str(h["ext_id"]).rsplit("-", 1)[-1]
+            fac = h.get("faction") or "?"
+            h["label"] = f"{fac} · Verbund {v} (#{num})" if v else h["name"]
+            h["short"] = f"{fac} {v}" if v else h["name"]
+    order = {"alle": 0, "neutral": 1, "haus": 2, "scan": 3}
+    fo = {"Allianz": 0, "Horde": 1, "Neutral": 2}
+    hs.sort(key=lambda h: (order[h["kind"]], h.get("verbund") or "", fo.get(h.get("faction"), 9), h["name"]))
+    return hs
 
 
 def overview(con, params):
@@ -334,7 +397,19 @@ def item(con, item_id, params):
     meta = dict(meta)
     meta["name"] = meta["name"] or f"Item #{item_id}"
     meta["quality_name"] = QUALITY_NAMES.get(meta["quality"])
-    return {"item": meta, "houses": [_item_row(r) for r in rows]}
+    if meta.get("details"):
+        try:
+            meta["details"] = json.loads(meta["details"])
+        except ValueError:
+            meta["details"] = None
+    meta.pop("details_v", None)
+    hs = [_item_row(r) for r in rows]
+    info = _house_info(con)
+    for h in hs:
+        d = info.get(h["house_id"], {})
+        for k in ("kind", "label", "short", "verbund"):
+            h[k] = d.get(k)
+    return {"item": meta, "houses": hs}
 
 
 def _range_bounds(con, hid, rng):

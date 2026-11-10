@@ -173,6 +173,10 @@ def _migrate(con):
         con.execute("ALTER TABLE items ADD COLUMN en_checked INTEGER")
     if "bn_checked" not in cols:
         con.execute("ALTER TABLE items ADD COLUMN bn_checked INTEGER")
+    for col, typ in (("required_level", "INTEGER"), ("slot", "TEXT"), ("details", "TEXT"),
+                     ("details_v", "INTEGER")):
+        if col not in cols:
+            con.execute(f"ALTER TABLE items ADD COLUMN {col} {typ}")
 
 
 @contextmanager
@@ -227,7 +231,8 @@ def upsert_house(con, source, ext_id, name, region="", faction="", ruleset="",
 # ------------------------------------------------------------------- Items
 
 ITEM_FIELDS = ("name", "name_en", "quality", "class_id", "class_name", "subclass_id",
-               "subclass_name", "icon", "item_level", "vendor_sell", "is_commodity")
+               "subclass_name", "icon", "item_level", "vendor_sell", "is_commodity",
+               "required_level", "slot", "details")
 
 
 def ensure_items(con, item_ids):
@@ -245,6 +250,119 @@ def upsert_item(con, item_id: int, status="ok", **fields):
     sets = (sets + ", " if sets else "") + "meta_status=?, meta_checked=?"
     con.execute(f"UPDATE items SET {sets} WHERE id=?",
                 [fields[c] for c in cols] + [status, int(time.time()), item_id])
+
+
+# ------------------------------------------------------------ Marktgruppen
+#
+# Neben den einzelnen Auktionshäusern gibt es zwei Sammel-"Häuser":
+#   <region>-alle     alle Fraktions-Auktionshäuser (Allianz + Horde) zusammen
+#   <region>-neutral  alle neutralen Auktionshäuser (Schwarzmeerräuber) zusammen
+# Sie verhalten sich wie normale Häuser (eigene Zeitreihe, Summary, Export).
+
+GROUPS = {
+    "alle": ("Alle Auktionshäuser", "Alle", ("Allianz", "Horde")),
+    "neutral": ("Neutral · Schwarzmeerräuber", "Neutral", ("Neutral",)),
+}
+
+
+def house_kind(source: str, ext_id: str) -> str:
+    """alle | neutral | haus | scan"""
+    ext = str(ext_id)
+    for key in GROUPS:
+        if ext.endswith("-" + key):
+            return key
+    return "scan" if source == "auctionator" else "haus"
+
+
+def group_for_faction(faction: str) -> str:
+    return "neutral" if faction == "Neutral" else "alle"
+
+
+def upsert_group_house(con, source: str, region: str, key: str) -> int:
+    name, faction, _ = GROUPS[key]
+    return upsert_house(con, source, f"{region}-{key}", name, region=region, faction=faction,
+                        granularity="hour")
+
+
+def apply_typical_min(stats: dict, house_mins: list[dict]) -> None:
+    """Setzt in Sammelgruppen "min" auf den typischen Tiefstpreis.
+
+    Der absolute Tiefstpreis über alle Häuser ist oft ein einzelnes Lockangebot
+    irgendwo. Stattdessen: je Haus die günstige Preisstufe (10 %-Perzentil der
+    Menge), davon der mengengewichtete Median über die Häuser (große Märkte
+    zählen mehr als kleine). ``house_mins``: [{item: (preis, menge)}, …] je Haus.
+    """
+    from .aggregate import weighted_percentile
+    for iid, st in stats.items():
+        vals = sorted((m[iid][0], m[iid][1]) for m in house_mins if iid in m)
+        if vals:
+            st["min"] = weighted_percentile(vals, 0.5)
+
+
+def group_members(con, group_id: int) -> list[int]:
+    g = con.execute("SELECT source, ext_id, region FROM houses WHERE id=?", (group_id,)).fetchone()
+    key = house_kind(g[0], g[1])
+    factions = GROUPS[key][2]
+    rows = con.execute(
+        f"""SELECT id, source, ext_id FROM houses WHERE source=? AND region=?
+            AND faction IN ({','.join('?' * len(factions))})""", (g[0], g[2], *factions)).fetchall()
+    return [r[0] for r in rows if house_kind(r[1], r[2]) == "haus"]
+
+
+def build_group_snapshots(con, group_id: int, log=print) -> int:
+    """Ergänzt fehlende Stunden der Sammelgruppe aus den Kennzahlen der Einzelhäuser.
+
+    "min" ist wie beim Sammler der typische Tiefstpreis (siehe apply_typical_min).
+    Exakt sind Max, Menge, Auktionen und Mittelwert; Median und 10 %-Perzentil
+    werden als mengengewichteter Median der Einzelwerte angenähert. (Neue Snapshots
+    berechnet der Sammler exakt aus allen Einzelauktionen.)
+    """
+    from .aggregate import weighted_percentile
+    members = group_members(con, group_id)
+    if not members:
+        return 0
+    have = {ts // 3600 for (ts,) in con.execute(
+        "SELECT ts FROM snapshots WHERE house_id=?", (group_id,))}
+    buckets: dict[int, dict[int, int]] = {}
+    for hid, ts in con.execute(
+            f"SELECT house_id, ts FROM snapshots WHERE house_id IN ({','.join('?' * len(members))})",
+            members):
+        b = buckets.setdefault(ts // 3600, {})
+        b[hid] = max(b.get(hid, 0), ts)
+    # nur die Vorgeschichte (vor dem ersten Gruppen-Snapshot) – danach rechnet der Sammler exakt
+    first = min(have) if have else None
+    written = 0
+    for bucket in sorted(b for b in buckets if b not in have and (first is None or b < first)):
+        acc: dict[int, dict] = {}
+        for hid, ts in buckets[bucket].items():
+            for r in con.execute("""SELECT item_id, min, p10, median, mean, max, quantity, auctions
+                                    FROM prices WHERE house_id=? AND ts=?""", (hid, ts)):
+                q = r[6] or 0
+                if not r[1] or q <= 0:
+                    continue
+                a = acc.setdefault(r[0], {"max": r[5] or r[1], "quantity": 0,
+                                          "auctions": 0, "_sum": 0, "_med": [], "_p10": [], "_min": []})
+                a["_min"].append(((r[2] or r[1]), q))
+                a["max"] = max(a["max"], r[5] or r[1])
+                a["quantity"] += q
+                a["auctions"] += r[7] or 0
+                a["_sum"] += (r[4] or r[3] or r[1]) * q
+                a["_med"].append(((r[3] or r[1]), q))
+                a["_p10"].append(((r[2] or r[1]), q))
+        stats = {}
+        for iid, a in acc.items():
+            stats[iid] = {"min": weighted_percentile(sorted(a["_min"]), 0.5),
+                          "max": a["max"], "quantity": a["quantity"],
+                          "auctions": a["auctions"] or None,
+                          "mean": int(round(a["_sum"] / a["quantity"])),
+                          "median": weighted_percentile(sorted(a["_med"]), 0.5),
+                          "p10": weighted_percentile(sorted(a["_p10"]), 0.5)}
+        if stats:
+            write_snapshot(con, group_id, max(buckets[bucket].values()), "sammel", stats)
+            written += 1
+    if written:
+        log(f"Sammelgruppe {group_id}: {written} Zeitpunkte aus Einzelhäusern ergänzt")
+    return written
 
 
 # --------------------------------------------------------------- Snapshots

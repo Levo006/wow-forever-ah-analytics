@@ -58,12 +58,22 @@ Manuell starten: `publish.bat` öffnet die Workflow-Seite → **Run workflow**. 
 
 ---
 
+## Märkte: „Alle AHs“ und „Neutral“
+
+Oben rechts wählt man den Markt:
+
+* **Alle AHs** (Standard): alle Fraktions-Auktionshäuser (Allianz + Horde) aller Server-Verbünde zusammengefasst – der allgemeine Marktpreis.
+* **Neutral**: die neutralen Auktionshäuser der Schwarzmeerräuber (Beutebucht, Gadgetzan, Everlook), getrennt, weil dort deutlich andere Preise gelten.
+* **Einzelnes AH …**: optionaler Filter auf ein einzelnes Haus. Blizzard liefert Häuser in Dreiergruppen (Allianz/Horde/Neutral eines Server-Verbunds, z. B. #110/#113/#116); die Seite nennt sie „Verbund A, B, …“.
+
+In den beiden Sammelmärkten ist **Min der typische Tiefstpreis**: je Haus die günstige Preisstufe (10 %-Perzentil der angebotenen Menge), davon der mengengewichtete Median über alle Häuser. So verfälscht ein einzelnes Lockangebot in irgendeinem Haus den Preis nicht. Median, Mittel, Menge und Auktionen werden exakt aus allen Einzelauktionen berechnet. Die Item-Seite zeigt beide Märkte nebeneinander, den Tooltip wie im Spiel (Werte, Bindung, Benötigt-Stufe usw. von Battle.net) und die Preise je Einzelhaus (★ = günstigstes).
+
 ## Ansichten
 
 | Ansicht | Inhalt |
 |---|---|
 | **Übersicht** | KPIs des gewählten Auktionshauses (Items, Marktwert, Menge, Auktionen, Ø Preisänderung), Marktwert-Verlauf, Kategorien, Gewinner/Verlierer, Deals, volatilste Items |
-| **Suche** | Suche zweisprachig (deutscher **oder** englischer Item-Name, z. B. „Silberblatt“ = „Silverleaf“), umlaut-tolerant („konigsblut“ findet „Königsblut“), Vorschläge mit Icon ab dem ersten Buchstaben. Filter nach Name/ID, Klasse, Unterklasse, Qualität, Preisbereich (Gold), Menge, Ø Menge (Liquidität), Region, Fraktion, Auktionshaus, Handelsware/Einzelitem. Sortierbare Spalten, 14-Tage-Sparkline, Seitenweise |
+| **Suche** | Suche zweisprachig (deutscher **oder** englischer Item-Name, z. B. „Silberblatt“ = „Silverleaf“), umlaut-tolerant („konigsblut“ findet „Königsblut“), Vorschläge mit Icon ab dem ersten Buchstaben. Filter nach Name/ID, Klasse, Unterklasse, Qualität, Preisbereich (Gold), Menge, Ø Menge (Liquidität), Markt, Handelsware/Einzelitem. Sortierbare Spalten, 14-Tage-Sparkline, Seitenweise |
 | **Kategorien** | Drilldown **Kategorie → Unterkategorie → Item → Snapshot** mit Marktwert und Ø Änderung je Ebene |
 | **Item** | Preis-Chart (Min, 10 %-Perzentil, Median, Mittel, Max) für 24 h / 7 T / 30 T / Alles, Angebotsmenge als eigener Chart, Ausreißer markiert, Trend, Volatilität, 30-T-Tief/-Hoch, Tageszeit- und Wochentagsmuster, Häuservergleich, Liste aller Snapshots. Klick in den Chart öffnet den Snapshot |
 | **Snapshot** | Alle Items eines Zeitpunkts mit Änderung zum vorherigen Snapshot; für ein Item die **Preisstaffel** (Menge je Preisstufe) inkl. Kosten für 20/100 Stück; Vor/Zurück-Navigation |
@@ -72,7 +82,7 @@ Manuell starten: `publish.bat` öffnet die Workflow-Seite → **Run workflow**. 
 | **Deals** | Items, deren aktueller Mindestpreis X % unter dem Ø 7 T / Ø 30 T liegt (Referenz Mindestpreis oder Median), mit Ersparnis pro Stück |
 | **Daten** | Auctionator-Import per Knopf oder Datei-Upload (Drag & Drop), Battle.net-Status und manueller Abruf, Häuserliste, Import-Protokoll |
 
-Das Auktionshaus wird oben rechts gewählt; Hell/Dunkel per ◐. Items kommen über „+ Vgl.“ in jeder Tabelle in den Vergleich.
+Der Markt wird oben rechts gewählt; Hell/Dunkel per ◐. Items kommen über „+ Vgl.“ in jeder Tabelle in den Vergleich.
 
 ### Kennzahlen – Definitionen
 
@@ -190,7 +200,7 @@ ahanalytics/
   lua.py, cbor.py  Parser für SavedVariables und Auctionator-CBOR
   sources/         auctionator.py, battlenet.py, wowhead.py, demo.py
 static/            index.html, app.css, app.js, vendor/chart.umd.min.js
-tests/             45 Tests (Parser, Ingest, Battle.net mit Fake-HTTP, Kennzahlen, API)
+tests/             52 Tests (Parser, Ingest, Battle.net mit Fake-HTTP, Kennzahlen, API)
 data/              SQLite-Datenbanken (ah.sqlite = echt, demo.sqlite = Beispieldaten)
 site/              Export für GitHub Pages (wird im Workflow gebaut, nicht in main)
 seed/              Startdatenbank für den allerersten Workflow-Lauf

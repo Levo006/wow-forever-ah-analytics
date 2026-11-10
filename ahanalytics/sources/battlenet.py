@@ -191,6 +191,10 @@ def collect(con, client: BattleNetClient, ruleset=None, only_houses=None,
         houses = [h for h in houses if int(h["id"]) in wanted]
     touched = []
     commodity_items: set[int] = set()
+    # Sammelgruppen: alle Einzelauktionen gemeinsam auswerten (exakter Median usw.)
+    pools: dict[str, list] = {"alle": [], "neutral": []}
+    pool_ts: dict[str, int] = {"alle": 0, "neutral": 0}
+    pool_mins: dict[str, list] = {"alle": [], "neutral": []}  # je Haus {item: (min, menge)}
     for h in houses:
         hid_ext = f"{client.region}-{h['id']}"
         faction = faction_from_name(h["name"])
@@ -210,14 +214,22 @@ def collect(con, client: BattleNetClient, ruleset=None, only_houses=None,
             raise
         ts = max(_ts_from_headers(hdr1), _ts_from_headers(hdr2))
         ts -= ts % 60
+        listings = list(listings_from_payload(items_payload, False))
+        comm = list(listings_from_payload(comm_payload, True))
+        del items_payload, comm_payload
+        commodity_items.update(i for i, _, _ in comm)
+        stats, ladders = aggregate_listings(listings + comm)
+        if stats:
+            key = db.group_for_faction(faction)
+            pools[key].extend(listings)
+            pools[key].extend(comm)
+            # günstige Preisstufe je Haus (10 %-Perzentil statt Einzel-Lockangebot)
+            pool_mins[key].append({i: (s["p10"], s["quantity"]) for i, s in stats.items()})
+            pool_ts[key] = max(pool_ts[key], ts)
         if db.snapshot_exists(con, house_id, ts):
             res.skipped += 1
             log(f"Haus {h['id']}: Snapshot {ts} bereits vorhanden – übersprungen")
             continue
-        listings = list(listings_from_payload(items_payload, False))
-        comm = list(listings_from_payload(comm_payload, True))
-        commodity_items.update(i for i, _, _ in comm)
-        stats, ladders = aggregate_listings(listings + comm)
         if not stats:  # manche Häuser liefern (noch) keine Auktionen
             res.skipped += 1
             log(f"Haus {h['id']} ({h['name']}): keine Auktionen – übersprungen")
@@ -231,6 +243,22 @@ def collect(con, client: BattleNetClient, ruleset=None, only_houses=None,
         res.price_points += len(stats)
         log(f"Haus {h['id']} ({h['name']}): {len(listings) + len(comm)} Auktionen, "
             f"{len(stats)} Items")
+    for key, pool in pools.items():
+        if not pool:
+            continue
+        with db.transaction(con):
+            gid = db.upsert_group_house(con, SOURCE, client.region, key)
+            if not db.snapshot_exists(con, gid, pool_ts[key]):
+                stats, ladders = aggregate_listings(pool)
+                db.apply_typical_min(stats, pool_mins[key])
+                db.write_snapshot(con, gid, pool_ts[key], SOURCE, stats, ladders)
+                db.prune_ladders(con, ladder_keep)
+                touched.append(gid)
+                log(f"Sammelgruppe {key}: {len(pool)} Auktionen, {len(stats)} Items")
+            if db.build_group_snapshots(con, gid, log=log) and gid not in touched:
+                touched.append(gid)
+        pools[key] = []
+        pool_mins[key] = []
     with db.transaction(con):
         if commodity_items:
             con.executemany("UPDATE items SET is_commodity=1 WHERE id=?",
@@ -267,13 +295,68 @@ def parse_item(payload: dict, locale="de_DE") -> dict:
         "subclass_name": _loc(isc.get("name"), locale),
         "item_level": payload.get("level"),
         "vendor_sell": payload.get("sell_price"),
+        "required_level": payload.get("required_level") or None,
     }
+    inv = payload.get("inventory_type") or {}
+    if inv.get("type") and inv.get("type") != "NON_EQUIP":
+        out["slot"] = _loc(inv.get("name"), locale)
+    lines = tooltip_lines(payload.get("preview_item") or {}, locale)
+    if payload.get("max_count") == 1 and not any(l["t"].startswith("Einzigartig") for l in lines):
+        lines.insert(0, {"t": "Einzigartig", "c": "w"})
+    out["details"] = json.dumps({"lines": lines, "stackable": payload.get("is_stackable"),
+                                 "equippable": payload.get("is_equippable")},
+                                ensure_ascii=False, separators=(",", ":"))
     if isinstance(payload.get("name"), dict):
         out["name_en"] = _loc(payload["name"], "en_US")
     return out
 
 
-def fetch_item_metadata(con, client: BattleNetClient, limit=20000, recheck_days=7,
+def tooltip_lines(pi: dict, locale="de_DE") -> list[dict]:
+    """Tooltip-Zeilen wie im Spiel: {t: Text, c: Farbe (w weiß, g grün, y gelb, b blau, r rechts)}."""
+    L = lambda v: _loc(v, locale)  # noqa: E731
+    out: list[dict] = []
+
+    def add(text, color="w", right=None):
+        text = L(text)
+        if text:
+            row = {"t": str(text), "c": color}
+            if right:
+                row["r"] = str(L(right))
+            out.append(row)
+
+    add((pi.get("binding") or {}).get("name"))
+    ue = pi.get("unique_equipped")
+    add(ue if isinstance(ue, (str, dict)) else None)
+    inv = pi.get("inventory_type") or {}
+    if inv.get("type") and inv.get("type") != "NON_EQUIP":
+        sub = None if pi.get("is_subclass_hidden") else (pi.get("item_subclass") or {}).get("name")
+        add(inv.get("name"), "w", sub)
+    w = pi.get("weapon") or {}
+    if w:
+        add((w.get("damage") or {}).get("display_string"), "w", (w.get("attack_speed") or {}).get("display_string"))
+        add((w.get("dps") or {}).get("display_string"))
+    add(((pi.get("armor") or {}).get("display") or {}).get("display_string"))
+    for st in pi.get("stats") or []:
+        add((st.get("display") or {}).get("display_string"), "g" if st.get("is_equip_bonus") else "w")
+    for res in pi.get("resistances") or []:
+        add((res.get("display") or {}).get("display_string"))
+    add((pi.get("durability") or {}).get("display_string"))
+    req = pi.get("requirements") or {}
+    for k in ("playable_classes", "playable_races", "skill", "reputation", "level"):
+        add((req.get(k) or {}).get("display_string"))
+    for sp in pi.get("spells") or []:
+        add(sp.get("description"), "g")
+    cr = pi.get("crafting_reagent")
+    add(cr if isinstance(cr, (str, dict)) else None, "b")
+    sets = (pi.get("set") or {}).get("display_string")
+    add(sets, "y")
+    desc = L(pi.get("description"))
+    if desc:
+        out.append({"t": f"„{desc}“", "c": "y"})
+    return out[:40]
+
+
+def fetch_item_metadata(con, client: BattleNetClient, limit=4000, recheck_days=7,
                         workers=8, log=print) -> int:
     """Lädt deutschen + englischen Namen, Qualität, Klasse und Icon.
 
@@ -284,7 +367,8 @@ def fetch_item_metadata(con, client: BattleNetClient, limit=20000, recheck_days=
     cutoff = int(time.time()) - recheck_days * 86400
     rows = con.execute(
         """SELECT id, meta_status, icon FROM items
-           WHERE (meta_status != 'ok' OR name_en IS NULL) AND COALESCE(bn_checked, 0) < ?
+           WHERE ((meta_status != 'ok' OR name_en IS NULL) AND COALESCE(bn_checked, 0) < ?)
+              OR COALESCE(details_v, 0) < 1
            ORDER BY id LIMIT ?""", (cutoff, limit)).fetchall()
     if not rows:
         return 0
@@ -313,7 +397,7 @@ def fetch_item_metadata(con, client: BattleNetClient, limit=20000, recheck_days=
     now = int(time.time())
     with db.transaction(con):
         for iid, status, item, icon, code in results:
-            con.execute("UPDATE items SET bn_checked=? WHERE id=?", (now, iid))
+            con.execute("UPDATE items SET bn_checked=?, details_v=1 WHERE id=?", (now, iid))
             if not item:
                 continue
             fields = parse_item(item)

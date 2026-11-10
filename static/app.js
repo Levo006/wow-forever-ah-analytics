@@ -145,8 +145,8 @@ async function route() {
   state.route = r;
   if (r.params.house && houseById(r.params.house) && String(r.params.house) !== String(state.house)) {
     state.house = String(r.params.house); store.set("house", state.house);
-    $("#houseSel").value = state.house; classCache = {};
-    updateFreshness();
+    classCache = {};
+    renderMarket();
   }
   inflight.forEach((c) => c.abort()); inflight.clear();
   state.charts.forEach((c) => c.destroy()); state.charts = [];
@@ -165,6 +165,26 @@ async function route() {
 function viewNotFound() { main.innerHTML = '<div class="empty">Seite nicht gefunden.</div>'; }
 const curHouse = (p) => p?.house || state.house || "";
 const houseById = (id) => state.houses.find((h) => String(h.id) === String(id));
+const hname = (h) => (h ? h.label || h.name : "");
+const groupId = (k) => state.houses.find((h) => h.kind === k)?.id;
+/** <option>s mit Gruppen: Märkte, Verbund A, B, …, eigene Scans. */
+function houseOptions(selected, { markets = true } = {}) {
+  const groups = [];
+  if (markets) groups.push(["Märkte", state.houses.filter((h) => h.kind === "alle" || h.kind === "neutral"), hname]);
+  const byV = {};
+  for (const h of state.houses.filter((h) => !h.kind || h.kind === "haus")) (byV[h.verbund ? "Verbund " + h.verbund : "Auktionshäuser"] ||= []).push(h);
+  for (const [g, hs] of Object.entries(byV).sort()) groups.push([g, hs, (h) => h.verbund ? `${h.faction} #${String(h.ext_id).split("-").pop()}` : h.name]);
+  groups.push(["Eigene Scans", state.houses.filter((h) => h.kind === "scan"), (h) => h.name]);
+  return groups.filter(([, hs]) => hs.length).map(([g, hs, lab]) => `<optgroup label="${esc(g)}">${hs.map((h) =>
+    `<option value="${h.id}" ${String(h.id) === String(selected) ? "selected" : ""}>${esc(lab(h))}</option>`).join("")}</optgroup>`).join("");
+}
+function scopeText(h) {
+  if (!h) return "";
+  if (h.kind === "alle") return "Allianz + Horde aller Server-Verbünde zusammengefasst";
+  if (h.kind === "neutral") return "Neutrale Auktionshäuser (Beutebucht, Gadgetzan, Everlook) aller Verbünde";
+  if (h.kind === "scan") return "Eigene Auctionator-Scans (Tageswerte)";
+  return h.verbund ? `Einzelnes Auktionshaus · ${h.faction} · Verbund ${h.verbund}` : "Einzelnes Auktionshaus";
+}
 
 // ================================================================ Charts
 Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
@@ -277,7 +297,7 @@ function pager(total, page, size, onPage) {
 
 const COL = {
   item: { label: "Item", sort: "name", cls: "itemcell", fmt: (r) => itemLabel(r) },
-  house: { label: "Haus", fmt: (r) => `<span class="pill">${esc(r.house_name)}</span>` },
+  house: { label: "Markt", fmt: (r) => `<span class="pill">${esc(houseById(r.house_id)?.short || r.house_name)}</span>` },
   price: { label: "Preis (min)", num: true, sort: "price", fmt: (r) => money(r.last_min) },
   median: { label: "Median", num: true, sort: "median", fmt: (r) => money(r.last_median) },
   avg7: { label: "Ø 7 T (min)", num: true, fmt: (r) => money(r.avg7_min) },
@@ -320,12 +340,10 @@ function updateCompareBadge() {
 async function viewDashboard(r) {
   const d = await api("overview", { house: curHouse(r.params) });
   const k = d.kpis, h = d.house;
-  const gran = h.granularity === "day" ? "Tageswerte" : "stündliche Snapshots";
+  const hh = houseById(h.id) || h;
   main.innerHTML = `
-    <div class="pagehead"><h1>${esc(h.name)}</h1>
-      <span class="pill">${esc((h.region || "").toUpperCase())}</span>${h.faction ? `<span class="pill">${esc(h.faction)}</span>` : ""}
-      <span class="pill">Quelle: ${esc(h.source)}</span>
-      <span class="sub">${num(d.snapshot_count)} ${gran} · letzter ${dt(d.last_ts)} (${ago(d.last_ts)})</span></div>
+    <div class="pagehead"><h1>${esc(hname(hh))}</h1>
+      <span class="sub">${esc(scopeText(hh))} · Stand ${dt(d.last_ts)} (${ago(d.last_ts)})</span></div>
     <div class="kpis">
       <div class="kpi"><div class="l">Gehandelte Items</div><div class="v">${num(k.items)}</div></div>
       <div class="kpi"><div class="l">Marktwert (min × Menge)</div><div class="v">${money(k.market_value, { short: true })}</div></div>
@@ -371,12 +389,10 @@ async function getClasses(house) {
 }
 async function viewSearch(r) {
   const p = { sort: "value", dir: "desc", page: 1, ...r.params };
-  if (!("house" in r.params) && !p.region && !p.faction) p.house = state.house;
+  if (!p.house) p.house = state.house;
   const classes = await getClasses(p.house || state.house);
   const subs = classes.find((c) => String(c.class_id) === String(p.class))?.subclasses || [];
   const quals = (p.quality || "").split(",").filter(Boolean);
-  const regions = [...new Set(state.houses.map((h) => h.region).filter(Boolean))];
-  const factions = [...new Set(state.houses.map((h) => h.faction).filter(Boolean))];
   const gold = (v) => (v ? v / 10000 : "");
   main.innerHTML = `
     <div class="pagehead"><h1>Item-Suche</h1><span class="sub" id="sumline"></span></div>
@@ -388,9 +404,7 @@ async function viewSearch(r) {
       <div class="f"><span>Preis in Gold</span><div class="range"><input type="number" step="any" min="0" name="min_price" value="${gold(p.min_price)}" placeholder="von">–<input type="number" step="any" min="0" name="max_price" value="${gold(p.max_price)}" placeholder="bis"></div></div>
       <div class="f"><span>Menge (aktuell)</span><div class="range"><input type="number" min="0" name="min_qty" value="${esc(p.min_qty || "")}" placeholder="von">–<input type="number" min="0" name="max_qty" value="${esc(p.max_qty || "")}" placeholder="bis"></div></div>
       <label class="f"><span>Ø Menge 7 T ≥</span><input type="number" min="0" name="min_avg_qty" value="${esc(p.min_avg_qty || "")}"></label>
-      <label class="f"><span>Region</span><select name="region"><option value="">Alle</option>${regions.map((x) => `<option ${p.region === x ? "selected" : ""}>${x}</option>`).join("")}</select></label>
-      <label class="f"><span>Fraktion</span><select name="faction"><option value="">Alle</option>${factions.map((x) => `<option ${p.faction === x ? "selected" : ""}>${x}</option>`).join("")}</select></label>
-      <label class="f"><span>Auktionshaus</span><select name="house"><option value="">Alle passenden</option>${state.houses.map((h) => `<option value="${h.id}" ${String(p.house) === String(h.id) ? "selected" : ""}>${esc(h.name)}</option>`).join("")}</select></label>
+      <label class="f"><span>Markt</span><select name="house">${houseOptions(p.house)}</select></label>
       <label class="f"><span>Typ</span><select name="commodity"><option value="">Alle</option><option value="1" ${p.commodity === "1" ? "selected" : ""}>Handelswaren</option><option value="0" ${p.commodity === "0" ? "selected" : ""}>Einzelitems</option></select></label>
       <div class="f"><span>&nbsp;</span><div style="display:flex;gap:6px"><button class="btn primary">Filtern</button><button class="btn" type="button" id="reset">Zurücksetzen</button></div></div>
     </form>
@@ -403,7 +417,6 @@ async function viewSearch(r) {
     const qs = fd.getAll("quality"); if (qs.length) np.quality = qs.join(",");
     if (np.min_price) np.min_price = Math.round(np.min_price * 10000);
     if (np.max_price) np.max_price = Math.round(np.max_price * 10000);
-    if (!np.house) np.house = "";
     go("/search", np, true);
   };
   form.addEventListener("submit", (e) => { e.preventDefault(); submit(); });
@@ -415,7 +428,7 @@ async function viewSearch(r) {
   $("#reset").onclick = () => go("/search", {}, true);
   const res = await api("search", { ...p, spark: 1, page_size: 50 });
   $("#sumline").textContent = `${num(res.total)} Treffer`;
-  $("#res").innerHTML = table([COL.item, COL.house, COL.price, COL.median, COL.avg30, COL.qty, COL.chg24, COL.chg7d, COL.vol, COL.value, COL.spark, COL.cmp], res.items, {
+  $("#res").innerHTML = table([COL.item, COL.price, COL.median, COL.avg30, COL.qty, COL.chg24, COL.chg7d, COL.vol, COL.value, COL.spark, COL.cmp], res.items, {
     sort: p.sort, dir: p.dir, onSort: (s, d) => setParams({ sort: s, dir: d, page: 1 }),
     rowHref: (x) => `/item/${x.item_id}?house=${x.house_id}`, empty: "Keine Items passen zu den Filtern.",
   }) + pager(res.total, res.page, res.page_size, (pg) => setParams({ page: pg }));
@@ -463,83 +476,144 @@ async function viewCategories(r) {
 }
 
 // ================================================================= Item
+function wowTooltip(it) {
+  const d = it.details;
+  const lines = (d && d.lines) || [];
+  if (!lines.length && !it.vendor_sell) return "";
+  const col = { w: "", g: "cg", y: "cy", b: "cb", m: "cm" };
+  return `<div class="wtip"><div class="tn q${it.quality ?? 1}">${esc(it.name)}</div>
+    ${it.item_level && it.class_id != null && [2, 4].includes(+it.class_id) ? `<div class="cy">Gegenstandsstufe ${it.item_level}</div>` : ""}
+    ${lines.map((l) => `<div class="ln ${col[l.c] || ""}"><span>${esc(l.t)}</span>${l.r ? `<span>${esc(l.r)}</span>` : ""}</div>`).join("")}
+    ${it.vendor_sell ? `<div class="sell">Verkaufspreis: ${money(it.vendor_sell)}</div>` : ""}</div>`;
+}
+
 async function viewItem(r) {
   const id = +r.parts[1];
   const p = { range: "7d", ...r.params };
   const info = await api(`item/${id}`);
   const it = info.item;
   if (!info.houses.length) { main.innerHTML = `<div class="empty">Für dieses Item gibt es keine Preisdaten.</div>`; return; }
-  const house = info.houses.find((h) => String(h.house_id) === String(p.house || state.house)) || info.houses[0];
+  const gAll = info.houses.find((h) => h.kind === "alle");
+  const gNeu = info.houses.find((h) => h.kind === "neutral");
+  const want = p.house || state.house;
+  const house = info.houses.find((h) => String(h.house_id) === String(want)) || gAll || info.houses[0];
   const hid = house.house_id;
+  const single = house.kind === "haus" || house.kind === "scan";
   const daily = house.granularity === "day";
   const ranges = daily ? ["7d", "30d", "90d", "all"] : ["24h", "7d", "30d", "all"];
   if (!ranges.includes(p.range)) p.range = daily ? "30d" : "7d";
   const anaRange = p.range === "24h" ? "7d" : p.range;
   const metric = p.metric || (house.last_median != null ? "median" : "min");
-  const shown = new Set((p.show || (house.last_median != null ? "min,median,mean" : "min,max")).split(","));
+  const shown = new Set((p.show || (house.last_median != null ? "min,median" : "min,max")).split(","));
   const [hist, ana] = await Promise.all([
     api(`item/${id}/history`, { house: hid, range: p.range, max_points: 800 }),
     api(`item/${id}/analysis`, { house: hid, range: anaRange, metric, tz: TZ }),
   ]);
-  const t = ana.trend || {}, v = ana.volatility || {};
+  // Trend/Schwankung erst ab 2 Tagen Historie – vorher ist das nur Rauschen
+  const enough = (house.last_ts || 0) - (house.first_ts || house.last_ts || 0) >= 2 * 86400;
+  const t = enough ? ana.trend || {} : {}, v = enough ? ana.volatility || {} : {};
   const inCmp = state.compare.includes(id);
+
+  // Kopf: Name + kompakte Merkmale
+  const catHref = (extra = "") => `#/categories?class=${it.class_id ?? -1}${extra}`;
+  const tags = [
+    it.class_name ? `<a class="tag" href="${catHref()}">${esc(it.class_name)}${it.subclass_name ? ` › ${esc(it.subclass_name)}` : ""}</a>` : `<span class="tag">Kategorie unbekannt</span>`,
+    it.slot ? `<span class="tag">${esc(it.slot)}</span>` : "",
+    it.quality_name ? `<span class="tag"><span class="q${it.quality}">●</span> ${esc(it.quality_name)}</span>` : "",
+    it.item_level ? `<span class="tag">Stufe <b>${it.item_level}</b></span>` : "",
+    it.required_level ? `<span class="tag">ab Level <b>${it.required_level}</b></span>` : "",
+    it.is_commodity ? `<span class="tag" title="Wird stapelweise gehandelt">Handelsware</span>` : (it.details?.stackable === false ? `<span class="tag">Einzelstück</span>` : ""),
+    it.vendor_sell ? `<span class="tag">Händler zahlt ${money(it.vendor_sell)}</span>` : "",
+    `<a class="tag" href="https://www.wowhead.com/forever/de/item=${id}" target="_blank" rel="noopener">Wowhead ↗</a>`,
+  ].filter(Boolean).join("");
+
+  // Marktkarten: Fraktions-AHs gesamt und Neutral nebeneinander
+  const mcard = (g, kind, title, sub) => {
+    const cls = `mcard ${kind === "neutral" ? "neutral" : ""}`;
+    if (!g) return `<div class="${cls}" style="cursor:default"><div class="mt1"><b>${title}</b><span>${sub}</span></div><div class="none">Derzeit nicht angeboten</div></div>`;
+    return `<button type="button" class="${cls} ${g.house_id === hid ? "on" : ""}" data-h="${g.house_id}">
+      <div class="mt1"><b>${title}</b><span>${sub}</span></div>
+      <div class="big">${money(g.last_min)}</div>
+      <div class="mrow"><span>Median <b>${money(g.last_median)}</b></span><span><b>${num(g.last_qty)}</b> Stück</span>${g.last_auctions ? `<span><b>${num(g.last_auctions)}</b> Auktionen</span>` : ""}<span>24 h ${pct(g.chg24_min)}</span></div></button>`;
+  };
+  const marketCards = gAll || gNeu ? `<div class="markets" id="mk">
+      ${mcard(gAll, "alle", "Alle Auktionshäuser", "Allianz + Horde · typischer Tiefstpreis")}
+      ${mcard(gNeu, "neutral", "Neutral · Schwarzmeerräuber", "Beutebucht, Gadgetzan, Everlook")}</div>` : "";
+
+  // Hinweise (nur wenn etwas auffällt)
+  const hints = [];
+  if (it.vendor_sell && house.last_min && house.last_min < it.vendor_sell)
+    hints.push(`💰 Im AH günstiger als der Händlerpreis (${money(it.vendor_sell)}) – kaufen und beim Händler verkaufen lohnt sich.`);
+  if (house.avg7_min && house.last_min && house.last_min < house.avg7_min * 0.85)
+    hints.push(`▼ Gerade ${num((1 - house.last_min / house.avg7_min) * 100, 0)} % unter dem 7-Tage-Schnitt.`);
+
+  // Einzelhäuser (für die Seitenleiste)
+  const singles = info.houses.filter((h) => h.kind === "haus").sort((a, b) => (a.verbund || "").localeCompare(b.verbund || "") || (a.faction || "").localeCompare(b.faction || ""));
+  const cheapest = singles.reduce((m, h) => (h.last_min && (!m || h.last_min < m.last_min) ? h : m), null);
+
   main.innerHTML = `
-    <div class="crumbs"><a href="#/categories?house=${hid}">Kategorien</a> › <a href="#/categories?house=${hid}&class=${it.class_id ?? -1}">${esc(it.class_name || "Ohne Metadaten")}</a>${it.subclass_name ? ` › <a href="#/categories?house=${hid}&class=${it.class_id}&subclass=${it.subclass_id}">${esc(it.subclass_name)}</a>` : ""} › ${esc(it.name)}</div>
-    <div class="pagehead itemhead">${icon(it, true)}
-      <div><h1 class="q${it.quality ?? 1}">${esc(it.name)}</h1>
-        <div class="meta">${it.name_en && it.name_en !== it.name ? `<span title="Englischer Name">EN: ${esc(it.name_en)}</span>` : ""}<span>ID ${id}</span>${it.quality_name ? `<span>${esc(it.quality_name)}</span>` : ""}${it.item_level ? `<span>Stufe ${it.item_level}</span>` : ""}
-        ${it.is_commodity ? '<span class="pill">Handelsware</span>' : ""}${it.vendor_sell ? `<span>Händler: ${money(it.vendor_sell)}</span>` : ""}
-        <a href="https://www.wowhead.com/forever/de/item=${id}" target="_blank" rel="noopener">Wowhead ↗</a></div></div>
+    <div class="crumbs"><a href="#/categories">Kategorien</a> › <a href="${catHref()}">${esc(it.class_name || "Ohne Metadaten")}</a>${it.subclass_name ? ` › <a href="${catHref(`&subclass=${it.subclass_id}`)}">${esc(it.subclass_name)}</a>` : ""}</div>
+    <div class="ihead">
+      <div class="who">${icon(it, true)}
+        <div style="min-width:0"><h1 class="q${it.quality ?? 1}">${esc(it.name)}</h1>
+          ${it.name_en && it.name_en !== it.name ? `<div class="en">${esc(it.name_en)} · ID ${id}</div>` : `<div class="en">ID ${id}</div>`}
+          <div class="chiprow">${tags}</div></div></div>
       <div class="actions">
-        <select id="hsel" title="Auktionshaus">${info.houses.map((h) => `<option value="${h.house_id}" ${h.house_id === hid ? "selected" : ""}>${esc(h.house_name)}</option>`).join("")}</select>
         <button class="btn" id="cmpBtn">${inCmp ? "✓ Im Vergleich" : "+ Vergleich"}</button>
         <a class="btn" href="#/compare?items=${[...new Set([...state.compare, id])].join(",")}&house=${hid}">Vergleichen ›</a>
       </div></div>
-    <div class="kpis">
-      <div class="kpi"><div class="l">Aktueller Mindestpreis</div><div class="v">${money(house.last_min)}</div><div class="d">${dt(house.last_ts)}</div></div>
-      <div class="kpi"><div class="l">Median (aktuell)</div><div class="v">${money(house.last_median)}</div><div class="d">Menge ${num(house.last_qty)}${house.last_auctions ? ` · ${num(house.last_auctions)} Auktionen` : ""}</div></div>
-      <div class="kpi"><div class="l">Ø 7 T / Ø 30 T (min)</div><div class="v">${money(house.avg7_min)}</div><div class="d">${money(house.avg30_min)}</div></div>
-      <div class="kpi"><div class="l">30-T-Tief / -Hoch</div><div class="v">${money(house.low30_min)}</div><div class="d">${money(house.high30_min)}</div></div>
-      <div class="kpi"><div class="l">Änderung 24 h / 7 T</div><div class="v">${pct(house.chg24_min)}</div><div class="d">${pct(house.chg7d_min)}</div></div>
-      <div class="kpi" title="Lineare Regression auf ln(Preis), ${anaRange}"><div class="l">Trend (${esc(ana.metric)}, ${anaRange})</div><div class="v">${t.pct_per_day == null ? "–" : (t.pct_per_day > 0 ? "+" : "") + num(t.pct_per_day, 2) + " %/Tag"}</div><div class="d">${esc(t.direction || "")}${t.r2 != null ? ` · R² ${num(t.r2, 2)}` : ""}</div></div>
-      <div class="kpi" title="Std.-Abw. der Log-Renditen, auf einen Tag skaliert; CV = Std/Mittel"><div class="l">Volatilität (${anaRange})</div><div class="v">${v.daily == null ? "–" : num(v.daily * 100, 1) + " %/Tag"}</div><div class="d">CV ${v.cv == null ? "–" : num(v.cv * 100, 1) + " %"}</div></div>
-      <div class="kpi"><div class="l">Ausreißer (${anaRange})</div><div class="v">${num(ana.outliers.length)}</div><div class="d">${ana.points} Datenpunkte</div></div>
+    <div class="ilayout"><div style="min-width:0">
+    ${marketCards}
+    ${single ? `<div class="note" style="margin-bottom:16px">Gefiltert auf <b><span class="fac ${esc(house.faction)}"></span>${esc(house.label || house.house_name)}</b> · <a href="#/item/${id}?house=${gAll ? gAll.house_id : ""}" id="unfilter">Filter aufheben</a></div>` : ""}
+    ${hints.map((h) => `<div class="hint">${h}</div>`).join("")}
+    <div class="mini">
+      <div class="kpi"><div class="l">Ø 7 Tage</div><div class="v">${money(house.avg7_min)}</div><div class="d">Ø 30 T ${money(house.avg30_min)}</div></div>
+      <div class="kpi"><div class="l">30-Tage-Spanne</div><div class="v">${money(house.low30_min)}</div><div class="d">bis ${money(house.high30_min)}</div></div>
+      <div class="kpi"><div class="l">Änderung 7 Tage</div><div class="v">${pct(house.chg7d_min)}</div><div class="d">24 h ${pct(house.chg24_min)}</div></div>
+      <div class="kpi" title="Lineare Regression auf ln(Preis) über ${anaRange}"><div class="l">Trend</div><div class="v">${t.pct_per_day == null ? "–" : (t.pct_per_day > 0 ? "+" : "") + num(t.pct_per_day, 1) + " %/Tag"}</div><div class="d">${esc(t.direction || "ab 2 Tagen Daten")}</div></div>
+      <div class="kpi" title="Tägliche Schwankung (Std.-Abw. der Log-Renditen)"><div class="l">Schwankung</div><div class="v">${v.daily == null ? "–" : num(v.daily * 100, 1) + " %/Tag"}</div><div class="d">${v.daily == null ? "ab 2 Tagen Daten" : v.daily < 0.03 ? "stabil" : v.daily < 0.1 ? "normal" : "stark"}</div></div>
     </div>
     <div class="card">
-      <div class="cardhead"><h2>Preisverlauf</h2>
+      <div class="cardhead"><h2>Preisverlauf <span class="muted small" style="font-weight:400">· ${esc(house.short || house.house_name)}</span></h2>
         <div class="right">
-          <div class="toggles" id="tog">${[["min", "Min", "--s1"], ["p10", "10 %-Perz.", "--s7"], ["median", "Median", "--s2"], ["mean", "Mittel", "--s3"], ["max", "Max", "--s4"]].map(([k, l, c]) =>
+          <div class="toggles" id="tog">${[["min", "Min", "--s1"], ["p10", "10 %", "--s7"], ["median", "Median", "--s2"], ["mean", "Mittel", "--s3"], ["max", "Max", "--s4"]].map(([k, l, c]) =>
             `<label><input type="checkbox" value="${k}" ${shown.has(k) ? "checked" : ""}><span class="sw" style="background:var(${c})"></span>${l}</label>`).join("")}
             <label title="Ausreißer markieren"><input type="checkbox" value="out" ${p.out !== "0" ? "checked" : ""}>Ausreißer</label></div>
           <div class="seg" id="rng">${ranges.map((x) => `<button data-r="${x}" class="${x === p.range ? "on" : ""}">${x === "all" ? "Alles" : x.replace("d", " T").replace("h", " h")}</button>`).join("")}</div>
         </div></div>
       <div class="chartbox"><canvas id="pc"></canvas></div>
-      <div class="muted small" style="margin-top:6px">${hist.raw_points} Datenpunkte${hist.points.length < hist.raw_points ? ` (verdichtet auf ${hist.points.length})` : ""} · Klick auf den Chart öffnet den Snapshot.</div>
+      <div class="muted small" style="margin-top:6px">${hist.raw_points} Datenpunkte · Klick auf den Chart öffnet den Snapshot</div>
       <h3 class="mt">Angebotsmenge</h3>
       <div class="chartbox sm"><canvas id="vc"></canvas></div>
     </div>
     <div class="grid g2 mt">
-      <div class="card"><div class="cardhead"><h2>Tageszeit-Muster</h2><span class="right muted small">Abweichung vom 24-h-Median, Ortszeit</span></div>
+      <div class="card"><div class="cardhead"><h2>Tageszeit</h2><span class="right muted small">Abweichung vom Tagesmittel</span></div>
         <div class="chartbox sm" id="hbox"><canvas id="hc"></canvas></div></div>
-      <div class="card"><div class="cardhead"><h2>Wochentags-Muster</h2><span class="right muted small">Abweichung vom 7-Tage-Median</span></div>
+      <div class="card"><div class="cardhead"><h2>Wochentag</h2><span class="right muted small">Abweichung vom Wochenmittel</span></div>
         <div class="chartbox sm" id="wbox"><canvas id="wc"></canvas></div></div>
     </div>
-    <div class="grid g2 mt">
-      <div class="card flush"><h2>Häuservergleich</h2>${table([COL.house, COL.price, COL.median, COL.avg7, COL.qty, COL.chg24, COL.chg7d,
-        { label: "vs. dieses Haus", num: true, fmt: (x) => x.house_id === hid ? '<span class="muted">—</span>' : pct(house.last_min ? (x.last_min / house.last_min - 1) * 100 : null) }],
-        info.houses, { rowHref: (x) => `/item/${id}?house=${x.house_id}&range=${p.range}` })}</div>
-      <div class="card flush"><h2>Ausreißer</h2>${table([
+    <div class="card flush mt"><h2>Ausreißer</h2>${table([
         { label: "Zeitpunkt", fmt: (o) => dt(o.ts) },
         { label: "Art", fmt: (o) => `<span class="${o.kind === "Spitze" ? "up" : "down"}">${o.kind === "Spitze" ? "▲" : "▼"} ${o.kind}</span>` },
         { label: "Wert", num: true, fmt: (o) => money(o.value) },
         { label: "Erwartet", num: true, fmt: (o) => money(o.expected) },
         { label: "Abw.", num: true, fmt: (o) => pct(o.deviation_pct, 0) }],
-        ana.outliers.slice().reverse().slice(0, 12), { rowHref: (o) => `/snapshot/${hid}/${o.ts}?item=${id}`, empty: "Keine Ausreißer im Zeitraum." })}</div>
+        ana.outliers.slice().reverse().slice(0, 8), { rowHref: (o) => `/snapshot/${hid}/${o.ts}?item=${id}`, empty: "Keine Ausreißer im Zeitraum." })}</div>
+    <div class="card flush mt" id="snaps"><div class="loading">Lade Snapshots …</div></div>
     </div>
-    <div class="card flush mt" id="snaps"><div class="loading">Lade Snapshots …</div></div>`;
+    <div class="side">
+      ${wowTooltip(it)}
+      ${singles.length ? `<div class="card flush"><h2>Je Auktionshaus</h2>${table([
+        { label: "Haus", fmt: (h) => `<span class="fac ${esc(h.faction)}"></span>${esc(h.short || h.house_name)}${cheapest && h.house_id === cheapest.house_id ? ' <span title="Günstigstes Haus">★</span>' : ""}` },
+        { label: "Min", num: true, fmt: (h) => money(h.last_min) },
+        { label: "Stück", num: true, fmt: (h) => compact(h.last_qty) }],
+        singles, { rowHref: (h) => `/item/${id}?house=${h.house_id}&range=${p.range}` })}
+        <p class="muted small" style="padding:0 16px 12px;margin:6px 0 0">Klick filtert auf ein Haus. Verbund = Server-Gruppe mit gemeinsamem Markt.</p></div>` : ""}
+    </div></div>`;
 
   // Interaktion
-  $("#hsel").onchange = (e) => setParams({ house: e.target.value });
+  const mk = $("#mk");
+  if (mk) mk.onclick = (e) => { const b = e.target.closest("button[data-h]"); if (b) setParams({ house: b.dataset.h }); };
   $("#cmpBtn").onclick = (e) => { toggleCompare(id); e.target.textContent = state.compare.includes(id) ? "✓ Im Vergleich" : "+ Vergleich"; };
   $("#rng").onclick = (e) => { const b = e.target.closest("button[data-r]"); if (b) setParams({ range: b.dataset.r }); };
   $("#tog").onchange = () => {
@@ -562,11 +636,12 @@ async function viewItem(r) {
     ds.push({ type: "scatter", label: `Ausreißer (${ana.metric})`, data: o.map((x) => ({ x: x.ts, y: x.value, ts: x.ts })), pointRadius: 5, pointHoverRadius: 7,
       backgroundColor: css("--s8"), borderColor: css("--surface-1"), borderWidth: 2, pointStyle: "triangle" });
   }
-  if (!ds.length) $("#pc").parentElement.innerHTML = '<div class="empty">Keine Preisdaten im Zeitraum.</div>';
-  else timeLineChart($("#pc"), ds, { span, onClick: (pt) => (location.hash = `/snapshot/${hid}/${nearestSnap(pt.ts, pts)}?item=${id}`) });
+  if (pts.length < 2) $("#pc").parentElement.innerHTML = `<div class="empty">${pts.length ? "Erst ein Datenpunkt – der Verlauf füllt sich stündlich." : "Keine Preisdaten im Zeitraum."}</div>`;
+  else if (!ds.length) $("#pc").parentElement.innerHTML = '<div class="empty">Keine Kennzahl ausgewählt.</div>';
+  else timeLineChart($("#pc"), ds, { span, onClick: (pt) => (location.hash = `/snapshot/${hid}/${pt.ts}?item=${id}`) });
 
-  // Volumen-Chart (eigene Achse = eigener Chart, keine Doppelachse)
-  makeChart($("#vc"), {
+  // Volumen-Chart
+  if (pts.length) makeChart($("#vc"), {
     type: "bar",
     data: { datasets: [{ label: "Menge", data: pts.map((x) => ({ x: x.ts, y: x.quantity })), backgroundColor: css("--s1") + "99", borderRadius: 2, barPercentage: 1, categoryPercentage: 1 }] },
     options: {
@@ -579,24 +654,24 @@ async function viewItem(r) {
   // Saisonalität
   const se = ana.seasonality || {};
   if (se.hourly) divergingBars($("#hc"), se.hourly.map((x) => x.hour + " h"), se.hourly.map((x) => x.pct ?? 0), "Tageszeit");
-  else $("#hbox").innerHTML = `<div class="empty">Benötigt stündliche Daten über mindestens 2 Tage.</div>`;
+  else $("#hbox").innerHTML = `<div class="empty">Ab 2 Tagen stündlicher Daten.</div>`;
   if (se.weekday) divergingBars($("#wc"), se.weekday.map((x) => x.day), se.weekday.map((x) => x.pct ?? 0), "Wochentag");
-  else $("#wbox").innerHTML = `<div class="empty">Benötigt mindestens 14 Tage Historie (Zeitraum „30 T“ oder „Alles“ wählen).</div>`;
+  else $("#wbox").innerHTML = `<div class="empty">Ab 14 Tagen Historie.</div>`;
 
   // Snapshot-Liste
   const loadSnaps = async (page) => {
-    const s = await api(`item/${id}/snapshots`, { house: hid, page, page_size: 25 });
+    const s = await api(`item/${id}/snapshots`, { house: hid, page, page_size: 10 });
     $("#snaps").innerHTML = `<h2>Einzelne Snapshots</h2>` + table([
       { label: "Zeitpunkt", fmt: (x) => x.daily ? `${dt(x.ts, false)} <span class="pill" title="Mittel aus ${x.n} Snapshots">Tagesmittel</span>` : dt(x.ts) },
-      { label: "Min", num: true, fmt: (x) => money(x.min) }, { label: "10 %", num: true, fmt: (x) => money(x.p10) },
-      { label: "Median", num: true, fmt: (x) => money(x.median) }, { label: "Mittel", num: true, fmt: (x) => money(x.mean) },
-      { label: "Max", num: true, fmt: (x) => money(x.max) }, { label: "Menge", num: true, fmt: (x) => num(x.quantity) },
+      { label: "Min", num: true, fmt: (x) => money(x.min) },
+      { label: "Median", num: true, fmt: (x) => money(x.median) },
+      { label: "Menge", num: true, fmt: (x) => num(x.quantity) },
       { label: "Auktionen", num: true, fmt: (x) => num(x.auctions) }, { label: "Δ Min", num: true, fmt: (x) => pct(x.chg_min) },
-      { label: "Staffel", fmt: (x) => (x.has_ladder ? '<span class="pill">vorhanden</span>' : "") },
     ], s.rows, { rowHref: (x) => (x.daily ? null : `/snapshot/${hid}/${x.ts}?item=${id}`) }) + pager(s.total, s.page, s.page_size, loadSnaps);
   };
   loadSnaps(1);
 }
+
 function nearestSnap(ts, pts) {
   return ts; // Punkte tragen bereits den Snapshot-Zeitstempel (bei Verdichtung: mittlerer Snapshot)
 }
@@ -609,8 +684,8 @@ async function viewSnapshot(r) {
   const f = s.focus;
   const q = s.house.granularity === "day";
   main.innerHTML = `
-    <div class="crumbs"><a href="#/?house=${hid}">${esc(s.house.name)}</a> › Snapshots › ${dt(ts)}${f ? ` › <a href="#/item/${f.item.item_id}?house=${hid}">${esc(f.item.name)}</a>` : ""}</div>
-    <div class="pagehead"><h1>Snapshot ${dt(ts)}</h1><span class="pill">${esc(s.house.name)}</span><span class="pill">${q ? "Tageswert" : "Stunden-Snapshot"}</span>
+    <div class="crumbs"><a href="#/?house=${hid}">${esc(hname(houseById(hid)) || s.house.name)}</a> › Snapshots › ${dt(ts)}${f ? ` › <a href="#/item/${f.item.item_id}?house=${hid}">${esc(f.item.name)}</a>` : ""}</div>
+    <div class="pagehead"><h1>Snapshot ${dt(ts)}</h1><span class="pill">${esc(hname(houseById(hid)) || s.house.name)}</span><span class="pill">${q ? "Tageswert" : "Stunden-Snapshot"}</span>
       <div class="actions">
         ${s.prev_ts ? `<a class="btn" href="#/snapshot/${hid}/${s.prev_ts}${f ? "?item=" + f.item.item_id : ""}">‹ Vorheriger</a>` : ""}
         ${s.next_ts ? `<a class="btn" href="#/snapshot/${hid}/${s.next_ts}${f ? "?item=" + f.item.item_id : ""}">Nächster ›</a>` : ""}
@@ -685,7 +760,7 @@ async function viewCompare(r) {
         <div class="seg" id="rng">${["24h", "7d", "30d", "all"].map((x) => `<button data-r="${x}" class="${x === p.range ? "on" : ""}">${x === "all" ? "Alles" : x.replace("d", " T").replace("h", " h")}</button>`).join("")}</div>
         <div class="seg" id="met">${[["min", "Min"], ["p10", "10 %"], ["median", "Median"], ["mean", "Mittel"], ["quantity", "Menge"]].map(([k, l]) => `<button data-m="${k}" class="${k === p.metric ? "on" : ""}">${l}</button>`).join("")}</div>
         <div class="seg" id="mode"><button data-o="idx" class="${p.mode === "idx" ? "on" : ""}" title="Alle Reihen auf 100 = erster Wert">Index (100)</button><button data-o="abs" class="${p.mode === "abs" ? "on" : ""}">Absolut</button></div>
-        <select id="hs" class="right">${state.houses.map((h) => `<option value="${h.id}" ${String(h.id) === String(house) ? "selected" : ""}>${esc(h.name)}</option>`).join("")}</select>
+        <select id="hs" class="right">${houseOptions(house)}</select>
       </div>
       <div class="chartbox" id="cbox"><canvas id="cc"></canvas></div>
     </div>
@@ -752,7 +827,7 @@ async function viewMovers(r) {
   const p = { window: "24h", metric: "min", min_qty: "", ...r.params };
   const classes = await getClasses(house);
   main.innerHTML = `
-    <div class="pagehead"><h1>Top-Movers</h1><span class="sub">Größte Preisänderungen in ${esc(h?.name || "")}</span></div>
+    <div class="pagehead"><h1>Top-Movers</h1><span class="sub">Größte Preisänderungen · ${esc(hname(h))}</span></div>
     <div class="card filters">
       <div class="f"><span>Zeitfenster</span><div class="seg" id="win">${["24h", "7d"].map((x) => `<button data-w="${x}" class="${p.window === x ? "on" : ""}">${x === "24h" ? "24 Stunden" : "7 Tage"}</button>`).join("")}</div></div>
       <div class="f"><span>Kennzahl</span><div class="seg" id="met">${[["min", "Mindestpreis"], ["median", "Median"]].map(([k, l]) => `<button data-m="${k}" class="${p.metric === k ? "on" : ""}">${l}</button>`).join("")}</div></div>
@@ -813,22 +888,18 @@ async function viewDeals(r) {
 // ================================================================== Daten
 
 function dataFlowCard() {
-  return `<div class="card mt"><h2>Wie kommen die Preise auf diese Seite?</h2>
+  return `<div class="card mt"><h2>Woher kommen die Preise?</h2>
     <ol class="flow">
-      <li><b>Scan im Spiel:</b> Das Addon Auctionator merkt sich bei jedem Auktionshaus-Scan (und bei jeder Suche dort) pro Item den niedrigsten Preis und die angebotene Menge des Tages.</li>
-      <li><b>Speichern:</b> WoW schreibt diese Daten erst beim <code>/reload</code>, Ausloggen oder Beenden in die Datei <code>Auctionator.lua</code>.</li>
-      <li><b>Import:</b> <code>start.bat</code> bzw. <code>publish.bat</code> liest die Datei ein, berechnet Kennzahlen und lädt Item-Namen und Icons (Wowhead-Datenbank für Forever).</li>
-      <li><b>Veröffentlichen:</b> <code>publish.bat</code> exportiert die Seite und lädt sie zu GitHub hoch; GitHub Pages stellt sie nach 1–2 Minuten bereit, Browser können bis zu 10 Minuten zwischenspeichern.</li>
+      <li><b>Blizzard</b> veröffentlicht etwa stündlich alle Auktionen aller Auktionshäuser (Battle.net API).</li>
+      <li><b>Zusammenfassen:</b> „Alle AHs“ bündelt Allianz und Horde aller Server-Verbünde; „Neutral“ (Schwarzmeerräuber) bleibt getrennt, weil dort andere Preise gelten.</li>
+      <li><b>Veröffentlichen:</b> Die Seite wird danach automatisch neu gebaut. Eine neue Auktion erscheint so nach etwa 1–2 Stunden.</li>
     </ol>
-    <div class="note"><b>Beispiel – eigene Auktion einstellen:</b> Sie erscheint erst, wenn danach ein Scan läuft, der sie erfasst (Auctionator speichert nur den <i>günstigsten</i> Preis und die Gesamtmenge pro Tag), dann <code>/reload</code> und <code>publish.bat</code>.
-      Theoretisch also nach wenigen Minuten, praktisch beim nächsten Veröffentlichen. Es gibt dabei nur <b>einen Wert pro Tag</b>; ein erneuter Scan am selben Tag überschreibt ihn.</div>
-    <p class="muted small">Mit einem Battle.net-API-Zugang sammelt das Tool stattdessen automatisch jede Stunde alle Auktionen aller Häuser (inkl. Median, Mittelwert und Preisstaffel) – unabhängig davon, ob jemand im Spiel scannt.</p>
   </div>`;
 }
 async function viewData() {
   const [st, hs, lg] = await Promise.all([api("status"), api("houses"), api("import/log")]);
   const housesTable = () => table([
-      { label: "ID", fmt: (h) => h.id }, { label: "Name", fmt: (h) => esc(h.name) }, { label: "Quelle", fmt: (h) => `<span class="pill">${esc(h.source)}</span>` },
+      { label: "Bezeichnung", fmt: (h) => `<span class="fac ${esc(h.kind === "alle" ? "Alle" : h.faction)}"></span>${esc(hname(h))}` }, { label: "Blizzard-Name", fmt: (h) => `<span class="muted">${esc(h.kind === "haus" ? h.name : "–")}</span>` },
       { label: "Region", fmt: (h) => esc(h.region) }, { label: "Fraktion", fmt: (h) => esc(h.faction || "–") },
       { label: "Auflösung", fmt: (h) => (h.granularity === "day" ? "Tag" : "Stunde") },
       { label: "Snapshots", num: true, fmt: (h) => num(h.snapshots) }, { label: "Items", num: true, fmt: (h) => num(h.items) },
@@ -838,9 +909,7 @@ async function viewData() {
     main.innerHTML = `
     <div class="pagehead"><h1>Datenquellen</h1><span class="sub">Statische Version · Datenstand ${dt(st.generated_at)} (${ago(st.generated_at)})</span></div>
     <div class="card"><h2>Über diese Seite</h2>
-      <p>Dies ist ein statischer Export der Datenbank, gehostet auf GitHub Pages. Die Preise stammen aus Auktionshaus-Scans im Spiel (Addon Auctionator) und werden vom Betreiber regelmäßig neu veröffentlicht.
-      Suche, Filter, Top-Movers, Deals und Vergleiche werden direkt im Browser berechnet. Historie: ${num(st.history_days)} Tage; Detaildaten für die jüngsten Snapshots.</p>
-      <p>Eigene Instanz mit Import, Live-Sammler und vollständiger Historie: Code herunterladen${st.repo_url ? ` von <a href="${esc(st.repo_url)}" target="_blank" rel="noopener">${esc(st.repo_url.replace("https://", ""))}</a>` : ""} und <code>python run.py serve</code> starten (siehe README).</p>
+      <p>Preisanalyse für das Auktionshaus von WoW: Forever (EU). Die Daten werden stündlich automatisch aktualisiert; Suche, Filter und Analysen laufen direkt im Browser. Historie: ${num(st.history_days)} Tage.</p>
     </div>
     ${dataFlowCard()}
     <div class="card flush mt"><h2>Auktionshäuser</h2>${housesTable()}</div>
@@ -869,7 +938,7 @@ async function viewData() {
     </div>
     ${dataFlowCard()}
     <div class="card flush mt"><h2>Auktionshäuser</h2>${table([
-      { label: "ID", fmt: (h) => h.id }, { label: "Name", fmt: (h) => esc(h.name) }, { label: "Quelle", fmt: (h) => `<span class="pill">${esc(h.source)}</span>` },
+      { label: "Bezeichnung", fmt: (h) => `<span class="fac ${esc(h.kind === "alle" ? "Alle" : h.faction)}"></span>${esc(hname(h))}` }, { label: "Blizzard-Name", fmt: (h) => `<span class="muted">${esc(h.kind === "haus" ? h.name : "–")}</span>` },
       { label: "Region", fmt: (h) => esc(h.region) }, { label: "Fraktion", fmt: (h) => esc(h.faction || "–") },
       { label: "Auflösung", fmt: (h) => (h.granularity === "day" ? "Tag" : "Stunde") },
       { label: "Snapshots", num: true, fmt: (h) => num(h.snapshots) }, { label: "Items", num: true, fmt: (h) => num(h.items) },
@@ -976,12 +1045,32 @@ async function loadHouses() {
   const d = await api("houses");
   state.houses = d.houses.filter((h) => h.snapshots > 0);
   if (!state.house || !houseById(state.house)) state.house = d.default ? String(d.default) : "";
+  renderMarket();
+}
+function renderMarket() {
+  const h = houseById(state.house);
+  $$("#market button").forEach((b) => {
+    b.hidden = !groupId(b.dataset.k);
+    b.classList.toggle("on", !!h && h.kind === b.dataset.k);
+  });
+  const single = h && h.kind !== "alle" && h.kind !== "neutral";
+  const hasGroups = !!(groupId("alle") || groupId("neutral"));
   const sel = $("#houseSel");
-  const groups = {};
-  for (const h of state.houses) (groups[`${(h.region || "?").toUpperCase()} · ${h.source}`] ||= []).push(h);
-  sel.innerHTML = state.houses.length ? Object.entries(groups).map(([g, hs]) => `<optgroup label="${esc(g)}">${hs.map((h) => `<option value="${h.id}" ${String(h.id) === String(state.house) ? "selected" : ""}>${esc(h.name)}</option>`).join("")}</optgroup>`).join("")
+  sel.innerHTML = state.houses.length
+    ? (hasGroups ? '<option value="">Einzelnes AH …</option>' : "") + houseOptions(state.house, { markets: !hasGroups })
     : '<option value="">Keine Daten</option>';
+  sel.value = single || !hasGroups ? state.house : "";
+  sel.classList.toggle("on", !!single && hasGroups);
   updateFreshness();
+}
+function setHouse(id) {
+  if (!id) return;
+  state.house = String(id); store.set("house", state.house); classCache = {};
+  renderMarket();
+  const r = parseHash();
+  const p = { ...r.params };
+  delete p.house; delete p.page;
+  go(r.path, p, true);
 }
 function updateFreshness() {
   const h = houseById(state.house), el = $("#fresh");
@@ -1007,13 +1096,8 @@ function initTheme() {
   updateCompareBadge();
   STATIC = await StaticAPI.detect();
   try { await loadHouses(); } catch (e) { main.innerHTML = `<div class="error">Server nicht erreichbar: ${esc(e.message)}</div>`; return; }
-  $("#houseSel").onchange = (e) => {
-    state.house = e.target.value; store.set("house", state.house); classCache = {};
-    updateFreshness();
-    const r = parseHash();
-    const p = { ...r.params }; delete p.house; delete p.page;
-    go(r.path, p, true);
-  };
+  $("#houseSel").onchange = (e) => setHouse(e.target.value || groupId("alle"));
+  $("#market").addEventListener("click", (e) => { const b = e.target.closest("button[data-k]"); if (b) setHouse(groupId(b.dataset.k)); });
   attachAutocomplete($("#quickInput"), $("#quickResults"), null, (it) => (location.hash = `/item/${it.item_id}?house=${it.house_id}`));
   $("#quickSearch").onsubmit = (e) => { e.preventDefault(); const q = $("#quickInput").value.trim(); if (q) { $("#quickResults").hidden = true; go("/search", { q, house: state.house }); } };
   window.addEventListener("hashchange", route);

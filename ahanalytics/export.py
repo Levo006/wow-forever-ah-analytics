@@ -37,7 +37,7 @@ SUMMARY_FIELDS = [
     "market_value", "spark",
 ]
 ITEM_HOUSE_FIELDS = [
-    "house_id", "last_ts", "points", "last_min", "last_median", "last_qty", "last_auctions",
+    "house_id", "first_ts", "last_ts", "points", "last_min", "last_median", "last_qty", "last_auctions",
     "prev24_min", "prev7d_min", "avg7_min", "avg30_min", "avg7_qty", "cv7_min", "low30_min", "high30_min",
     "chg24_min", "chg7d_min", "chg24_median", "chg7d_median", "market_value",
 ]
