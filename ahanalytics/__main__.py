@@ -82,7 +82,7 @@ def main(argv=None):
         for p in paths:
             res = auctionator.import_file(con, p, region=args.region or av.get("region", "eu"))
             print(f"{p}\n  {res.summary()}")
-        _maybe_metadata(cfg, con)
+        _maybe_metadata(cfg, con, limit=300)  # max. ~5 Minuten; Rest beim nächsten Lauf
     elif args.cmd == "collect":
         from .sources import battlenet
         bn = cfg["battlenet"]
