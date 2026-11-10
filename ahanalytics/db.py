@@ -476,19 +476,26 @@ def is_daily_ts(ts: int) -> bool:
     return ts % 86400 == DAILY_OFFSET
 
 
-def compact(con, hourly_days: int = 7, keep_days: int = 120, log=print) -> dict:
+def compact(con, hourly_days: int = 7, keep_days: int = 180, house_hourly_days: int = 2,
+            house_keep_days: int = 14, log=print) -> dict:
     """Verdichtet stündliche Daten älter als ``hourly_days`` zu einem Wert pro Tag.
 
     Nur vollständige Tage werden verdichtet (jeder Tag genau einmal). Preise werden
     gemittelt, ``max`` als Maximum. Daten älter als ``keep_days`` werden gelöscht.
+    Einzelne Auktionshäuser (nur Filter/Detail) behalten kürzer:
+    ``house_hourly_days`` stündlich, ``house_keep_days`` insgesamt – die beiden
+    Sammelmärkte tragen die lange Historie. Ohne das wüchse die Datenbank auf ~1 GB.
     """
-    stats = {"days": 0}
+    stats = {"days": 0, "deleted": 0}
     stats["rows_before"] = con.execute("SELECT COUNT(*) FROM prices").fetchone()[0]
     d = DAILY_OFFSET
-    for hid, latest in con.execute(
-            "SELECT h.id, MAX(s.ts) FROM houses h JOIN snapshots s ON s.house_id=h.id "
+    for hid, latest, source, ext_id in con.execute(
+            "SELECT h.id, MAX(s.ts), h.source, h.ext_id FROM houses h JOIN snapshots s ON s.house_id=h.id "
             "WHERE h.granularity='hour' GROUP BY h.id").fetchall():
-        cut_day = (latest - hourly_days * 86400) // 86400 * 86400
+        single = house_kind(source, ext_id) == "haus"
+        h_days = house_hourly_days if single else hourly_days
+        k_days = house_keep_days if single else keep_days
+        cut_day = (latest - h_days * 86400) // 86400 * 86400
         with transaction(con):
             days = con.execute(
                 f"SELECT DISTINCT ts / 86400 FROM prices WHERE house_id=? AND ts < ? AND ts % 86400 != {d}",
@@ -515,12 +522,13 @@ def compact(con, hourly_days: int = 7, keep_days: int = 120, log=print) -> dict:
                 con.execute(f"DELETE FROM snapshots WHERE house_id=? AND ts < ? AND ts % 86400 != {d}",
                             (hid, cut_day))
                 stats["days"] += len(days)
-            old = latest - keep_days * 86400
-            con.execute("DELETE FROM prices WHERE house_id=? AND ts < ?", (hid, old))
+            old = latest - k_days * 86400
+            stats["deleted"] += con.execute("DELETE FROM prices WHERE house_id=? AND ts < ?", (hid, old)).rowcount
             con.execute("DELETE FROM snapshots WHERE house_id=? AND ts < ?", (hid, old))
-    with transaction(con):
-        refresh_summary(con)
-        bump_data_version(con)
+    if stats["days"] or stats["deleted"]:
+        with transaction(con):
+            refresh_summary(con)
+            bump_data_version(con)
     stats["rows_after"] = con.execute("SELECT COUNT(*) FROM prices").fetchone()[0]
     log(f"Verdichtet: {stats['days']} Haus-Tage, Preiszeilen {stats['rows_before']} -> {stats['rows_after']}")
     return stats

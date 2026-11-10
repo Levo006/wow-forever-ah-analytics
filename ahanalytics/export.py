@@ -65,38 +65,61 @@ def _ranges_for(granularity):
     return ["7d", "30d", "90d", "all"] if granularity == "day" else ["7d", "30d", "all"]
 
 
-def compact_history(rows, latest, hourly_days=7):
-    """Letzte ``hourly_days`` Tage unverändert, ältere Punkte zu Tagesmitteln.
+H = 3600
+# Auflösung der Historie in den statischen Dateien: (bis zu diesem Alter, Bucket-Größe; 0 = Original)
+TIERS_MARKET = [(2 * 86400, 0), (7 * 86400, 4 * H), (None, 86400)]   # Alle AHs / Neutral
+TIERS_HOUSE = [(7 * 86400, 6 * H)]                                  # Einzelhäuser: nur 7 Tage grob
+HOUSE_FIELDS = ["ts", "min", "median", "quantity", "n"]
 
-    Hält die statischen Dateien klein (stündlich × 90 Tage wäre ~13× größer).
-    Spalte ``n`` = Anzahl zusammengefasster Snapshots (1 = Original).
+
+def _bucket_key(ts, size):
+    if size >= 86400:  # Kalendertag in Ortszeit, Zeitpunkt 12 Uhr
+        return int(time.mktime(time.localtime(ts)[:3] + (12, 0, 0, 0, 0, -1)))
+    return ts // size * size + size // 2
+
+
+def _merge(ts, rs):
+    def avg(k):
+        v = [r.get(k) for r in rs if r.get(k) is not None]
+        return int(round(sum(v) / len(v))) if v else None
+    maxs = [r["max"] for r in rs if r.get("max") is not None]
+    return {"ts": ts, "min": avg("min"), "p10": avg("p10"), "median": avg("median"),
+            "mean": avg("mean"), "max": max(maxs) if maxs else None,
+            "quantity": avg("quantity"), "auctions": avg("auctions"),
+            "n": sum(r.get("n", 1) for r in rs)}
+
+
+def compact_history(rows, latest, hourly_days=7, tiers=None):
+    """Verdichtet die Historie nach Alter: jüngste Punkte unverändert, ältere gemittelt.
+
+    ``tiers``: [(max. Alter in s oder None, Bucket-Größe in s; 0 = Original), …] –
+    Punkte älter als die letzte Stufe fallen weg. Ohne ``tiers``: die letzten
+    ``hourly_days`` Tage unverändert, davor Tagesmittel. Spalte ``n`` = Anzahl
+    zusammengefasster Snapshots (1 = Original, Tageswerte aus der DB zählen 24).
     """
-    cut = latest - hourly_days * 86400
-    daily_rows = [{**r, "n": 24} for r in rows if db.is_daily_ts(r["ts"])]  # in der DB bereits verdichtet
-    rows = [r for r in rows if not db.is_daily_ts(r["ts"])]
-    old, recent = [r for r in rows if r["ts"] < cut], [r for r in rows if r["ts"] >= cut]
-    days: dict[int, list] = {}
-    for r in old:
-        days.setdefault(int(time.mktime(time.localtime(r["ts"])[:3] + (12, 0, 0, 0, 0, -1))), []).append(r)
-    out = []
-    for ts, rs in sorted(days.items()):
-        if len(rs) == 1:
-            out.append({**rs[0], "n": 1})
+    if tiers is None:
+        tiers = [(hourly_days * 86400, 0), (None, 86400)]
+    rows = [{**r, "n": 24 if db.is_daily_ts(r["ts"]) else 1} for r in rows]
+    out, groups = [], {}
+    for r in rows:
+        age = latest - r["ts"]
+        for limit, size in tiers:
+            if limit is None or age <= limit:
+                break
+        else:
+            continue  # zu alt
+        if size == 0 or (r["n"] > 1 and size == 86400):
+            out.append(r)  # Original bzw. bereits Tageswert
             continue
-
-        def avg(k):
-            v = [r[k] for r in rs if r[k] is not None]
-            return int(round(sum(v) / len(v))) if v else None
-        mins = [r["min"] for r in rs if r["min"] is not None]
-        maxs = [r["max"] for r in rs if r["max"] is not None]
-        out.append({"ts": ts, "min": avg("min"), "p10": avg("p10"), "median": avg("median"),
-                    "mean": avg("mean"), "max": max(maxs) if maxs else None,
-                    "quantity": avg("quantity"), "auctions": avg("auctions"), "n": len(rs)})
-    return sorted(daily_rows + out, key=lambda r: r["ts"]) + [{**r, "n": 1} for r in recent]
+        groups.setdefault((size, _bucket_key(r["ts"], size)), []).append(r)
+    for (size, key), rs in groups.items():
+        out.append(rs[0] if len(rs) == 1 else _merge(key, rs))
+    return sorted(out, key=lambda r: r["ts"])
 
 
-def export_site(con, out_dir: str, history_days: int = 90, snapshot_files: int = 12,
-                repo_url: str = "", ladder_files: int = 3, log=print) -> dict:
+def export_site(con, out_dir: str, history_days: int = 180, snapshot_files: int = 6,
+                repo_url: str = "", ladder_files: int = 3, house_snapshot_files: int = 1,
+                log=print) -> dict:
     t0 = time.time()
     out_dir = os.path.abspath(out_dir)
     data_dir = os.path.join(out_dir, "data")
@@ -134,8 +157,9 @@ def export_site(con, out_dir: str, history_days: int = 90, snapshot_files: int =
             """SELECT s.id, s.ts, s.source, s.item_count, s.auction_count, s.total_value, s.imported_at,
                       EXISTS(SELECT 1 FROM ladders l WHERE l.snapshot_id = s.id) has_ladder
                FROM snapshots s WHERE s.house_id=? ORDER BY s.ts""", (hid,))]
-        with_file = {s["ts"] for s in snaps[-snapshot_files:]}
-        with_ladder = {s["ts"] for s in snaps[-ladder_files:]}
+        n_files = house_snapshot_files if h.get("kind") == "haus" else snapshot_files
+        with_file = {s["ts"] for s in snaps[-n_files:]} if n_files else set()
+        with_ladder = {s["ts"] for s in snaps[-min(ladder_files, n_files):]} if n_files else set()
         for s in snaps:
             s["file"] = 1 if s["ts"] in with_file else 0
             s["has_ladder"] = 1 if s["has_ladder"] and s["ts"] in with_ladder else 0
@@ -165,9 +189,19 @@ def export_site(con, out_dir: str, history_days: int = 90, snapshot_files: int =
             house = house_by_id.get(hid)
             if not house:
                 continue
-            lo = (house["latest"] or 0) - history_days * 86400
-            rows = compact_history(api._history_rows(con, hid, iid, lo), house["latest"] or 0)
-            hist[str(hid)] = _columnar(PRICE_FIELDS, rows)
+            latest = house["latest"] or 0
+            if house.get("kind") == "haus":
+                rows = compact_history(api._history_rows(con, hid, iid, latest - 7 * 86400), latest,
+                                       tiers=TIERS_HOUSE)
+                hist[str(hid)] = _columnar(HOUSE_FIELDS, rows)
+            elif house.get("granularity") == "day":
+                hist[str(hid)] = _columnar(PRICE_FIELDS, compact_history(
+                    api._history_rows(con, hid, iid, latest - history_days * 86400), latest,
+                    tiers=[(None, 0)]))
+            else:
+                rows = compact_history(api._history_rows(con, hid, iid, latest - history_days * 86400),
+                                       latest, tiers=TIERS_MARKET)
+                hist[str(hid)] = _columnar(PRICE_FIELDS, rows)
         info["item"].pop("meta_checked", None)
         for k in ("en_checked", "bn_checked", "meta_status"):
             info["item"].pop(k, None)

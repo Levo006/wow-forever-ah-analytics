@@ -662,12 +662,13 @@ async function viewItem(r) {
   const loadSnaps = async (page) => {
     const s = await api(`item/${id}/snapshots`, { house: hid, page, page_size: 10 });
     $("#snaps").innerHTML = `<h2>Einzelne Snapshots</h2>` + table([
-      { label: "Zeitpunkt", fmt: (x) => x.daily ? `${dt(x.ts, false)} <span class="pill" title="Mittel aus ${x.n} Snapshots">Tagesmittel</span>` : dt(x.ts) },
+      { label: "Zeitpunkt", fmt: (x) => x.daily ? `${dt(x.ts, false)} <span class="pill" title="Mittel aus ${x.n} Snapshots">Tagesmittel</span>`
+          : x.merged ? `${dt(x.ts)} <span class="pill" title="Mittel aus ${x.n} stündlichen Snapshots">Ø ${x.n} Std.</span>` : dt(x.ts) },
       { label: "Min", num: true, fmt: (x) => money(x.min) },
       { label: "Median", num: true, fmt: (x) => money(x.median) },
       { label: "Menge", num: true, fmt: (x) => num(x.quantity) },
       { label: "Auktionen", num: true, fmt: (x) => num(x.auctions) }, { label: "Δ Min", num: true, fmt: (x) => pct(x.chg_min) },
-    ], s.rows, { rowHref: (x) => (x.daily ? null : `/snapshot/${hid}/${x.ts}?item=${id}`) }) + pager(s.total, s.page, s.page_size, loadSnaps);
+    ], s.rows, { rowHref: (x) => (x.daily || x.merged ? null : `/snapshot/${hid}/${x.ts}?item=${id}`) }) + pager(s.total, s.page, s.page_size, loadSnaps);
   };
   loadSnaps(1);
 }

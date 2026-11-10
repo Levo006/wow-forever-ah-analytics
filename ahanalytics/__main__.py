@@ -38,8 +38,8 @@ def main(argv=None):
 
     e = sub.add_parser("export", help="Statische Website (z. B. für GitHub Pages) erzeugen")
     e.add_argument("--out", default=None, help="Zielordner (Standard: docs/)")
-    e.add_argument("--history-days", type=int, default=90)
-    e.add_argument("--snapshot-files", type=int, default=12,
+    e.add_argument("--history-days", type=int, default=180)
+    e.add_argument("--snapshot-files", type=int, default=6,
                    help="Anzahl jüngster Snapshots je Haus mit Detaildatei")
     e.add_argument("--repo-url", default=None, help="Link zum Code (wird auf der Seite angezeigt)")
 
@@ -54,8 +54,10 @@ def main(argv=None):
 
     cp = sub.add_parser("compact", help="alte Stundenwerte zu Tageswerten verdichten (Dauerbetrieb)")
     cp.add_argument("--hourly-days", type=int, default=7)
-    cp.add_argument("--keep-days", type=int, default=120)
-    cp.add_argument("--vacuum", action="store_true", help="Datei danach verkleinern")
+    cp.add_argument("--keep-days", type=int, default=180)
+    cp.add_argument("--house-hourly-days", type=int, default=2, help="Einzelhäuser: Tage stündlich")
+    cp.add_argument("--house-keep-days", type=int, default=14, help="Einzelhäuser: Tage insgesamt")
+    cp.add_argument("--vacuum", action="store_true", help="Datei danach verkleinern (nur wenn etwas gelöscht wurde)")
 
     sub.add_parser("refresh", help="Zusammenfassungen neu berechnen")
     sub.add_parser("info", help="Datenbank-Statistik anzeigen")
@@ -154,11 +156,12 @@ def main(argv=None):
         from .publish import publish
         publish(con, cfg, push=not args.no_push)
     elif args.cmd == "compact":
-        db.compact(con, hourly_days=args.hourly_days, keep_days=args.keep_days)
+        st = db.compact(con, hourly_days=args.hourly_days, keep_days=args.keep_days,
+                        house_hourly_days=args.house_hourly_days, house_keep_days=args.house_keep_days)
         with db.transaction(con):
             db.prune_ladders(con, cfg["collector"]["ladder_keep"])
-        if args.vacuum:
-            con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        con.execute("PRAGMA wal_checkpoint(TRUNCATE)")  # alles in die Hauptdatei (wird danach gepackt)
+        if args.vacuum and (st["days"] or st["deleted"]):
             con.execute("VACUUM")
             con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     elif args.cmd == "refresh":

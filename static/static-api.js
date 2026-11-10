@@ -349,7 +349,7 @@ const StaticAPI = (() => {
     const rows = (await historyRows(f, h, "all")).slice();
     const snaps = await snapshots(h.id);
     const lad = new Map(snaps.map((s) => [s.ts, s.has_ladder && s.file]));
-    const out = rows.map((r, i) => ({ ...r, prev_min: i ? rows[i - 1].min : null, has_ladder: lad.get(r.ts) ? 1 : 0, daily: (r.n || 1) > 1 }))
+    const out = rows.map((r, i) => ({ ...r, prev_min: i ? rows[i - 1].min : null, has_ladder: lad.get(r.ts) ? 1 : 0, daily: (r.n || 1) >= 20, merged: (r.n || 1) > 1 }))
       .map((r) => ({ ...r, chg_min: r.prev_min ? (r.min / r.prev_min - 1) * 100 : null })).reverse();
     const pg = page(out, params);
     return { total: pg.total, page: pg.page, page_size: pg.page_size, rows: pg.slice };

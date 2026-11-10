@@ -2,9 +2,10 @@
 #
 # 1. Datenbank aus dem Release "datenbank" laden (beim ersten Lauf: seed/ah.sqlite.gz)
 # 2. Auktionen aller Häuser über die Battle.net API holen (+ Namen neuer Items)
-# 3. Fehlende Item-Namen in kleinen Portionen über Wowhead ergänzen
-# 4. Alte Stundenwerte zu Tageswerten verdichten
-# 5. Datenbank zurück ins Release legen, Website bauen und auf GitHub Pages veröffentlichen
+# 3. Alte Stundenwerte zu Tageswerten verdichten
+# 4. Website bauen und auf GitHub Pages veröffentlichen
+# 5. Fehlende Item-Namen in kleinen Portionen über Wowhead ergänzen (gedrosselt, daher zuletzt)
+# 6. Datenbank zurück ins Release legen
 #
 # Benötigte Secrets (Settings → Secrets and variables → Actions):
 #   BLIZZARD_CLIENT_ID, BLIZZARD_CLIENT_SECRET
@@ -83,25 +84,11 @@ jobs:
           python run.py info
 
       - name: Auktionen holen (Battle.net)
+        id: collect
         run: python run.py collect
-
-      - name: Fehlende Item-Namen ergänzen (Wowhead, gedrosselt)
-        continue-on-error: true
-        timeout-minutes: 8
-        run: python run.py metadata --limit 60
 
       - name: Verdichten
         run: python run.py compact --vacuum
-
-      - name: Datenbank sichern
-        run: |
-          gzip -6 -c data/ah.sqlite > ah.sqlite.gz
-          ls -la ah.sqlite.gz
-          if ! gh release view datenbank > /dev/null 2>&1; then
-            gh release create datenbank --title "Datenbank (automatisch)" --prerelease \
-              --notes "Wird stündlich vom Workflow 'Daten aktualisieren' überschrieben. Nicht löschen."
-          fi
-          gh release upload datenbank ah.sqlite.gz --clobber
 
       - name: Website bauen
         run: python run.py publish --no-push
@@ -112,3 +99,21 @@ jobs:
 
       - id: deploy
         uses: actions/deploy-pages@v4
+
+      # Erst nach dem Veröffentlichen: der gedrosselte Wowhead-Abruf dauert einige
+      # Minuten und soll die neuen Preise nicht aufhalten (Namen erscheinen beim nächsten Lauf).
+      - name: Fehlende Item-Namen ergänzen (Wowhead, gedrosselt)
+        continue-on-error: true
+        timeout-minutes: 10
+        run: python run.py metadata --limit 80
+
+      - name: Datenbank sichern
+        if: ${{ !cancelled() && steps.collect.outcome == 'success' }}
+        run: |
+          python -c "import sqlite3; c = sqlite3.connect('data/ah.sqlite'); c.execute('PRAGMA wal_checkpoint(TRUNCATE)'); c.close()"
+          gzip -6 -c data/ah.sqlite > ah.sqlite.gz
+          ls -la ah.sqlite.gz
+          if ! gh release view datenbank > /dev/null 2>&1; then
+            gh release create datenbank --title "Datenbank (automatisch)" --prerelease               --notes "Wird stündlich vom Workflow 'Daten aktualisieren' überschrieben. Nicht löschen."
+          fi
+          gh release upload datenbank ah.sqlite.gz --clobber

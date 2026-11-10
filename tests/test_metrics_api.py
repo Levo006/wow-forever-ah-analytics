@@ -169,7 +169,7 @@ class CompactTest(unittest.TestCase):
             ts = day0 + h * 3600
             db.write_snapshot(con, hid, ts, "t", {1: {"min": 100 + (h % 24), "max": 200, "quantity": 10}})
         db.refresh_summary(con)
-        res = db.compact(con, hourly_days=7, log=lambda *a: None)
+        res = db.compact(con, hourly_days=7, house_hourly_days=7, log=lambda *a: None)
         rows = con.execute("SELECT ts, min, max FROM prices ORDER BY ts").fetchall()
         daily = [r for r in rows if db.is_daily_ts(r[0])]
         hourly = [r for r in rows if not db.is_daily_ts(r[0])]
@@ -178,9 +178,29 @@ class CompactTest(unittest.TestCase):
         self.assertEqual(daily[0][2], 200)
         self.assertEqual(len(hourly), 8 * 24)
         self.assertEqual(res["days"], 2)
-        again = db.compact(con, hourly_days=7, log=lambda *a: None)  # idempotent
+        again = db.compact(con, hourly_days=7, house_hourly_days=7, log=lambda *a: None)  # idempotent
         self.assertEqual(again["days"], 0)
         self.assertEqual(con.execute("SELECT COUNT(*) FROM snapshots WHERE source='tagesmittel'").fetchone()[0], 2)
+
+    def test_retention_markets_vs_single_houses(self):
+        con = db.connect(":memory:")
+        single = db.upsert_house(con, "battlenet", "eu-110", "Haus", faction="Allianz")
+        market = db.upsert_group_house(con, "battlenet", "eu", "alle")
+        day0 = 1_790_000_000 // 86400 * 86400
+        for h in range(20 * 24):  # 20 Tage stündlich
+            for hid in (single, market):
+                db.write_snapshot(con, hid, day0 + h * 3600, "t", {1: {"min": 100, "quantity": 1}})
+        db.compact(con, log=lambda *a: None)   # Standard: Märkte 7 T stündlich/180 T, Häuser 2 T/14 T
+
+        def counts(hid):
+            ts = [r[0] for r in con.execute("SELECT ts FROM prices WHERE house_id=?", (hid,))]
+            return sum(not db.is_daily_ts(t) for t in ts), sum(db.is_daily_ts(t) for t in ts)
+        self.assertEqual(counts(market), (8 * 24, 12))   # 7 ganze Tage + laufender Tag stündlich
+        hourly, daily = counts(single)
+        self.assertEqual(hourly, 3 * 24)                  # 2 ganze Tage + laufender Tag
+        self.assertLessEqual(daily, 12)                   # älter als 14 Tage gelöscht
+        oldest = con.execute("SELECT MIN(ts) FROM prices WHERE house_id=?", (single,)).fetchone()[0]
+        self.assertGreaterEqual(oldest, day0 + 19 * 86400 - 15 * 86400)
 
 
 if __name__ == "__main__":

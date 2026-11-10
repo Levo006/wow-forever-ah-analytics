@@ -121,6 +121,30 @@ class CollectGroupsTest(unittest.TestCase):
                                           (g["eu-alle"],)).fetchone()[0], 1)
 
 
+class ExportTiersTest(unittest.TestCase):
+    def test_market_tiers(self):
+        from ahanalytics import export
+        latest = T0 + 30 * 86400
+        rows = [{"ts": latest - h * 3600, "min": 100, "p10": None, "median": 110, "mean": 110,
+                 "max": 120, "quantity": 5, "auctions": 1} for h in range(20 * 24)]
+        out = export.compact_history(rows, latest, tiers=export.TIERS_MARKET)
+        originals = [r for r in out if r["n"] == 1]
+        self.assertEqual(len(originals), 49)                   # letzte 48 h + aktueller Punkt original
+        self.assertTrue(all(latest - r["ts"] <= 2 * 86400 for r in originals))
+        mid = [r for r in out if 2 * 86400 < latest - r["ts"] <= 7 * 86400 - 3600]
+        self.assertTrue(mid and all(r["n"] <= 4 for r in mid))  # 4-Stunden-Mittel
+        self.assertLess(len(out), 49 + 32 + 15)                 # statt 480 Punkten
+        self.assertEqual(sum(r["n"] for r in out), 480)         # nichts verloren
+
+    def test_house_tiers_drop_old(self):
+        from ahanalytics import export
+        latest = T0 + 30 * 86400
+        rows = [{"ts": latest - h * 3600, "min": 100, "median": 100, "quantity": 1} for h in range(10 * 24)]
+        out = export.compact_history(rows, latest, tiers=export.TIERS_HOUSE)
+        self.assertTrue(all(latest - r["ts"] <= 7 * 86400 + 3 * 3600 for r in out))
+        self.assertLessEqual(len(out), 30)
+
+
 class TooltipTest(unittest.TestCase):
     def test_lines(self):
         pi = {
