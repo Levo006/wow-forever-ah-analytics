@@ -39,7 +39,7 @@ def main(argv=None):
     e = sub.add_parser("export", help="Statische Website (z. B. für GitHub Pages) erzeugen")
     e.add_argument("--out", default=None, help="Zielordner (Standard: docs/)")
     e.add_argument("--history-days", type=int, default=90)
-    e.add_argument("--snapshot-files", type=int, default=72,
+    e.add_argument("--snapshot-files", type=int, default=12,
                    help="Anzahl jüngster Snapshots je Haus mit Detaildatei")
     e.add_argument("--repo-url", default=None, help="Link zum Code (wird auf der Seite angezeigt)")
 
@@ -47,6 +47,9 @@ def main(argv=None):
     m.add_argument("--english-only", action="store_true", help="nur englische Namen nachladen")
     m.add_argument("--until-done", action="store_true",
                    help="bei Drosselung durch Wowhead 20 Minuten warten und weitermachen, bis alles geladen ist")
+
+    pb = sub.add_parser("publish", help="Website exportieren und auf GitHub Pages (Zweig gh-pages) veröffentlichen")
+    pb.add_argument("--no-push", action="store_true", help="nur nach site/ exportieren, nicht hochladen")
 
     sub.add_parser("refresh", help="Zusammenfassungen neu berechnen")
     sub.add_parser("info", help="Datenbank-Statistik anzeigen")
@@ -141,6 +144,9 @@ def main(argv=None):
             else:
                 print("Wowhead drosselt – warte 20 Minuten …", flush=True)
             time.sleep(20 * 60)
+    elif args.cmd == "publish":
+        from .publish import publish
+        publish(con, cfg, push=not args.no_push)
     elif args.cmd == "refresh":
         with db.transaction(con):
             db.refresh_summary(con)

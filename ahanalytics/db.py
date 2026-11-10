@@ -171,6 +171,8 @@ def _migrate(con):
         con.execute("ALTER TABLE items ADD COLUMN name_en TEXT")
     if "en_checked" not in cols:
         con.execute("ALTER TABLE items ADD COLUMN en_checked INTEGER")
+    if "bn_checked" not in cols:
+        con.execute("ALTER TABLE items ADD COLUMN bn_checked INTEGER")
 
 
 @contextmanager

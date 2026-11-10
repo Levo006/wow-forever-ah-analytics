@@ -1,17 +1,15 @@
 @echo off
 rem Aktualisiert die oeffentliche Seite auf GitHub Pages:
-rem 1. Auctionator-Daten importieren  2. statischen Export nach docs\ schreiben
-rem 3. docs\ committen und pushen (GitHub Pages veroeffentlicht automatisch)
+rem 1. Auctionator-Daten importieren (Scans aus dem Spiel)
+rem 2. Battle.net-Snapshot holen (nur wenn config.toml einen API-Zugang enthaelt)
+rem 3. Website exportieren und auf den Zweig gh-pages hochladen
 chcp 65001 >nul
 cd /d "%~dp0"
-python run.py import-auctionator || goto :err
-python run.py export --repo-url https://github.com/Levo006/wow-forever-ah-analytics || goto :err
-git add docs || goto :err
-git commit -m "Daten aktualisiert" || echo Keine Aenderungen.
-git push || goto :err
+python run.py import-auctionator
+python run.py collect
+python run.py publish || goto :err
 echo.
-echo Fertig. Die Seite ist in 1-2 Minuten aktualisiert:
-echo https://levo006.github.io/wow-forever-ah-analytics/
+echo Fertig. Die Seite ist in 1-2 Minuten aktualisiert.
 pause
 exit /b 0
 :err

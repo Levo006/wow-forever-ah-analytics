@@ -147,8 +147,8 @@ class BattleNetTest(unittest.TestCase):
                 {"id": 10, "item": {"id": 2770}, "quantity": 50, "unit_price": 35}]},
             "/data/wow/ruleset/1/auctions/112": {"id": 112},  # ohne "auctions"-Feld
             "/data/wow/ruleset/1/auctions/112/commodities": {"auctions": []},
-            "/data/wow/item/2770": {"name": "Kupfererz", "quality": {"type": "COMMON"},
-                                    "item_class": {"id": 7, "name": "Handwerkswaren"},
+            "/data/wow/item/2770": {"name": {"de_DE": "Kupfererz", "en_US": "Copper Ore"}, "quality": {"type": "COMMON"},
+                                    "item_class": {"id": 7, "name": {"de_DE": "Handwerkswaren", "en_US": "Trade Goods"}},
                                     "item_subclass": {"id": 7, "name": "Metall & Stein"},
                                     "level": 1, "sell_price": 5},
             "/data/wow/media/item/2770": {"assets": [{"key": "icon", "value": "https://x/icon.jpg"}]},
@@ -166,7 +166,7 @@ class BattleNetTest(unittest.TestCase):
 
     def test_collect(self):
         res = battlenet.collect(self.con, self.client, log=lambda *a: None)
-        self.assertEqual(res.houses, 2)
+        self.assertEqual((res.houses, res.skipped), (1, 1))  # Haus 112 ohne Auktionen übersprungen
         self.assertTrue(any("namespace=dynamic-forever-eu" in c for c in self.calls))
         houses = {r["ext_id"]: dict(r) for r in self.con.execute("SELECT * FROM houses")}
         self.assertEqual(houses["eu-110"]["faction"], "Allianz")
@@ -180,8 +180,11 @@ class BattleNetTest(unittest.TestCase):
         item = self.con.execute("SELECT * FROM items WHERE id=2770").fetchone()
         self.assertEqual((item["name"], item["quality"], item["is_commodity"]), ("Kupfererz", 1, 1))
         self.assertEqual(item["icon"], "https://x/icon.jpg")
-        missing = self.con.execute("SELECT meta_status FROM items WHERE id=12640").fetchone()[0]
-        self.assertEqual(missing, "missing")
+        self.assertEqual((item["name_en"], item["class_name"]), ("Copper Ore", "Handwerkswaren"))
+        self.assertTrue(any("/data/wow/item/2770" in u and "locale" not in u for u in self.calls))
+        missing = self.con.execute("SELECT meta_status, bn_checked FROM items WHERE id=12640").fetchone()
+        self.assertEqual(missing[0], "pending")   # bleibt offen für Wowhead
+        self.assertIsNotNone(missing[1])          # Battle.net 7 Tage nicht erneut fragen
         lad = self.con.execute("SELECT data FROM ladders WHERE item_id=2770").fetchone()[0]
         self.assertEqual(json.loads(lad), [[20, 200], [35, 50]])
 

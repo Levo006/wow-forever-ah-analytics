@@ -30,7 +30,8 @@ python run.py import-auctionator          # echte Daten importieren
 python run.py serve                       # Website starten (Port 8765)
 python run.py --db data/demo.sqlite demo  # Beispieldaten erzeugen
 python run.py --db data/demo.sqlite serve --port 8766
-python run.py metadata                    # Item-Namen/Icons nachladen (Wowhead)
+python run.py metadata                    # Item-Namen/Icons nachladen (Wowhead, DE + EN)
+python run.py metadata --until-done       # dito, wartet bei Drosselung und macht weiter
 python run.py info                        # was ist in der Datenbank?
 python -m unittest discover -s tests      # Tests
 ```
@@ -39,11 +40,13 @@ python -m unittest discover -s tests      # Tests
 
 Live: <https://levo006.github.io/wow-forever-ah-analytics/> · Code: <https://github.com/Levo006/wow-forever-ah-analytics>
 
-Die öffentliche Seite ist ein **statischer Export** (Ordner `docs/`), den GitHub Pages kostenlos ausliefert. Alle Ansichten funktionieren dort ebenfalls: Suche, Filter, Top-Movers, Deals und Kategorien rechnet `static/static-api.js` direkt im Browser aus den exportierten JSON-Dateien. Nicht verfügbar sind dort nur Import und Live-Sammler; die Historie ist auf 90 Tage begrenzt, Detaildaten (Preisstaffeln) gibt es für die jüngsten 72 Snapshots je Haus.
+Die öffentliche Seite ist ein **statischer Export**, den GitHub Pages kostenlos ausliefert. Alle Ansichten funktionieren dort: Suche, Filter, Top-Movers, Deals, Kategorien und die Analysen (Trend, Volatilität, Ausreißer, Tageszeit-/Wochentagsmuster) rechnet `static/static-api.js` direkt im Browser. Nicht verfügbar sind dort nur Import und Live-Sammler.
 
-**Aktualisieren:** Im Spiel scannen, `/reload`, dann `publish.bat` ausführen. Das Skript importiert die Auctionator-Daten, erzeugt `docs/` neu (`python run.py export`) und pusht; nach 1–2 Minuten ist die Seite aktuell.
+**Aktualisieren:** `publish.bat` (bzw. `python run.py import-auctionator`, `python run.py collect`, `python run.py publish`). Nach 1–2 Minuten ist die Seite aktuell.
 
-**Einmalige Einrichtung** (bereits erledigt, falls die Links oben funktionieren): Repository auf GitHub anlegen, `git push -u origin main`, dann unter *Settings → Pages* „Deploy from a branch“, Branch `main`, Ordner `/docs` wählen.
+**Wie veröffentlicht wird:** `python run.py publish` exportiert nach `site/` und lädt den Ordner als **einen einzigen Commit** auf den Zweig `gh-pages` hoch, der dabei ersetzt wird. Das Repository wächst dadurch nicht mit jeder Veröffentlichung, und Git überträgt nur geänderte Dateien. Der Zweig `main` enthält nur den Code. Damit die Dateien klein bleiben, enthält der Export die letzten 7 Tage stündlich und ältere Tage (bis 90 Tage) als Tagesmittel; Detaildaten gibt es für die letzten 12 Snapshots je Haus, Preisstaffeln für die letzten 3.
+
+**Einmalige Einrichtung** (erledigt): *Settings → Pages* → „Deploy from a branch“, Branch `gh-pages`, Ordner `/ (root)`.
 
 ---
 
@@ -52,7 +55,7 @@ Die öffentliche Seite ist ein **statischer Export** (Ordner `docs/`), den GitHu
 | Ansicht | Inhalt |
 |---|---|
 | **Übersicht** | KPIs des gewählten Auktionshauses (Items, Marktwert, Menge, Auktionen, Ø Preisänderung), Marktwert-Verlauf, Kategorien, Gewinner/Verlierer, Deals, volatilste Items |
-| **Suche** | Filter nach Name/ID, Klasse, Unterklasse, Qualität, Preisbereich (Gold), Menge, Ø Menge (Liquidität), Region, Fraktion, Auktionshaus, Handelsware/Einzelitem. Sortierbare Spalten, 14-Tage-Sparkline, Seitenweise |
+| **Suche** | Suche zweisprachig (deutscher **oder** englischer Item-Name, z. B. „Silberblatt“ = „Silverleaf“), umlaut-tolerant („konigsblut“ findet „Königsblut“), Vorschläge mit Icon ab dem ersten Buchstaben. Filter nach Name/ID, Klasse, Unterklasse, Qualität, Preisbereich (Gold), Menge, Ø Menge (Liquidität), Region, Fraktion, Auktionshaus, Handelsware/Einzelitem. Sortierbare Spalten, 14-Tage-Sparkline, Seitenweise |
 | **Kategorien** | Drilldown **Kategorie → Unterkategorie → Item → Snapshot** mit Marktwert und Ø Änderung je Ebene |
 | **Item** | Preis-Chart (Min, 10 %-Perzentil, Median, Mittel, Max) für 24 h / 7 T / 30 T / Alles, Angebotsmenge als eigener Chart, Ausreißer markiert, Trend, Volatilität, 30-T-Tief/-Hoch, Tageszeit- und Wochentagsmuster, Häuservergleich, Liste aller Snapshots. Klick in den Chart öffnet den Snapshot |
 | **Snapshot** | Alle Items eines Zeitpunkts mit Änderung zum vorherigen Snapshot; für ein Item die **Preisstaffel** (Menge je Preisstufe) inkl. Kosten für 20/100 Stück; Vor/Zurück-Navigation |
@@ -100,7 +103,7 @@ Auctionator speichert pro Realm (in Forever: „PvE“, „PvP“) eine CBOR-kod
 
 Importe sind idempotent (gleicher Tag wird überschrieben). Ausrüstungsvarianten (`g:ID:ilvl`) werden zum Item zusammengeführt (Minimum der Preise, Summe der Mengen), Kampfhaustiere (`p:`) übersprungen. Tageswerte haben kein Median/Mittel und keine Tageszeitmuster.
 
-**Item-Namen und Icons:** Auctionator speichert keine Namen. Nach jedem Import lädt das Tool Name, Qualität, Klasse/Unterklasse und Icon für neue Items aus der **Wowhead-Datenbank für WoW: Forever** (`wowhead.com/forever/de/item=ID&xml`, gedrosselt, dauerhaft zwischengespeichert – jedes Item nur einmal). Manuell: `python run.py metadata`. Mit Battle.net-Zugang werden fehlende Items zusätzlich dort gesucht (`[metadata] source` in `config.toml`).
+**Item-Namen und Icons:** Auctionator speichert keine Namen. Nach jedem Import lädt das Tool Name, Qualität, Klasse/Unterklasse und Icon für neue Items aus der **Wowhead-Datenbank für WoW: Forever** (`wowhead.com/forever/de/item=ID&xml`, gedrosselt, dauerhaft zwischengespeichert – jedes Item nur einmal). Zusätzlich wird der **englische Name** geladen, damit die Suche beide Sprachen versteht (angezeigt wird der deutsche). Wowhead begrenzt die Zahl der Abrufe: Pro Import werden höchstens 300 Items geholt; `python run.py metadata --until-done` holt alles und wartet bei einer Sperre 20 Minuten. Manuell: `python run.py metadata`. Mit Battle.net-Zugang werden fehlende Items zusätzlich dort gesucht (`[metadata] source` in `config.toml`).
 
 ### Wann erscheinen neue Preise auf der Website?
 
@@ -170,14 +173,18 @@ ahanalytics/
   config.py        config.toml + Umgebungsvariablen
   db.py            Schema, Upserts, item_summary
   aggregate.py     Auktionen → Kennzahlen (mengengewichtete Perzentile)
+  export.py        statischer Export (verdichtete Historie, spaltenweise JSON)
+  publish.py       Veröffentlichung auf den Zweig gh-pages
+  metadata.py      Item-Namen/Icons: Battle.net (DE+EN), sonst Wowhead (Forever)
   metrics.py       Volatilität, Trend, Ausreißer, Saisonalität, Verdichtung
   api.py           Endpunkte
   server.py        HTTP-Server, Cache, Hintergrund-Sammler
   lua.py, cbor.py  Parser für SavedVariables und Auctionator-CBOR
-  sources/         auctionator.py, battlenet.py, demo.py
+  sources/         auctionator.py, battlenet.py, wowhead.py, demo.py
 static/            index.html, app.css, app.js, vendor/chart.umd.min.js
-tests/             36 Tests (Parser, Ingest, Battle.net mit Fake-HTTP, Kennzahlen, API)
+tests/             43 Tests (Parser, Ingest, Battle.net mit Fake-HTTP, Kennzahlen, API)
 data/              SQLite-Datenbanken (ah.sqlite = echt, demo.sqlite = Beispieldaten)
+site/              Export für GitHub Pages (eigenes Git-Repo → Zweig gh-pages, nicht in main)
 ```
 
 ## Hinweise

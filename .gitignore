@@ -1,4 +1,7 @@
 __pycache__/
 *.pyc
 /data/
+/docs/
+/site/
+/.site-git-tmp/
 config.toml

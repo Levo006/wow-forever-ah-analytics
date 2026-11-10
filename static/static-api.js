@@ -105,8 +105,48 @@ const StaticAPI = (() => {
   function describe(points) {
     const v = clean(points).map((x) => x[1]);
     if (!v.length) return {};
-    return { count: v.length, min: Math.min(...v), max: Math.max(...v), mean: mean(v), first: v[0], last: v[v.length - 1],
+    return { count: v.length, min: Math.min(...v), max: Math.max(...v), mean: mean(v), median: median(v), first: v[0], last: v[v.length - 1],
       change_pct: v[0] ? (v[v.length - 1] / v[0] - 1) * 100 : null };
+  }
+  const median = (a) => { const b = a.slice().sort((x, y) => x - y); const m = b.length >> 1; return b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2; };
+  const lowerBound = (a, x) => { let lo = 0, hi = a.length; while (lo < hi) { const m = (lo + hi) >> 1; if (a[m] < x) lo = m + 1; else hi = m; } return lo; };
+  const upperBound = (a, x) => { let lo = 0, hi = a.length; while (lo < hi) { const m = (lo + hi) >> 1; if (a[m] <= x) lo = m + 1; else hi = m; } return lo; };
+  function rollingMedian(p, windowS) {
+    const ts = p.map((x) => x[0]), half = windowS / 2, out = new Map();
+    for (const [t] of p) out.set(t, median(p.slice(lowerBound(ts, t - half), upperBound(ts, t + half)).map((x) => x[1])));
+    return out;
+  }
+  // gleiche Logik wie metrics.outliers (Python): gleitender Median ± k·MAD und mind. 15 %
+  function outliers(points, windowS = 2 * DAY, k = 4, minRel = 0.15) {
+    const p = clean(points);
+    if (p.length < 5) return [];
+    const ts = p.map((x) => x[0]), half = windowS / 2, res = [];
+    p.forEach(([t, v], i) => {
+      const lo = lowerBound(ts, t - half), hi = upperBound(ts, t + half);
+      const neigh = []; for (let j = lo; j < hi; j++) if (j !== i) neigh.push(p[j][1]);
+      if (neigh.length < 3) return;
+      const med = median(neigh), mad = median(neigh.map((x) => Math.abs(x - med))) * 1.4826, dev = v - med;
+      if (med > 0 && Math.abs(dev) / med >= minRel && Math.abs(dev) > k * Math.max(mad, med * 0.01))
+        res.push({ ts: t, value: v, expected: med, deviation_pct: (dev / med) * 100, kind: dev > 0 ? "Spitze" : "Einbruch" });
+    });
+    return res;
+  }
+  const WD = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+  // gleiche Logik wie metrics.seasonality (Python), Ortszeit des Browsers
+  function seasonality(points) {
+    const p = clean(points), out = { hourly: null, weekday: null };
+    if (p.length < 24) return out;
+    const span = p[p.length - 1][0] - p[0][0], step = span / Math.max(p.length - 1, 1);
+    const collect = (windowS, n, keyOf) => {
+      const base = rollingMedian(p, windowS), b = Array.from({ length: n }, () => []);
+      for (const [t, v] of p) { const m = base.get(t); if (m) b[keyOf(new Date(t * 1000))].push(v / m - 1); }
+      return b;
+    };
+    if (step <= 3 * 3600 && span >= 2 * DAY)
+      out.hourly = collect(DAY, 24, (d) => d.getHours()).map((b, h) => ({ hour: h, pct: b.length ? mean(b) * 100 : null, n: b.length }));
+    if (span >= 14 * DAY)
+      out.weekday = collect(7 * DAY, 7, (d) => (d.getDay() + 6) % 7).map((b, i) => ({ day: WD[i], pct: b.length ? mean(b) * 100 : null, n: b.length }));
+    return out;
   }
   function bucket(rows, maxPoints) {
     if (rows.length <= maxPoints || !rows.length) return rows;
@@ -270,9 +310,21 @@ const StaticAPI = (() => {
     };
   }
 
+  async function itemHouses(f) {
+    if (!f._houses) {
+      const m = await meta();
+      const raw = Array.isArray(f.houses) ? f.houses : toRows(f.houses);
+      f._houses = raw.map((r) => {
+        const h = m.houses.find((x) => x.id === r.house_id) || {};
+        return { ...r, item_id: f.item.id, name: f.item.name, name_en: f.item.name_en, quality: f.item.quality, icon: f.item.icon,
+          house_name: h.name, region: h.region, faction: h.faction, granularity: h.granularity };
+      });
+    }
+    return f._houses;
+  }
   async function item(id) {
     const f = await itemFile(id);
-    return { item: f.item, houses: f.houses };
+    return { item: f.item, houses: await itemHouses(f) };
   }
   async function history(id, params) {
     const h = await house(params.house);
@@ -283,12 +335,12 @@ const StaticAPI = (() => {
   async function analysis(id, params) {
     const h = await house(params.house);
     const f = await itemFile(id);
-    const per = f.analysis[String(h.id)] || {};
-    const range = per[params.range] ? params.range : "all";
-    const r = per[range] || {};
-    const res = r[params.metric || "min"] || r.min;
-    if (!res) throw new HttpError("Keine Analyse für dieses Haus vorhanden.");
-    return res;
+    const rows = await historyRows(f, h, RANGES[params.range] !== undefined ? params.range : "all");
+    let metric = params.metric || "min";
+    if (metric !== "min" && !rows.some((r) => r[metric])) metric = "min";
+    const series = rows.map((r) => [r.ts, r[metric]]);
+    return { describe: describe(series), volatility: volatility(series), trend: trend(series), outliers: outliers(series),
+      seasonality: seasonality(series), quantity: describe(rows.map((r) => [r.ts, r.quantity])), metric, points: series.length };
   }
   async function itemSnapshots(id, params) {
     const h = await house(params.house);
@@ -296,7 +348,7 @@ const StaticAPI = (() => {
     const rows = (await historyRows(f, h, "all")).slice();
     const snaps = await snapshots(h.id);
     const lad = new Map(snaps.map((s) => [s.ts, s.has_ladder && s.file]));
-    const out = rows.map((r, i) => ({ ...r, prev_min: i ? rows[i - 1].min : null, has_ladder: lad.get(r.ts) ? 1 : 0 }))
+    const out = rows.map((r, i) => ({ ...r, prev_min: i ? rows[i - 1].min : null, has_ladder: lad.get(r.ts) ? 1 : 0, daily: (r.n || 1) > 1 }))
       .map((r) => ({ ...r, chg_min: r.prev_min ? (r.min / r.prev_min - 1) * 100 : null })).reverse();
     const pg = page(out, params);
     return { total: pg.total, page: pg.page, page_size: pg.page_size, rows: pg.slice };
@@ -347,7 +399,7 @@ const StaticAPI = (() => {
       const pts = bucket(rows, num(params.max_points) || 400);
       const vals = rows.map((r) => [r.ts, r[metric]]);
       series.push({ item_id: id, name: f.item.name, quality: f.item.quality, icon: f.item.icon,
-        points: pts.map((p) => ({ ts: p.ts, v: p[metric] })), summary: f.houses.find((x) => x.house_id === h.id) || null,
+        points: pts.map((p) => ({ ts: p.ts, v: p[metric] })), summary: (await itemHouses(f)).find((x) => x.house_id === h.id) || null,
         trend: trend(vals), volatility: volatility(vals), describe: describe(vals) });
     }
     return { house_id: h.id, metric, series, correlation: series.map((a) => series.map((b) => correlation(a.points, b.points))) };

@@ -24,7 +24,7 @@ import os
 import shutil
 import time
 
-from . import api, db, metrics
+from . import api, db
 
 STATIC_SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
 
@@ -36,7 +36,12 @@ SUMMARY_FIELDS = [
     "item_level", "is_commodity", "chg24_min", "chg7d_min", "chg24_median", "chg7d_median",
     "market_value", "spark",
 ]
-PRICE_FIELDS = ["ts", "min", "p10", "median", "mean", "max", "quantity", "auctions"]
+ITEM_HOUSE_FIELDS = [
+    "house_id", "last_ts", "points", "last_min", "last_median", "last_qty", "last_auctions",
+    "prev24_min", "prev7d_min", "avg7_min", "avg30_min", "avg7_qty", "cv7_min", "low30_min", "high30_min",
+    "chg24_min", "chg7d_min", "chg24_median", "chg7d_median", "market_value",
+]
+PRICE_FIELDS = ["ts", "min", "p10", "median", "mean", "max", "quantity", "auctions", "n"]
 SNAP_FIELDS = ["item_id", "min", "p10", "median", "mean", "max", "quantity", "auctions", "prev_min"]
 
 
@@ -60,8 +65,36 @@ def _ranges_for(granularity):
     return ["7d", "30d", "90d", "all"] if granularity == "day" else ["7d", "30d", "all"]
 
 
-def export_site(con, out_dir: str, history_days: int = 90, snapshot_files: int = 72,
-                repo_url: str = "", log=print) -> dict:
+def compact_history(rows, latest, hourly_days=7):
+    """Letzte ``hourly_days`` Tage unverändert, ältere Punkte zu Tagesmitteln.
+
+    Hält die statischen Dateien klein (stündlich × 90 Tage wäre ~13× größer).
+    Spalte ``n`` = Anzahl zusammengefasster Snapshots (1 = Original).
+    """
+    cut = latest - hourly_days * 86400
+    old, recent = [r for r in rows if r["ts"] < cut], [r for r in rows if r["ts"] >= cut]
+    days: dict[int, list] = {}
+    for r in old:
+        days.setdefault(int(time.mktime(time.localtime(r["ts"])[:3] + (12, 0, 0, 0, 0, -1))), []).append(r)
+    out = []
+    for ts, rs in sorted(days.items()):
+        if len(rs) == 1:
+            out.append({**rs[0], "n": 1})
+            continue
+
+        def avg(k):
+            v = [r[k] for r in rs if r[k] is not None]
+            return int(round(sum(v) / len(v))) if v else None
+        mins = [r["min"] for r in rs if r["min"] is not None]
+        maxs = [r["max"] for r in rs if r["max"] is not None]
+        out.append({"ts": ts, "min": avg("min"), "p10": avg("p10"), "median": avg("median"),
+                    "mean": avg("mean"), "max": max(maxs) if maxs else None,
+                    "quantity": avg("quantity"), "auctions": avg("auctions"), "n": len(rs)})
+    return out + [{**r, "n": 1} for r in recent]
+
+
+def export_site(con, out_dir: str, history_days: int = 90, snapshot_files: int = 12,
+                repo_url: str = "", ladder_files: int = 3, log=print) -> dict:
     t0 = time.time()
     out_dir = os.path.abspath(out_dir)
     data_dir = os.path.join(out_dir, "data")
@@ -100,8 +133,10 @@ def export_site(con, out_dir: str, history_days: int = 90, snapshot_files: int =
                       EXISTS(SELECT 1 FROM ladders l WHERE l.snapshot_id = s.id) has_ladder
                FROM snapshots s WHERE s.house_id=? ORDER BY s.ts""", (hid,))]
         with_file = {s["ts"] for s in snaps[-snapshot_files:]}
+        with_ladder = {s["ts"] for s in snaps[-ladder_files:]}
         for s in snaps:
             s["file"] = 1 if s["ts"] in with_file else 0
+            s["has_ladder"] = 1 if s["has_ladder"] and s["ts"] in with_ladder else 0
         _write(os.path.join(hdir, "snapshots.json"), snaps)
         prev_ts = None
         for s in snaps:
@@ -111,44 +146,32 @@ def export_site(con, out_dir: str, history_days: int = 90, snapshot_files: int =
                        LEFT JOIN prices pp ON pp.house_id=p.house_id AND pp.item_id=p.item_id AND pp.ts=?
                        WHERE p.house_id=? AND p.ts=?""", (prev_ts, hid, s["ts"]))]
                 ladders = {str(r[0]): json.loads(r[1]) for r in con.execute(
-                    "SELECT item_id, data FROM ladders WHERE snapshot_id=?", (s["id"],))}
+                    "SELECT item_id, data FROM ladders WHERE snapshot_id=?", (s["id"],))}                     if s["has_ladder"] else {}
                 _write(os.path.join(hdir, "snap", f"{s['ts']}.json"),
                        {**_columnar(SNAP_FIELDS, prices), "ladders": ladders})
                 stats["snap_files"] += 1
             prev_ts = s["ts"]
         h["latest"] = latest
 
-    # Items
+    # Items: Metadaten + verdichtete Historie je Haus (Analysen rechnet der Browser)
     house_by_id = {h["id"]: h for h in houses}
     for n, iid in enumerate(sorted(item_ids)):
         info = api.item(con, iid, {})
-        hist, analysis = {}, {}
+        hist = {}
         for hs in info["houses"]:
             hid = hs["house_id"]
             house = house_by_id.get(hid)
             if not house:
                 continue
             lo = (house["latest"] or 0) - history_days * 86400
-            rows = api._history_rows(con, hid, iid, lo)
+            rows = compact_history(api._history_rows(con, hid, iid, lo), house["latest"] or 0)
             hist[str(hid)] = _columnar(PRICE_FIELDS, rows)
-            has_median = any(r["median"] is not None for r in rows)
-            per_range = {}
-            for rng in _ranges_for(house["granularity"]):
-                span = api.RANGES[rng]
-                rlo = (house["latest"] - span) if span else 0
-                sub = [r for r in rows if r["ts"] >= rlo]
-                per_metric = {}
-                for metric in (("min", "median") if has_median else ("min",)):
-                    series = [(r["ts"], r[metric]) for r in sub]
-                    res = metrics.full_analysis(series)  # Saisonalität in Ortszeit des Exports
-                    res["quantity"] = metrics.describe([(r["ts"], r["quantity"]) for r in sub])
-                    res["metric"] = metric
-                    res["points"] = len(series)
-                    per_metric[metric] = res
-                per_range[rng] = per_metric
-            analysis[str(hid)] = per_range
+        info["item"].pop("meta_checked", None)
+        for k in ("en_checked", "bn_checked", "meta_status"):
+            info["item"].pop(k, None)
+        hs_rows = info["houses"]
         _write(os.path.join(data_dir, "item", f"{iid}.json"),
-               {"item": info["item"], "houses": info["houses"], "history": hist, "analysis": analysis})
+               {"item": info["item"], "houses": _columnar(ITEM_HOUSE_FIELDS, hs_rows), "history": hist})
         if n and n % 1000 == 0:
             log(f"  {n} Items exportiert …")
     stats["items"] = len(item_ids)

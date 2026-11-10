@@ -242,8 +242,8 @@ function table(cols, rows, { sort, dir, onSort, rowHref, empty = "Keine Einträg
     const s = c.sort ? `sortable ${sort === c.sort ? "sorted" + (dir === "asc" ? " asc" : "") : ""}` : "";
     return `<th class="${c.num ? "n" : ""} ${s}" ${c.sort ? `data-sort="${c.sort}"` : ""} ${c.title ? `title="${esc(c.title)}"` : ""}>${c.label}</th>`;
   }).join("");
-  const tb = rows.map((r, i) => `<tr data-i="${i}" ${rowHref ? `data-href="${esc(rowHref(r))}"` : 'class="nohover"'}>` +
-    cols.map((c) => `<td class="${c.num ? "n" : ""} ${c.cls || ""}">${c.fmt ? c.fmt(r) : esc(r[c.key])}</td>`).join("") + "</tr>").join("");
+  const tb = rows.map((r, i) => { const href = rowHref && rowHref(r); return `<tr data-i="${i}" ${href ? `data-href="${esc(href)}"` : 'class="nohover"'}>`; }).map((open, i) => open +
+    cols.map((c) => `<td class="${c.num ? "n" : ""} ${c.cls || ""}">${c.fmt ? c.fmt(rows[i]) : esc(rows[i][c.key])}</td>`).join("") + "</tr>").join("");
   const id = "t" + Math.random().toString(36).slice(2, 8);
   setTimeout(() => {
     const el = document.getElementById(id);
@@ -587,13 +587,13 @@ async function viewItem(r) {
   const loadSnaps = async (page) => {
     const s = await api(`item/${id}/snapshots`, { house: hid, page, page_size: 25 });
     $("#snaps").innerHTML = `<h2>Einzelne Snapshots</h2>` + table([
-      { label: "Zeitpunkt", fmt: (x) => dt(x.ts) },
+      { label: "Zeitpunkt", fmt: (x) => x.daily ? `${dt(x.ts, false)} <span class="pill" title="Mittel aus ${x.n} Snapshots">Tagesmittel</span>` : dt(x.ts) },
       { label: "Min", num: true, fmt: (x) => money(x.min) }, { label: "10 %", num: true, fmt: (x) => money(x.p10) },
       { label: "Median", num: true, fmt: (x) => money(x.median) }, { label: "Mittel", num: true, fmt: (x) => money(x.mean) },
       { label: "Max", num: true, fmt: (x) => money(x.max) }, { label: "Menge", num: true, fmt: (x) => num(x.quantity) },
       { label: "Auktionen", num: true, fmt: (x) => num(x.auctions) }, { label: "Δ Min", num: true, fmt: (x) => pct(x.chg_min) },
       { label: "Staffel", fmt: (x) => (x.has_ladder ? '<span class="pill">vorhanden</span>' : "") },
-    ], s.rows, { rowHref: (x) => `/snapshot/${hid}/${x.ts}?item=${id}` }) + pager(s.total, s.page, s.page_size, loadSnaps);
+    ], s.rows, { rowHref: (x) => (x.daily ? null : `/snapshot/${hid}/${x.ts}?item=${id}`) }) + pager(s.total, s.page, s.page_size, loadSnaps);
   };
   loadSnaps(1);
 }

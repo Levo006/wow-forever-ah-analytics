@@ -89,8 +89,12 @@ def house_latest(con, house_id):
 
 
 def _default_house(con):
+    # bevorzugt: aktuelle Daten (letzte 2 Tage), dann die meisten Items, dann die meisten Snapshots
     r = con.execute("""SELECT h.id FROM houses h JOIN snapshots s ON s.house_id=h.id
-                       GROUP BY h.id ORDER BY COUNT(*) DESC, MAX(s.ts) DESC LIMIT 1""").fetchone()
+                       GROUP BY h.id
+                       ORDER BY MAX(s.ts) > (SELECT MAX(ts) FROM snapshots) - 2*86400 DESC,
+                                (SELECT COUNT(*) FROM item_summary x WHERE x.house_id = h.id) DESC,
+                                COUNT(*) DESC LIMIT 1""").fetchone()
     return r[0] if r else None
 
 

@@ -91,12 +91,16 @@ class BattleNetClient:
             return self._token
 
     def get(self, path, namespace_kind="dynamic", params=None, if_modified_since=None,
-            retries=3):
+            retries=3, all_locales=False):
         """GET mit Token, gzip und Wiederholungen. Gibt (json, headers) zurück.
 
         Bei 304 (nicht geändert) wird (None, headers) zurückgegeben.
+        ``all_locales=True`` lässt ``locale`` weg: Texte kommen dann als
+        {"de_DE": …, "en_US": …, …}.
         """
-        q = {"namespace": self.ns(namespace_kind), "locale": self.locale}
+        q = {"namespace": self.ns(namespace_kind)}
+        if not all_locales:
+            q["locale"] = self.locale
         q.update(params or {})
         url = f"{self.host}{path}?{urllib.parse.urlencode(q)}"
         last_exc = None
@@ -214,6 +218,10 @@ def collect(con, client: BattleNetClient, ruleset=None, only_houses=None,
         comm = list(listings_from_payload(comm_payload, True))
         commodity_items.update(i for i, _, _ in comm)
         stats, ladders = aggregate_listings(listings + comm)
+        if not stats:  # manche Häuser liefern (noch) keine Auktionen
+            res.skipped += 1
+            log(f"Haus {h['id']} ({h['name']}): keine Auktionen – übersprungen")
+            continue
         with db.transaction(con):
             db.write_snapshot(con, house_id, ts, SOURCE, stats, ladders)
             db.prune_ladders(con, ladder_keep)
@@ -239,59 +247,88 @@ def collect(con, client: BattleNetClient, ruleset=None, only_houses=None,
     return res
 
 
-def parse_item(payload: dict) -> dict:
+def _loc(v, locale="de_DE"):
+    """Text aus einer Ein- oder Mehrsprachen-Antwort."""
+    if isinstance(v, dict):
+        return v.get(locale) or (v.get("en_US") or v.get("en_GB") if locale.startswith("en") else None)
+    return v
+
+
+def parse_item(payload: dict, locale="de_DE") -> dict:
     q = payload.get("quality") or {}
     ic = payload.get("item_class") or {}
     isc = payload.get("item_subclass") or {}
-    return {
-        "name": payload.get("name"),
+    out = {
+        "name": _loc(payload.get("name"), locale),
         "quality": QUALITY_TYPES.get(q.get("type"), None),
         "class_id": ic.get("id"),
-        "class_name": ic.get("name"),
+        "class_name": _loc(ic.get("name"), locale),
         "subclass_id": isc.get("id"),
-        "subclass_name": isc.get("name"),
+        "subclass_name": _loc(isc.get("name"), locale),
         "item_level": payload.get("level"),
         "vendor_sell": payload.get("sell_price"),
     }
+    if isinstance(payload.get("name"), dict):
+        out["name_en"] = _loc(payload["name"], "en_US")
+    return out
 
 
-def fetch_item_metadata(con, client: BattleNetClient, limit=3000, recheck_days=7,
+def fetch_item_metadata(con, client: BattleNetClient, limit=20000, recheck_days=7,
                         workers=8, log=print) -> int:
-    """Lädt Name/Qualität/Klasse/Icon für Items ohne Metadaten."""
-    cutoff = int(time.time()) - recheck_days * 86400
-    ids = [r[0] for r in con.execute(
-        """SELECT id FROM items WHERE meta_status='pending'
-             OR (meta_status='missing' AND COALESCE(meta_checked,0) < ?)
-           LIMIT ?""", (cutoff, limit))]
-    if not ids:
-        return 0
-    log(f"Lade Metadaten für {len(ids)} Items …")
+    """Lädt deutschen + englischen Namen, Qualität, Klasse und Icon.
 
-    def one(iid):
+    Betrifft Items ohne Metadaten oder ohne englischen Namen. Vorhandene
+    Werte (z. B. Icons von Wowhead) werden nur ergänzt, nicht überschrieben.
+    Items, die Battle.net nicht kennt (404), werden 7 Tage nicht erneut gefragt.
+    """
+    cutoff = int(time.time()) - recheck_days * 86400
+    rows = con.execute(
+        """SELECT id, meta_status, icon FROM items
+           WHERE (meta_status != 'ok' OR name_en IS NULL) AND COALESCE(bn_checked, 0) < ?
+           ORDER BY id LIMIT ?""", (cutoff, limit)).fetchall()
+    if not rows:
+        return 0
+    log(f"Lade Item-Daten (deutsch + englisch) von Battle.net für {len(rows)} Items …")
+
+    def one(row):
+        iid, status, icon = row[0], row[1], row[2]
         try:
-            item, _ = client.get(f"/data/wow/item/{iid}", "static")
+            item, _ = client.get(f"/data/wow/item/{iid}", "static", all_locales=True)
         except ApiError as exc:
-            return iid, None, None, exc.status
-        icon = None
-        try:
-            media, _ = client.get(f"/data/wow/media/item/{iid}", "static")
-            for a in media.get("assets") or []:
-                if a.get("key") == "icon":
-                    icon = a.get("value")
-        except ApiError:
-            pass
-        return iid, item, icon, 200
+            return iid, status, None, None, exc.status
+        new_icon = None
+        if not icon:
+            try:
+                media, _ = client.get(f"/data/wow/media/item/{iid}", "static")
+                for a in media.get("assets") or []:
+                    if a.get("key") == "icon":
+                        new_icon = a.get("value")
+            except ApiError:
+                pass
+        return iid, status, item, new_icon, 200
 
     ok = 0
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        results = list(pool.map(one, ids))
+        results = list(pool.map(one, rows))
+    now = int(time.time())
     with db.transaction(con):
-        for iid, item, icon, status in results:
-            if item:
-                db.upsert_item(con, iid, "ok", icon=icon, **parse_item(item))
-                ok += 1
+        for iid, status, item, icon, code in results:
+            con.execute("UPDATE items SET bn_checked=? WHERE id=?", (now, iid))
+            if not item:
+                continue
+            fields = parse_item(item)
+            if icon:
+                fields["icon"] = icon
+            if status == "ok":
+                # nur ergänzen: englischer Name + leere Felder
+                cur = dict(con.execute("SELECT * FROM items WHERE id=?", (iid,)).fetchone())
+                fields = {k: v for k, v in fields.items() if v is not None and cur.get(k) in (None, "")}
+                if fields:
+                    sets = ", ".join(f"{k}=?" for k in fields)
+                    con.execute(f"UPDATE items SET {sets} WHERE id=?", list(fields.values()) + [iid])
             else:
-                db.upsert_item(con, iid, "missing")
+                db.upsert_item(con, iid, "ok", **{k: v for k, v in fields.items() if v is not None})
+            ok += 1
         db.bump_data_version(con)
-    log(f"Metadaten: {ok} geladen, {len(ids) - ok} nicht verfügbar")
+    log(f"Battle.net-Metadaten: {ok} von {len(rows)} Items geladen, {len(rows) - ok} dort unbekannt")
     return ok
