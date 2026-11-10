@@ -745,7 +745,7 @@ async function viewCompare(r) {
 async function viewMovers(r) {
   const house = curHouse(r.params);
   const h = houseById(house);
-  const p = { window: h?.granularity === "day" ? "7d" : "24h", metric: "min", min_qty: "", ...r.params };
+  const p = { window: "24h", metric: "min", min_qty: "", ...r.params };
   const classes = await getClasses(house);
   main.innerHTML = `
     <div class="pagehead"><h1>Top-Movers</h1><span class="sub">Größte Preisänderungen in ${esc(h?.name || "")}</span></div>

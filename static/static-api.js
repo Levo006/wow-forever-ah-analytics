@@ -252,7 +252,7 @@ const StaticAPI = (() => {
       snapshot_count: snaps.length,
       market_series: snaps.slice(-400),
       categories: (await classes({ house: h.id })).classes,
-      movers: await movers({ ...p, window: h.granularity === "hour" ? "24h" : "7d" }),
+      movers: await movers({ ...p, window: "24h" }),
       deals: await deals({ ...p, threshold: 15 }),
       most_volatile: sortRows(rows.filter((r) => (r.avg7_qty || 0) >= 1), "cv7_min", "desc").slice(0, 6),
     };

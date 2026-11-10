@@ -181,7 +181,7 @@ def overview(con, params):
                                       (hid,)).fetchone()[0],
         "market_series": snaps,
         "categories": classes(con, {"house": str(hid)})["classes"],
-        "movers": movers(con, {**p, "window": "24h" if house["granularity"] == "hour" else "7d"}),
+        "movers": movers(con, {**p, "window": "24h"}),
         "deals": deals(con, {**p, "threshold": "15"}),
         "most_volatile": [_item_row(r) for r in con.execute(
             f"SELECT {SUMMARY_COLS} {SUMMARY_FROM} WHERE s.house_id=? AND s.avg7_qty >= 1 "
