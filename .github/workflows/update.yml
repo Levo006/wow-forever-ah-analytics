@@ -13,23 +13,46 @@ name: Daten aktualisieren
 
 on:
   schedule:
-    - cron: "7,37 * * * *"   # zweimal pro Stunde (xx:07, xx:37 UTC) – GitHub lässt geplante Läufe
-                              # gelegentlich ausfallen; doppelte Snapshots werden übersprungen
+    - cron: "7,37 * * * *"   # Reserve: GitHub lässt geplante Läufe oft ausfallen – der eigentliche
+                              # Takt kommt vom Job "naechster-lauf" unten (startet sich selbst neu)
   workflow_dispatch:        # manuell: Actions → "Daten aktualisieren" → Run workflow
 
 permissions:
   contents: write   # Datenbank im Release speichern
   pages: write
   id-token: write
-
-concurrency:
-  group: daten-aktualisieren
-  cancel-in-progress: false
+  actions: write    # nächsten Lauf selbst starten
 
 jobs:
+  # Wartet ~55 Minuten und startet dann den nächsten Lauf. Läuft parallel zum Update.
+  # Laufen mehrere Ketten (z. B. weil zusätzlich ein geplanter Lauf kam), macht nur
+  # der jüngste Lauf weiter – so bleibt es bei einer Kette.
+  naechster-lauf:
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Warten bis zum nächsten Stand
+        run: sleep 3300
+      - name: Nächsten Lauf starten
+        run: |
+          newest=$(gh run list --workflow update.yml --limit 20 --json databaseId,status,createdAt --jq '[.[] | select(.status != "completed")] | sort_by(.createdAt) | last | .databaseId')
+          echo "Jüngster offener Lauf: $newest, dieser Lauf: ${{ github.run_id }}"
+          if [ "$newest" = "${{ github.run_id }}" ]; then
+            gh workflow run update.yml --ref ${{ github.ref_name }}
+            echo "Nächster Lauf gestartet"
+          else
+            echo "Ein neuerer Lauf führt die Kette fort – nichts zu tun"
+          fi
+
   update:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    concurrency:
+      group: daten-aktualisieren
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
