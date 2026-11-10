@@ -147,8 +147,30 @@ def connect(path: str | None = None) -> sqlite3.Connection:
     con.execute("PRAGMA cache_size=-65536")
     con.create_function("sqrt", 1, lambda x: math.sqrt(x) if x is not None and x >= 0 else None,
                         deterministic=True)
+    con.create_function("fold", 1, fold, deterministic=True)
     con.executescript(SCHEMA)
+    _migrate(con)
     return con
+
+
+_FOLD = str.maketrans({"ä": "a", "ö": "o", "ü": "u", "ß": "ss", "é": "e", "è": "e", "á": "a", "à": "a",
+                       "â": "a", "ê": "e", "î": "i", "ô": "o", "û": "u", "ñ": "n", "'": "", "’": ""})
+
+
+def fold(text):
+    """Suchschlüssel: klein, Umlaute → Grundbuchstabe, Apostrophe weg (Königsblut → konigsblut)."""
+    if text is None:
+        return None
+    return str(text).lower().translate(_FOLD)
+
+
+def _migrate(con):
+    """Ergänzt Spalten älterer Datenbanken."""
+    cols = {r[1] for r in con.execute("PRAGMA table_info(items)")}
+    if "name_en" not in cols:
+        con.execute("ALTER TABLE items ADD COLUMN name_en TEXT")
+    if "en_checked" not in cols:
+        con.execute("ALTER TABLE items ADD COLUMN en_checked INTEGER")
 
 
 @contextmanager
@@ -202,7 +224,7 @@ def upsert_house(con, source, ext_id, name, region="", faction="", ruleset="",
 
 # ------------------------------------------------------------------- Items
 
-ITEM_FIELDS = ("name", "quality", "class_id", "class_name", "subclass_id",
+ITEM_FIELDS = ("name", "name_en", "quality", "class_id", "class_name", "subclass_id",
                "subclass_name", "icon", "item_level", "vendor_sell", "is_commodity")
 
 
@@ -212,6 +234,9 @@ def ensure_items(con, item_ids):
 
 
 def upsert_item(con, item_id: int, status="ok", **fields):
+    if fields.get("class_id") is not None and not fields.get("class_name"):
+        from .itemmeta import CLASS_NAMES
+        fields["class_name"] = CLASS_NAMES.get(int(fields["class_id"]), f"Klasse {fields['class_id']}")
     cols = [f for f in ITEM_FIELDS if f in fields]
     con.execute("INSERT OR IGNORE INTO items(id) VALUES (?)", (item_id,))
     sets = ", ".join(f"{c}=?" for c in cols)

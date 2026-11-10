@@ -25,6 +25,12 @@ const StaticAPI = (() => {
     }
     return detected;
   }
+  const CLASS_NAMES = { 0: "Verbrauchbar", 1: "Behälter", 2: "Waffen", 3: "Edelsteine", 4: "Rüstung", 5: "Reagenzien", 6: "Projektile",
+    7: "Handwerkswaren", 8: "Gegenstandsverbesserung", 9: "Rezepte", 11: "Köcher", 12: "Quest", 13: "Schlüssel", 15: "Verschiedenes",
+    16: "Glyphen", 17: "Kampfhaustiere", 19: "Berufe" };
+  const FOLD = { "ä": "a", "ö": "o", "ü": "u", "ß": "ss", "é": "e", "è": "e", "á": "a", "à": "a", "â": "a", "ê": "e",
+    "î": "i", "ô": "o", "û": "u", "ñ": "n", "'": "", "’": "" };
+  const fold = (t) => (t == null ? "" : String(t).toLowerCase().replace(/[äöüßéèáàâêîôûñ'’]/g, (c) => FOLD[c]));
   const toRows = (c) => c.rows.map((r) => { const o = {}; c.cols.forEach((k, i) => (o[k] = r[i])); return o; });
   const meta = () => load("data/meta.json");
 
@@ -152,7 +158,7 @@ const StaticAPI = (() => {
     const out = new Map();
     for (const r of await summary(h.id)) {
       const cid = r.class_id ?? -1;
-      if (!out.has(cid)) out.set(cid, { class_id: cid, class_name: r.class_name || "Ohne Metadaten", items: 0, market_value: 0, quantity: 0, subs: new Map(), w24: [0, 0], w7: [0, 0] });
+      if (!out.has(cid)) out.set(cid, { class_id: cid, class_name: r.class_name || CLASS_NAMES[cid] || "Ohne Metadaten", items: 0, market_value: 0, quantity: 0, subs: new Map(), w24: [0, 0], w7: [0, 0] });
       const c = out.get(cid);
       c.items++; c.market_value += r.market_value || 0; c.quantity += r.last_qty || 0;
       const sk = r.subclass_id ?? "null";
@@ -185,10 +191,12 @@ const StaticAPI = (() => {
       && (!params.source || h.source === params.source)).map((h) => h.id);
     else hs = hs.filter((id) => m.houses.some((h) => h.id === id && (!params.region || h.region === params.region) && (!params.faction || h.faction === params.faction)));
     let rows = (await Promise.all(hs.map(summary))).flat();
-    const q = (params.q || "").trim().toLowerCase();
+    const q = fold((params.q || "").trim());
+    const keyOf = (r) => (r._k ??= fold(r.name) + "|" + fold(r.name_en));
     if (q) {
-      if (/^\d+$/.test(q)) rows = rows.filter((r) => r.item_id === Number(q) || r.name.toLowerCase().includes(q));
-      else { const words = q.split(/\s+/); rows = rows.filter((r) => words.every((w) => r.name.toLowerCase().includes(w))); }
+      // zweisprachig (deutscher + englischer Name) und umlaut-tolerant
+      if (/^\d+$/.test(q)) rows = rows.filter((r) => r.item_id === Number(q) || keyOf(r).includes(q));
+      else { const words = q.split(/\s+/); rows = rows.filter((r) => words.every((w) => keyOf(r).includes(w))); }
     }
     for (const [k, col] of [["class", "class_id"], ["subclass", "subclass_id"]]) {
       if (params[k] !== undefined && params[k] !== "") rows = rows.filter((r) => (params[k] === "-1" ? r[col] === null : r[col] === Number(params[k])));
@@ -203,7 +211,8 @@ const StaticAPI = (() => {
     }
     if (params.commodity === "0" || params.commodity === "1") rows = rows.filter((r) => (r.is_commodity || 0) === Number(params.commodity));
     if (params.sort === "relevance" && q) {
-      const rank = (r) => { const n = r.name.toLowerCase(); return n.startsWith(q) ? 0 : n.includes(" " + q) ? 1 : 2; };
+      const rank = (r) => { const de = fold(r.name), en = fold(r.name_en);
+        return de.startsWith(q) || en.startsWith(q) ? 0 : de.includes(" " + q) || en.includes(" " + q) ? 1 : 2; };
       rows.sort((a, b) => rank(a) - rank(b) || (b.market_value || 0) - (a.market_value || 0) || a.item_id - b.item_id);
     } else sortRows(rows, SORTS[params.sort] || "market_value", params.dir);
     const pg = page(rows, params);
@@ -303,12 +312,12 @@ const StaticAPI = (() => {
     const meta = new Map((await summary(h.id)).map((r) => [r.item_id, r]));
     let rows = toRows(data).map((r) => {
       const m = meta.get(r.item_id) || {};
-      return { ...r, house_id: h.id, ts, name: m.name ?? `Item #${r.item_id}`, quality: m.quality, icon: m.icon, class_id: m.class_id,
+      return { ...r, house_id: h.id, ts, name: m.name ?? `Item #${r.item_id}`, name_en: m.name_en, quality: m.quality, icon: m.icon, class_id: m.class_id,
         class_name: m.class_name, subclass_name: m.subclass_name, value: (r.min || 0) * (r.quantity || 0),
         chg: r.prev_min > 0 ? (r.min / r.prev_min - 1) * 100 : null };
     });
-    const q = (params.q || "").trim().toLowerCase();
-    if (q) rows = rows.filter((r) => r.name.toLowerCase().includes(q) || String(r.item_id) === q);
+    const q = fold((params.q || "").trim());
+    if (q) rows = rows.filter((r) => fold(r.name).includes(q) || fold(r.name_en).includes(q) || String(r.item_id) === q);
     if (params.class !== undefined && params.class !== "") rows = rows.filter((r) => r.class_id === Number(params.class));
     const sorts = { value: "value", price: "min", qty: "quantity", chg: "chg", name: "name", auctions: "auctions" };
     sortRows(rows, sorts[params.sort] || "value", params.dir);

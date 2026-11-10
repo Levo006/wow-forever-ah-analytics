@@ -9,6 +9,8 @@ def fill_metadata(cfg, con, log=print, limit=10000) -> int:
         from .sources import wowhead
         try:
             found += wowhead.fetch_item_metadata(con, limit=limit, log=log)
+            if (cfg.get("metadata", {}) or {}).get("english_names", True):
+                wowhead.fetch_english_names(con, limit=limit, log=log)
         except Exception as exc:  # noqa: BLE001
             log(f"Wowhead-Metadaten nicht verfügbar: {exc}")
     bn = cfg.get("battlenet", {})

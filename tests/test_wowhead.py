@@ -82,3 +82,33 @@ class RelevanceTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BilingualSearchTest(unittest.TestCase):
+    def setUp(self):
+        self.con = db.connect(":memory:")
+        hid = db.upsert_house(self.con, "t", "x", "Haus")
+        db.upsert_item(self.con, 765, "ok", name="Silberblatt", name_en="Silverleaf")
+        db.upsert_item(self.con, 3356, "ok", name="Königsblut", name_en="Kingsblood")
+        db.upsert_item(self.con, 8836, "ok", name="Arthas' Tränen", name_en="Arthas' Tears")
+        db.write_snapshot(self.con, hid, 1000, "t", {i: {"min": 10, "quantity": 5} for i in (765, 3356, 8836)})
+        db.refresh_summary(self.con)
+
+    def names(self, q):
+        return [x["name"] for x in api.search(self.con, {"q": q, "sort": "relevance"})["items"]]
+
+    def test_german_and_english(self):
+        self.assertEqual(self.names("Silberblatt"), ["Silberblatt"])
+        self.assertEqual(self.names("silverleaf"), ["Silberblatt"])
+        self.assertEqual(self.names("Silver"), ["Silberblatt"])
+        self.assertEqual(self.names("kingsblood"), ["Königsblut"])
+
+    def test_umlauts_and_apostrophes(self):
+        self.assertEqual(self.names("konigsblut"), ["Königsblut"])
+        self.assertEqual(self.names("KÖNIGS"), ["Königsblut"])
+        self.assertEqual(self.names("arthas tranen"), ["Arthas' Tränen"])
+        self.assertEqual(self.names("arthas tears"), ["Arthas' Tränen"])
+
+    def test_fold(self):
+        self.assertEqual(db.fold("Größe Äxte"), "grosse axte")
+        self.assertIsNone(db.fold(None))

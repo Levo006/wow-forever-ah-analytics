@@ -43,7 +43,10 @@ def main(argv=None):
                    help="Anzahl jüngster Snapshots je Haus mit Detaildatei")
     e.add_argument("--repo-url", default=None, help="Link zum Code (wird auf der Seite angezeigt)")
 
-    sub.add_parser("metadata", help="Item-Namen, Qualität, Kategorie und Icons nachladen")
+    m = sub.add_parser("metadata", help="Item-Namen, Qualität, Kategorie und Icons nachladen")
+    m.add_argument("--english-only", action="store_true", help="nur englische Namen nachladen")
+    m.add_argument("--until-done", action="store_true",
+                   help="bei Drosselung durch Wowhead 20 Minuten warten und weitermachen, bis alles geladen ist")
 
     sub.add_parser("refresh", help="Zusammenfassungen neu berechnen")
     sub.add_parser("info", help="Datenbank-Statistik anzeigen")
@@ -113,7 +116,31 @@ def main(argv=None):
                            snapshot_files=args.snapshot_files,
                            repo_url=args.repo_url or cfg.get("publish", {}).get("repo_url", ""))
     elif args.cmd == "metadata":
-        _maybe_metadata(cfg, con)
+        from .sources import wowhead
+
+        def remaining():
+            cutoff = int(time.time()) - 7 * 86400
+            de = 0 if args.english_only else con.execute(
+                "SELECT COUNT(*) FROM items WHERE meta_status='pending'").fetchone()[0]
+            en = con.execute("""SELECT COUNT(*) FROM items WHERE name_en IS NULL AND meta_status != 'missing'
+                                AND COALESCE(en_checked,0) < ?""", (cutoff,)).fetchone()[0]
+            return de, en
+
+        while True:
+            before = remaining()
+            if args.english_only:
+                wowhead.fetch_english_names(con)
+            else:
+                _maybe_metadata(cfg, con)
+            after = remaining()
+            print(time.strftime("%H:%M"), f"offen: {after[0]} deutsche, {after[1]} englische Namen", flush=True)
+            if not args.until_done or after == (0, 0):
+                break
+            if after == before:
+                print("Keine Fortschritte (Wowhead drosselt) – warte 20 Minuten …", flush=True)
+            else:
+                print("Wowhead drosselt – warte 20 Minuten …", flush=True)
+            time.sleep(20 * 60)
     elif args.cmd == "refresh":
         with db.transaction(con):
             db.refresh_summary(con)

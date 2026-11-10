@@ -11,10 +11,10 @@ QUALITY_TYPES = {
 
 # Item-Klassen (Enum.ItemClass); Namen deutsch wie im Client
 CLASS_NAMES = {
-    0: "Verbrauchbares", 1: "Behälter", 2: "Waffe", 3: "Edelstein", 4: "Rüstung",
-    5: "Reagenz", 6: "Projektil", 7: "Handwerkswaren", 8: "Gegenstandsverbesserung",
-    9: "Rezept", 11: "Köcher", 12: "Quest", 13: "Schlüssel", 15: "Verschiedenes",
-    16: "Glyphe", 17: "Kampfhaustier", 18: "WoW-Marke", 19: "Beruf",
+    0: "Verbrauchbar", 1: "Behälter", 2: "Waffen", 3: "Edelsteine", 4: "Rüstung",
+    5: "Reagenzien", 6: "Projektile", 7: "Handwerkswaren", 8: "Gegenstandsverbesserung",
+    9: "Rezepte", 11: "Köcher", 12: "Quest", 13: "Schlüssel", 15: "Verschiedenes",
+    16: "Glyphen", 17: "Kampfhaustiere", 18: "WoW-Marke", 19: "Berufe",
 }
 
 

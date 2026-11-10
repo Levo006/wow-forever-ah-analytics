@@ -32,7 +32,7 @@ SUMMARY_FIELDS = [
     "item_id", "first_ts", "last_ts", "points", "last_min", "last_median", "last_qty", "last_auctions",
     "prev24_min", "prev24_median", "prev7d_min", "prev7d_median", "avg7_min", "avg30_min",
     "avg7_median", "avg30_median", "avg7_qty", "cv7_min", "low30_min", "high30_min",
-    "name", "quality", "class_id", "class_name", "subclass_id", "subclass_name", "icon",
+    "name", "name_en", "quality", "class_id", "class_name", "subclass_id", "subclass_name", "icon",
     "item_level", "is_commodity", "chg24_min", "chg7d_min", "chg24_median", "chg7d_median",
     "market_value", "spark",
 ]

@@ -21,7 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from .. import db
 
-URL = "https://www.wowhead.com/forever/{lang}/item={id}&xml"
+URL = "https://www.wowhead.com/forever/{lang}item={id}&xml"  # lang = "de/" oder "" (Englisch)
 USER_AGENT = "Mozilla/5.0 (compatible; wow-ah-analytics/1.0)"
 _lock = threading.Lock()
 
@@ -58,7 +58,7 @@ def parse_xml(text: str) -> dict | None:
 
 def fetch_one(item_id: int, lang="de", opener=urllib.request.urlopen, timeout=20, retries=3):
     """Gibt (status, felder) zurück: status ∈ ok | missing | error."""
-    url = URL.format(lang=lang, id=item_id)
+    url = URL.format(lang="" if lang == "en" else f"{lang}/", id=item_id)
     for attempt in range(retries):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
@@ -83,7 +83,7 @@ def fetch_one(item_id: int, lang="de", opener=urllib.request.urlopen, timeout=20
     return "error", None
 
 
-def fetch_item_metadata(con, limit=10000, pause=1.0, recheck_days=7, lang="de",
+def fetch_item_metadata(con, limit=10000, pause=2.0, recheck_days=7, lang="de",
                         log=print, opener=urllib.request.urlopen) -> int:
     """Lädt Metadaten für Items ohne Namen – nacheinander, ca. 1 Anfrage/Sekunde.
 
@@ -102,7 +102,7 @@ def fetch_item_metadata(con, limit=10000, pause=1.0, recheck_days=7, lang="de",
                ORDER BY id LIMIT ?""", (cutoff, limit))]
         if not ids:
             return 0
-        log(f"Lade Item-Namen und Icons von Wowhead für {len(ids)} Items (ca. 1/s) …")
+        log(f"Lade Item-Namen und Icons von Wowhead für {len(ids)} Items (ca. 1 alle 2 s) …")
         found, checked, blocked = 0, 0, False
         batch = []
 
@@ -142,3 +142,60 @@ def fetch_item_metadata(con, limit=10000, pause=1.0, recheck_days=7, lang="de",
         return found
     finally:
         _lock.release()
+
+
+def fetch_english_names(con, limit=10000, pause=2.0, recheck_days=7, log=print,
+                        opener=urllib.request.urlopen) -> int:
+    """Lädt die englischen Item-Namen (für zweisprachige Suche), ca. 1 Anfrage/Sekunde."""
+    if not _lock_en.acquire(blocking=False):
+        log("Abruf englischer Namen läuft bereits.")
+        return 0
+    try:
+        cutoff = int(time.time()) - recheck_days * 86400
+        ids = [r[0] for r in con.execute(
+            """SELECT id FROM items WHERE name_en IS NULL AND meta_status != 'missing'
+                 AND COALESCE(en_checked, 0) < ? ORDER BY id LIMIT ?""", (cutoff, limit))]
+        if not ids:
+            return 0
+        log(f"Lade englische Item-Namen von Wowhead für {len(ids)} Items (ca. 1 alle 2 s) …")
+        found, checked, blocked, batch = 0, 0, False, []
+
+        def flush():
+            nonlocal batch
+            if not batch:
+                return
+            now = int(time.time())
+            with db.transaction(con):
+                for bid, name in batch:
+                    con.execute("UPDATE items SET name_en=?, en_checked=? WHERE id=?", (name, now, bid))
+                db.bump_data_version(con)
+            batch = []
+
+        for iid in ids:
+            status, data = fetch_one(iid, lang="en", opener=opener)
+            if status == "blocked":
+                blocked = True
+                break
+            checked += 1
+            if status == "ok":
+                found += 1
+                batch.append((iid, data["name"]))
+            elif status == "missing":
+                batch.append((iid, None))
+            if len(batch) >= 100:
+                flush()
+                log(f"  {checked}/{len(ids)} geprüft, {found} englische Namen")
+            time.sleep(pause)
+        flush()
+        msg = f"Englische Namen: {found} von {checked} geprüften Items geladen"
+        if blocked:
+            msg += f" – Wowhead drosselt gerade, {len(ids) - checked} folgen beim nächsten Lauf"
+        log(msg)
+        with db.transaction(con):
+            db.log_import(con, "wowhead", "ok", msg)
+        return found
+    finally:
+        _lock_en.release()
+
+
+_lock_en = threading.Lock()

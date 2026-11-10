@@ -110,7 +110,7 @@ SUMMARY_COLS = """
   s.last_auctions, s.prev24_min, s.prev24_median, s.prev7d_min, s.prev7d_median,
   s.avg7_min, s.avg30_min, s.avg7_median, s.avg30_median, s.avg7_qty, s.cv7_min,
   s.low30_min, s.high30_min,
-  i.name, i.quality, i.class_id, i.class_name, i.subclass_id, i.subclass_name, i.icon,
+  i.name, i.name_en, i.quality, i.class_id, i.class_name, i.subclass_id, i.subclass_name, i.icon,
   i.item_level, i.is_commodity, i.meta_status,
   h.name AS house_name, h.region, h.faction, h.granularity,
   CASE WHEN s.prev24_min > 0 THEN (1.0*s.last_min/s.prev24_min - 1)*100 END AS chg24_min,
@@ -244,14 +244,16 @@ SEARCH_SORTS = {
 def search(con, params):
     where, args = _house_filter(params)
     q = (params.get("q") or "").strip()
+    fq = db.fold(q)
     if q:
+        # zweisprachig (deutscher + englischer Name) und umlaut-tolerant
         if q.isdigit():
-            where.append("(s.item_id = ? OR i.name LIKE ?)")
-            args += [int(q), f"%{q}%"]
+            where.append("(s.item_id = ? OR fold(i.name) LIKE ? OR fold(i.name_en) LIKE ?)")
+            args += [int(q), f"%{fq}%", f"%{fq}%"]
         else:
-            for word in q.split():
-                where.append("i.name LIKE ?")
-                args.append(f"%{word}%")
+            for word in fq.split():
+                where.append("(fold(i.name) LIKE ? OR fold(i.name_en) LIKE ?)")
+                args += [f"%{word}%", f"%{word}%"]
     for key, col in (("class", "i.class_id"), ("subclass", "i.subclass_id")):
         v = params.get(key)
         if v not in (None, ""):
@@ -286,9 +288,10 @@ def search(con, params):
     order_args: list = []
     if params.get("sort") == "relevance" and q:
         # Treffer am Namensanfang zuerst, dann Wortanfang, dann beliebig; innerhalb nach Marktwert
-        order = ("CASE WHEN i.name LIKE ? THEN 0 WHEN i.name LIKE ? THEN 1 ELSE 2 END, "
+        order = ("CASE WHEN fold(i.name) LIKE ? OR fold(i.name_en) LIKE ? THEN 0 "
+                 "WHEN fold(i.name) LIKE ? OR fold(i.name_en) LIKE ? THEN 1 ELSE 2 END, "
                  "market_value DESC, s.item_id")
-        order_args = [f"{q}%", f"% {q}%"]
+        order_args = [f"{fq}%", f"{fq}%", f"% {fq}%", f"% {fq}%"]
     rows = con.execute(
         f"SELECT {SUMMARY_COLS} {base} ORDER BY {order} LIMIT ? OFFSET ?",
         args + order_args + [size, (page - 1) * size]).fetchall()
@@ -422,8 +425,8 @@ def snapshot(con, house_id, ts, params):
     args: list = [prev_ts, house_id, ts]
     q = (params.get("q") or "").strip()
     if q:
-        where.append("(i.name LIKE ? OR CAST(p.item_id AS TEXT) = ?)")
-        args += [f"%{q}%", q]
+        where.append("(fold(i.name) LIKE ? OR fold(i.name_en) LIKE ? OR CAST(p.item_id AS TEXT) = ?)")
+        args += [f"%{db.fold(q)}%", f"%{db.fold(q)}%", q]
     if params.get("class") not in (None, ""):
         where.append("i.class_id = ?")
         args.append(_int(params, "class"))
@@ -438,7 +441,7 @@ def snapshot(con, house_id, ts, params):
                WHERE {' AND '.join(where)}"""
     total = con.execute(f"SELECT COUNT(*) {base}", args).fetchone()[0]
     rows = con.execute(
-        f"""SELECT p.*, i.name, i.quality, i.icon, i.class_name, i.subclass_name,
+        f"""SELECT p.*, i.name, i.name_en, i.quality, i.icon, i.class_name, i.subclass_name,
                    COALESCE(p.min,0)*COALESCE(p.quantity,0) value, pp.min prev_min,
                    CASE WHEN pp.min > 0 THEN (1.0*p.min/pp.min - 1)*100 END chg
             {base} ORDER BY {sort} IS NULL, {sort} {direction} LIMIT ? OFFSET ?""",

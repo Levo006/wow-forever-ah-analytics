@@ -232,3 +232,4 @@ code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; font-
 .flow { margin: 0 0 12px; padding-left: 20px; color: var(--text-secondary); }
 .flow li { margin-bottom: 6px; }
 .flow b { color: var(--text-primary); }
+.ac .acen { color: var(--text-secondary); font-style: italic; }

@@ -381,7 +381,7 @@ async function viewSearch(r) {
   main.innerHTML = `
     <div class="pagehead"><h1>Item-Suche</h1><span class="sub" id="sumline"></span></div>
     <form class="card filters" id="ff">
-      <label class="f"><span>Name / ID</span><input type="search" name="q" value="${esc(p.q || "")}" placeholder="z. B. Erz, Fläschchen, 2770"></label>
+      <label class="f"><span>Name / ID</span><input type="search" name="q" value="${esc(p.q || "")}" placeholder="Deutsch oder Englisch, z. B. Silberblatt, Silverleaf, 765"></label>
       <label class="f"><span>Klasse</span><select name="class"><option value="">Alle</option>${classes.map((c) => `<option value="${c.class_id}" ${String(p.class) === String(c.class_id) ? "selected" : ""}>${esc(c.class_name)} (${c.items})</option>`).join("")}</select></label>
       <label class="f"><span>Unterklasse</span><select name="subclass" ${subs.length ? "" : "disabled"}><option value="">Alle</option>${subs.map((s) => `<option value="${s.subclass_id}" ${String(p.subclass) === String(s.subclass_id) ? "selected" : ""}>${esc(s.subclass_name)} (${s.items})</option>`).join("")}</select></label>
       <div class="f"><span>Qualität</span><div class="qual">${[0, 1, 2, 3, 4, 5].map((q) => `<label class="q${q}" title="${QUAL[q]}"><input type="checkbox" name="quality" value="${q}" ${quals.includes(String(q)) ? "checked" : ""}><span>${QUAL[q].slice(0, 4)}</span></label>`).join("")}</div></div>
@@ -487,7 +487,7 @@ async function viewItem(r) {
     <div class="crumbs"><a href="#/categories?house=${hid}">Kategorien</a> › <a href="#/categories?house=${hid}&class=${it.class_id ?? -1}">${esc(it.class_name || "Ohne Metadaten")}</a>${it.subclass_name ? ` › <a href="#/categories?house=${hid}&class=${it.class_id}&subclass=${it.subclass_id}">${esc(it.subclass_name)}</a>` : ""} › ${esc(it.name)}</div>
     <div class="pagehead itemhead">${icon(it, true)}
       <div><h1 class="q${it.quality ?? 1}">${esc(it.name)}</h1>
-        <div class="meta"><span>ID ${id}</span>${it.quality_name ? `<span>${esc(it.quality_name)}</span>` : ""}${it.item_level ? `<span>Stufe ${it.item_level}</span>` : ""}
+        <div class="meta">${it.name_en && it.name_en !== it.name ? `<span title="Englischer Name">EN: ${esc(it.name_en)}</span>` : ""}<span>ID ${id}</span>${it.quality_name ? `<span>${esc(it.quality_name)}</span>` : ""}${it.item_level ? `<span>Stufe ${it.item_level}</span>` : ""}
         ${it.is_commodity ? '<span class="pill">Handelsware</span>' : ""}${it.vendor_sell ? `<span>Händler: ${money(it.vendor_sell)}</span>` : ""}
         <a href="https://www.wowhead.com/forever/de/item=${id}" target="_blank" rel="noopener">Wowhead ↗</a></div></div>
       <div class="actions">
@@ -907,8 +907,13 @@ async function viewData() {
  */
 function attachAutocomplete(input, box, house, onPick, opts = {}) {
   let timer, items = [], total = 0, sel = -1, lastQ = "", seq = 0;
+  const FOLD = { "ä": "a", "ö": "o", "ü": "u", "ß": "ss" };
+  const fold = (t) => String(t || "").toLowerCase().replace(/[äöüß]/g, (c) => FOLD[c]);
   const hl = (name, q) => {
-    const i = name.toLowerCase().indexOf(q.toLowerCase());
+    if (!name) return "";
+    // Position über die gefaltete Form suchen (gleiche Länge außer ß – dann ohne Markierung)
+    const fn = fold(name), fq = fold(q);
+    const i = fn.length === name.length ? fn.indexOf(fq) : name.toLowerCase().indexOf(q.toLowerCase());
     if (i < 0 || !q) return esc(name);
     return esc(name.slice(0, i)) + "<mark>" + esc(name.slice(i, i + q.length)) + "</mark>" + esc(name.slice(i + q.length));
   };
@@ -918,10 +923,11 @@ function attachAutocomplete(input, box, house, onPick, opts = {}) {
     if (!items.length) { box.innerHTML = `<div class="acempty">Keine Treffer für „${esc(lastQ)}“</div>`; return; }
     box.innerHTML = items.map((it, i) => {
       const cat = [it.class_name, it.subclass_name].filter(Boolean).map(esc).join(" › ");
+      const en = it.name_en && it.name_en !== it.name ? `<span class="acen">${hl(it.name_en, lastQ)}</span> · ` : "";
       return `<a href="#/item/${it.item_id}?house=${it.house_id}" data-i="${i}" class="acrow ${i === sel ? "sel" : ""}">
         ${icon(it, "md")}
         <span class="acmain"><span class="acname q${it.quality ?? 1}">${hl(it.name, lastQ)}</span>
-          <span class="acsub">${cat || "Kategorie unbekannt"} · ID ${it.item_id}</span></span>
+          <span class="acsub">${en}${cat || "Kategorie unbekannt"} · ID ${it.item_id}</span></span>
         <span class="acprice">${money(it.last_min)}<span class="acsub">${it.last_qty != null ? num(it.last_qty) + " Stk." : ""}</span></span></a>`;
     }).join("") + (opts.showAll !== false && total > items.length
       ? `<a href="#" data-all class="acall ${sel === items.length ? "sel" : ""}">Alle ${num(total)} Treffer anzeigen ›</a>` : "");
