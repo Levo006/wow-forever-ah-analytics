@@ -28,6 +28,7 @@ jobs:
   # Laufen mehrere Ketten (z. B. weil zusätzlich ein geplanter Lauf kam), macht nur
   # der jüngste Lauf weiter – so bleibt es bei einer Kette.
   naechster-lauf:
+    name: "Wartet ~55 Min. und startet dann den nächsten Lauf (läuft absichtlich so lange)"
     runs-on: ubuntu-latest
     timeout-minutes: 70
     env:
@@ -48,6 +49,7 @@ jobs:
           fi
 
   update:
+    name: "Daten holen und Seite veröffentlichen"
     runs-on: ubuntu-latest
     timeout-minutes: 30
     concurrency:
