@@ -42,7 +42,7 @@ Live: <https://levo006.github.io/wow-forever-ah-analytics/> · Code: <https://gi
 
 Die öffentliche Seite ist ein **statischer Export**, den GitHub Pages kostenlos ausliefert. Alle Ansichten funktionieren dort: Suche, Filter, Top-Movers, Deals, Kategorien und die Analysen (Trend, Volatilität, Ausreißer, Tageszeit-/Wochentagsmuster) rechnet `static/static-api.js` direkt im Browser. Nicht verfügbar sind dort nur Import und Live-Sammler.
 
-**Automatische Aktualisierung (stündlich, kostenlos auf GitHub):** Der Workflow `.github/workflows/update.yml` läuft jede Stunde (xx:17 UTC) auf GitHubs Servern – dein PC muss dafür nicht laufen:
+**Automatische Aktualisierung (stündlich, kostenlos auf GitHub):** Der Workflow `.github/workflows/update.yml` läuft zweimal pro Stunde (xx:07 und xx:37 UTC) auf GitHubs Servern – GitHub lässt geplante Läufe manchmal ausfallen, der zweite Termin fängt das ab – dein PC muss dafür nicht laufen:
 
 1. Datenbank aus dem Release **„datenbank“** laden (beim allerersten Lauf: `seed/ah.sqlite.gz`)
 2. Auktionen aller Häuser über die Battle.net API holen, Namen neuer Items nachladen (DE + EN)

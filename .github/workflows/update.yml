@@ -13,7 +13,8 @@ name: Daten aktualisieren
 
 on:
   schedule:
-    - cron: "17 * * * *"   # jede Stunde um xx:17 (UTC)
+    - cron: "7,37 * * * *"   # zweimal pro Stunde (xx:07, xx:37 UTC) – GitHub lässt geplante Läufe
+                              # gelegentlich ausfallen; doppelte Snapshots werden übersprungen
   workflow_dispatch:        # manuell: Actions → "Daten aktualisieren" → Run workflow
 
 permissions:
