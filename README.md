@@ -42,11 +42,19 @@ Live: <https://levo006.github.io/wow-forever-ah-analytics/> · Code: <https://gi
 
 Die öffentliche Seite ist ein **statischer Export**, den GitHub Pages kostenlos ausliefert. Alle Ansichten funktionieren dort: Suche, Filter, Top-Movers, Deals, Kategorien und die Analysen (Trend, Volatilität, Ausreißer, Tageszeit-/Wochentagsmuster) rechnet `static/static-api.js` direkt im Browser. Nicht verfügbar sind dort nur Import und Live-Sammler.
 
-**Aktualisieren:** `publish.bat` (bzw. `python run.py import-auctionator`, `python run.py collect`, `python run.py publish`). Nach 1–2 Minuten ist die Seite aktuell.
+**Automatische Aktualisierung (stündlich, kostenlos auf GitHub):** Der Workflow `.github/workflows/update.yml` läuft jede Stunde (xx:17 UTC) auf GitHubs Servern – dein PC muss dafür nicht laufen:
 
-**Wie veröffentlicht wird:** `python run.py publish` exportiert nach `site/` und lädt den Ordner als **einen einzigen Commit** auf den Zweig `gh-pages` hoch, der dabei ersetzt wird. Das Repository wächst dadurch nicht mit jeder Veröffentlichung, und Git überträgt nur geänderte Dateien. Der Zweig `main` enthält nur den Code. Damit die Dateien klein bleiben, enthält der Export die letzten 7 Tage stündlich und ältere Tage (bis 90 Tage) als Tagesmittel; Detaildaten gibt es für die letzten 12 Snapshots je Haus, Preisstaffeln für die letzten 3.
+1. Datenbank aus dem Release **„datenbank“** laden (beim allerersten Lauf: `seed/ah.sqlite.gz`)
+2. Auktionen aller Häuser über die Battle.net API holen, Namen neuer Items nachladen (DE + EN)
+3. Fehlende Namen in kleinen Portionen über Wowhead ergänzen (gedrosselt)
+4. Stundenwerte älter als 7 Tage zu Tageswerten verdichten (`python run.py compact`), Daten älter als 120 Tage löschen
+5. Datenbank zurück ins Release legen, Website bauen und direkt auf GitHub Pages veröffentlichen (ohne Commits – das Repository wächst nicht)
 
-**Einmalige Einrichtung** (erledigt): *Settings → Pages* → „Deploy from a branch“, Branch `gh-pages`, Ordner `/ (root)`.
+Manuell starten: `publish.bat` öffnet die Workflow-Seite → **Run workflow**. Die Zugangsdaten liegen als Repository-Secrets `BLIZZARD_CLIENT_ID` / `BLIZZARD_CLIENT_SECRET` (*Settings → Secrets and variables → Actions*), nie im Code. Hinweis: GitHub pausiert geplante Workflows, wenn im Repository 60 Tage lang nichts passiert – dann unter *Actions* einmal „Enable workflow“ klicken.
+
+**Auctionator-Scans** fließen seitdem nicht mehr automatisch auf die öffentliche Seite (die Battle.net-Daten decken alle Häuser stündlich ab). Lokal funktionieren `start.bat` und der Import weiterhin. `python run.py publish` (Veröffentlichung über den Zweig `gh-pages`) bleibt als Ausweichweg, falls die Pages-Quelle wieder auf „Deploy from a branch“ gestellt wird.
+
+**Einmalige Einrichtung** (erledigt): *Settings → Pages* → Source **„GitHub Actions“**; Secrets wie oben.
 
 ---
 
@@ -182,9 +190,11 @@ ahanalytics/
   lua.py, cbor.py  Parser für SavedVariables und Auctionator-CBOR
   sources/         auctionator.py, battlenet.py, wowhead.py, demo.py
 static/            index.html, app.css, app.js, vendor/chart.umd.min.js
-tests/             43 Tests (Parser, Ingest, Battle.net mit Fake-HTTP, Kennzahlen, API)
+tests/             45 Tests (Parser, Ingest, Battle.net mit Fake-HTTP, Kennzahlen, API)
 data/              SQLite-Datenbanken (ah.sqlite = echt, demo.sqlite = Beispieldaten)
-site/              Export für GitHub Pages (eigenes Git-Repo → Zweig gh-pages, nicht in main)
+site/              Export für GitHub Pages (wird im Workflow gebaut, nicht in main)
+seed/              Startdatenbank für den allerersten Workflow-Lauf
+.github/workflows/ update.yml – stündliche Aktualisierung
 ```
 
 ## Hinweise

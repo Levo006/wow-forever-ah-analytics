@@ -45,11 +45,17 @@ def main(argv=None):
 
     m = sub.add_parser("metadata", help="Item-Namen, Qualität, Kategorie und Icons nachladen")
     m.add_argument("--english-only", action="store_true", help="nur englische Namen nachladen")
+    m.add_argument("--limit", type=int, default=10000, help="höchstens so viele Items pro Lauf (Wowhead)")
     m.add_argument("--until-done", action="store_true",
                    help="bei Drosselung durch Wowhead 20 Minuten warten und weitermachen, bis alles geladen ist")
 
     pb = sub.add_parser("publish", help="Website exportieren und auf GitHub Pages (Zweig gh-pages) veröffentlichen")
     pb.add_argument("--no-push", action="store_true", help="nur nach site/ exportieren, nicht hochladen")
+
+    cp = sub.add_parser("compact", help="alte Stundenwerte zu Tageswerten verdichten (Dauerbetrieb)")
+    cp.add_argument("--hourly-days", type=int, default=7)
+    cp.add_argument("--keep-days", type=int, default=120)
+    cp.add_argument("--vacuum", action="store_true", help="Datei danach verkleinern")
 
     sub.add_parser("refresh", help="Zusammenfassungen neu berechnen")
     sub.add_parser("info", help="Datenbank-Statistik anzeigen")
@@ -132,9 +138,9 @@ def main(argv=None):
         while True:
             before = remaining()
             if args.english_only:
-                wowhead.fetch_english_names(con)
+                wowhead.fetch_english_names(con, limit=args.limit)
             else:
-                _maybe_metadata(cfg, con)
+                _maybe_metadata(cfg, con, limit=args.limit)
             after = remaining()
             print(time.strftime("%H:%M"), f"offen: {after[0]} deutsche, {after[1]} englische Namen", flush=True)
             if not args.until_done or after == (0, 0):
@@ -147,6 +153,14 @@ def main(argv=None):
     elif args.cmd == "publish":
         from .publish import publish
         publish(con, cfg, push=not args.no_push)
+    elif args.cmd == "compact":
+        db.compact(con, hourly_days=args.hourly_days, keep_days=args.keep_days)
+        with db.transaction(con):
+            db.prune_ladders(con, cfg["collector"]["ladder_keep"])
+        if args.vacuum:
+            con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            con.execute("VACUUM")
+            con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     elif args.cmd == "refresh":
         with db.transaction(con):
             db.refresh_summary(con)

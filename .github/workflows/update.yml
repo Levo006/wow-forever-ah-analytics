@@ -1,0 +1,88 @@
+# Stündliche Aktualisierung der Website (läuft kostenlos auf GitHub).
+#
+# 1. Datenbank aus dem Release "datenbank" laden (beim ersten Lauf: seed/ah.sqlite.gz)
+# 2. Auktionen aller Häuser über die Battle.net API holen (+ Namen neuer Items)
+# 3. Fehlende Item-Namen in kleinen Portionen über Wowhead ergänzen
+# 4. Alte Stundenwerte zu Tageswerten verdichten
+# 5. Datenbank zurück ins Release legen, Website bauen und auf GitHub Pages veröffentlichen
+#
+# Benötigte Secrets (Settings → Secrets and variables → Actions):
+#   BLIZZARD_CLIENT_ID, BLIZZARD_CLIENT_SECRET
+
+name: Daten aktualisieren
+
+on:
+  schedule:
+    - cron: "17 * * * *"   # jede Stunde um xx:17 (UTC)
+  workflow_dispatch:        # manuell: Actions → "Daten aktualisieren" → Run workflow
+
+permissions:
+  contents: write   # Datenbank im Release speichern
+  pages: write
+  id-token: write
+
+concurrency:
+  group: daten-aktualisieren
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    env:
+      TZ: Europe/Berlin
+      GH_TOKEN: ${{ github.token }}
+      BLIZZARD_CLIENT_ID: ${{ secrets.BLIZZARD_CLIENT_ID }}
+      BLIZZARD_CLIENT_SECRET: ${{ secrets.BLIZZARD_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Datenbank laden
+        run: |
+          mkdir -p data
+          if gh release download datenbank --pattern ah.sqlite.gz --dir data; then
+            echo "Datenbank aus Release geladen"
+          else
+            echo "Kein Release gefunden – starte mit seed/ah.sqlite.gz"
+            cp seed/ah.sqlite.gz data/
+          fi
+          gunzip -f data/ah.sqlite.gz
+          python run.py info
+
+      - name: Auktionen holen (Battle.net)
+        run: python run.py collect
+
+      - name: Fehlende Item-Namen ergänzen (Wowhead, gedrosselt)
+        continue-on-error: true
+        timeout-minutes: 8
+        run: python run.py metadata --limit 60
+
+      - name: Verdichten
+        run: python run.py compact --vacuum
+
+      - name: Datenbank sichern
+        run: |
+          gzip -6 -c data/ah.sqlite > ah.sqlite.gz
+          ls -la ah.sqlite.gz
+          if ! gh release view datenbank > /dev/null 2>&1; then
+            gh release create datenbank --title "Datenbank (automatisch)" --prerelease \
+              --notes "Wird stündlich vom Workflow 'Daten aktualisieren' überschrieben. Nicht löschen."
+          fi
+          gh release upload datenbank ah.sqlite.gz --clobber
+
+      - name: Website bauen
+        run: python run.py publish --no-push
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - id: deploy
+        uses: actions/deploy-pages@v4

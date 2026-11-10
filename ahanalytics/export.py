@@ -72,6 +72,8 @@ def compact_history(rows, latest, hourly_days=7):
     Spalte ``n`` = Anzahl zusammengefasster Snapshots (1 = Original).
     """
     cut = latest - hourly_days * 86400
+    daily_rows = [{**r, "n": 24} for r in rows if db.is_daily_ts(r["ts"])]  # in der DB bereits verdichtet
+    rows = [r for r in rows if not db.is_daily_ts(r["ts"])]
     old, recent = [r for r in rows if r["ts"] < cut], [r for r in rows if r["ts"] >= cut]
     days: dict[int, list] = {}
     for r in old:
@@ -90,7 +92,7 @@ def compact_history(rows, latest, hourly_days=7):
         out.append({"ts": ts, "min": avg("min"), "p10": avg("p10"), "median": avg("median"),
                     "mean": avg("mean"), "max": max(maxs) if maxs else None,
                     "quantity": avg("quantity"), "auctions": avg("auctions"), "n": len(rs)})
-    return out + [{**r, "n": 1} for r in recent]
+    return sorted(daily_rows + out, key=lambda r: r["ts"]) + [{**r, "n": 1} for r in recent]
 
 
 def export_site(con, out_dir: str, history_days: int = 90, snapshot_files: int = 12,

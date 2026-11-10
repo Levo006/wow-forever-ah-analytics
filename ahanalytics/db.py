@@ -351,6 +351,63 @@ def refresh_summary(con, house_ids=None):
             """, {"hid": hid, "h": hmax})
 
 
+DAILY_OFFSET = 43199  # Tageswerte liegen auf 11:59:59 UTC – kollidiert nie mit einem Snapshot
+
+
+def is_daily_ts(ts: int) -> bool:
+    return ts % 86400 == DAILY_OFFSET
+
+
+def compact(con, hourly_days: int = 7, keep_days: int = 120, log=print) -> dict:
+    """Verdichtet stündliche Daten älter als ``hourly_days`` zu einem Wert pro Tag.
+
+    Nur vollständige Tage werden verdichtet (jeder Tag genau einmal). Preise werden
+    gemittelt, ``max`` als Maximum. Daten älter als ``keep_days`` werden gelöscht.
+    """
+    stats = {"days": 0}
+    stats["rows_before"] = con.execute("SELECT COUNT(*) FROM prices").fetchone()[0]
+    d = DAILY_OFFSET
+    for hid, latest in con.execute(
+            "SELECT h.id, MAX(s.ts) FROM houses h JOIN snapshots s ON s.house_id=h.id "
+            "WHERE h.granularity='hour' GROUP BY h.id").fetchall():
+        cut_day = (latest - hourly_days * 86400) // 86400 * 86400
+        with transaction(con):
+            days = con.execute(
+                f"SELECT DISTINCT ts / 86400 FROM prices WHERE house_id=? AND ts < ? AND ts % 86400 != {d}",
+                (hid, cut_day)).fetchall()
+            if days:
+                con.execute(
+                    f"""INSERT OR REPLACE INTO prices(house_id, item_id, ts, min, p10, median, mean, max, quantity, auctions)
+                        SELECT house_id, item_id, (ts / 86400) * 86400 + {d},
+                               CAST(ROUND(AVG(min)) AS INTEGER), CAST(ROUND(AVG(p10)) AS INTEGER),
+                               CAST(ROUND(AVG(median)) AS INTEGER), CAST(ROUND(AVG(mean)) AS INTEGER),
+                               MAX(max), CAST(ROUND(AVG(quantity)) AS INTEGER), CAST(ROUND(AVG(auctions)) AS INTEGER)
+                        FROM prices WHERE house_id=? AND ts < ? AND ts % 86400 != {d}
+                        GROUP BY item_id, ts / 86400""", (hid, cut_day))
+                con.execute(f"DELETE FROM prices WHERE house_id=? AND ts < ? AND ts % 86400 != {d}", (hid, cut_day))
+                con.execute(
+                    f"""INSERT OR IGNORE INTO snapshots(house_id, ts, source, item_count, auction_count, total_value, imported_at)
+                        SELECT house_id, (ts / 86400) * 86400 + {d}, 'tagesmittel',
+                               CAST(ROUND(AVG(item_count)) AS INTEGER), CAST(ROUND(AVG(auction_count)) AS INTEGER),
+                               CAST(ROUND(AVG(total_value)) AS INTEGER), MAX(imported_at)
+                        FROM snapshots WHERE house_id=? AND ts < ? AND ts % 86400 != {d}
+                        GROUP BY ts / 86400""", (hid, cut_day))
+                con.execute(f"""DELETE FROM ladders WHERE snapshot_id IN (SELECT id FROM snapshots
+                                WHERE house_id=? AND ts < ? AND ts % 86400 != {d})""", (hid, cut_day))
+                con.execute(f"DELETE FROM snapshots WHERE house_id=? AND ts < ? AND ts % 86400 != {d}",
+                            (hid, cut_day))
+                stats["days"] += len(days)
+            old = latest - keep_days * 86400
+            con.execute("DELETE FROM prices WHERE house_id=? AND ts < ?", (hid, old))
+            con.execute("DELETE FROM snapshots WHERE house_id=? AND ts < ?", (hid, old))
+    with transaction(con):
+        refresh_summary(con)
+        bump_data_version(con)
+    stats["rows_after"] = con.execute("SELECT COUNT(*) FROM prices").fetchone()[0]
+    log(f"Verdichtet: {stats['days']} Haus-Tage, Preiszeilen {stats['rows_before']} -> {stats['rows_after']}")
+    return stats
+
+
 class ConnectionPool:
     """Eine Verbindung pro Thread (SQLite + WAL erlaubt parallele Leser)."""
 

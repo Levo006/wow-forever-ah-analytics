@@ -160,5 +160,28 @@ class ApiTest(unittest.TestCase):
             "SELECT COUNT(*) FROM item_summary WHERE house_id=?", (self.house,)).fetchone()[0])
 
 
+class CompactTest(unittest.TestCase):
+    def test_compact_whole_days(self):
+        con = db.connect(":memory:")
+        hid = db.upsert_house(con, "t", "x", "Haus", granularity="hour")
+        day0 = 1_790_000_000 // 86400 * 86400
+        for h in range(10 * 24):  # 10 Tage stündlich
+            ts = day0 + h * 3600
+            db.write_snapshot(con, hid, ts, "t", {1: {"min": 100 + (h % 24), "max": 200, "quantity": 10}})
+        db.refresh_summary(con)
+        res = db.compact(con, hourly_days=7, log=lambda *a: None)
+        rows = con.execute("SELECT ts, min, max FROM prices ORDER BY ts").fetchall()
+        daily = [r for r in rows if db.is_daily_ts(r[0])]
+        hourly = [r for r in rows if not db.is_daily_ts(r[0])]
+        self.assertEqual(len(daily), 2)                  # Tage 0 und 1 vollständig verdichtet
+        self.assertEqual(daily[0][1], round(sum(100 + i for i in range(24)) / 24))
+        self.assertEqual(daily[0][2], 200)
+        self.assertEqual(len(hourly), 8 * 24)
+        self.assertEqual(res["days"], 2)
+        again = db.compact(con, hourly_days=7, log=lambda *a: None)  # idempotent
+        self.assertEqual(again["days"], 0)
+        self.assertEqual(con.execute("SELECT COUNT(*) FROM snapshots WHERE source='tagesmittel'").fetchone()[0], 2)
+
+
 if __name__ == "__main__":
     unittest.main()
