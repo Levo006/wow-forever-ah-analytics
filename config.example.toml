@@ -1,0 +1,27 @@
+# Kopie als config.toml speichern und anpassen. Alle Einträge sind optional.
+
+[server]
+host = "127.0.0.1"   # nur lokal erreichbar
+port = 8765
+# db_path = "data/ah.sqlite"
+
+[battlenet]
+# API-Client unter https://develop.battle.net/access/clients anlegen.
+# Alternativ Umgebungsvariablen BLIZZARD_CLIENT_ID / BLIZZARD_CLIENT_SECRET.
+client_id = ""
+client_secret = ""
+regions = ["eu"]      # eu, us, kr, tw
+locale = "de_DE"      # Sprache der Item-Namen
+ruleset = ""          # leer = erstes Ruleset (alle liefern dieselben Häuser)
+houses = []           # leer = alle Auktionshäuser, sonst z. B. [110, 111, 112]
+
+[collector]
+interval_minutes = 60 # Abstand der Snapshots bei --collect / collect --loop
+ladder_keep = 48      # Preisstaffeln für die letzten N Snapshots je Haus behalten
+fetch_metadata = true # Item-Namen, Qualität, Klasse und Icons nachladen
+
+[auctionator]
+# leer = automatisch unter wow_root\WTF\Account\*\SavedVariables\Auctionator.lua suchen
+path = ""
+wow_root = 'G:\World of Warcraft\_forever_'
+region = "eu"
