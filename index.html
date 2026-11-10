@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="de" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Forever AH-Analytics</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%23d9a400'/><text x='16' y='22' font-size='16' text-anchor='middle' font-family='Georgia' fill='%23231a00'>g</text></svg>">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#/"><span class="coin">g</span> Forever&nbsp;AH&#8209;Analytics</a>
+    <nav class="nav" id="nav">
+      <a href="#/" data-route="dashboard">Übersicht</a>
+      <a href="#/search" data-route="search">Suche</a>
+      <a href="#/categories" data-route="categories">Kategorien</a>
+      <a href="#/movers" data-route="movers">Top-Movers</a>
+      <a href="#/deals" data-route="deals">Deals</a>
+      <a href="#/compare" data-route="compare">Vergleich <span id="cmpCount" class="badge" hidden></span></a>
+      <a href="#/data" data-route="data">Daten</a>
+    </nav>
+    <div class="topctl">
+      <label class="sr" for="houseSel">Auktionshaus</label>
+      <select id="houseSel" title="Auktionshaus"></select>
+      <a id="fresh" class="pill fresh" href="#/data" hidden></a>
+      <form id="quickSearch" class="quick" role="search">
+        <input id="quickInput" type="search" placeholder="Item suchen … (DE/EN oder ID)" autocomplete="off" aria-label="Item suchen">
+        <div id="quickResults" class="ac" hidden></div>
+      </form>
+      <button id="themeBtn" class="iconbtn" title="Hell/Dunkel umschalten" aria-label="Farbschema umschalten">◐</button>
+    </div>
+  </header>
+  <main id="main" tabindex="-1"><div class="loading">Lade …</div></main>
+  <div id="toast" class="toast" hidden></div>
+  <div id="tooltip" class="vtip" hidden></div>
+  <script src="vendor/chart.umd.min.js"></script>
+  <script src="static-api.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
