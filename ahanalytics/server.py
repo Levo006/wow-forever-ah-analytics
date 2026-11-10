@@ -127,6 +127,13 @@ def make_handler(cfg, pool: db.ConnectionPool, cache: ResponseCache, collector: 
         ("GET", r"/api/import/log", lambda c, p, m: api.import_log(c, p)),
     ]
     compiled = [(meth, re.compile(pat + r"/?$"), fn) for meth, pat, fn in routes]
+
+    def start_metadata():
+        """Item-Namen/Icons für neue Items im Hintergrund nachladen."""
+        def run():
+            from .metadata import fill_metadata
+            fill_metadata(cfg, db.connect(cfg["server"]["db_path"]), log=lambda *a: None, limit=300)
+        threading.Thread(target=run, name="metadata", daemon=True).start()
     uncached = {"/api/status", "/api/import/log"}
 
     class Handler(BaseHTTPRequestHandler):
@@ -185,6 +192,7 @@ def make_handler(cfg, pool: db.ConnectionPool, cache: ResponseCache, collector: 
                     from .sources import auctionator
                     res = auctionator.import_bytes(con, data, region=params.get("region", "eu"),
                                                    label=params.get("filename", "Upload"))
+                    start_metadata()
                     return self._json(200, res.as_dict())
                 if url.path.rstrip("/") == "/api/import/auctionator/auto":
                     from .sources import auctionator
@@ -195,6 +203,7 @@ def make_handler(cfg, pool: db.ConnectionPool, cache: ResponseCache, collector: 
                         return self._error(404, "Keine Auctionator.lua gefunden – Pfad in config.toml setzen.")
                     results = [auctionator.import_file(con, p, region=av.get("region", "eu")).as_dict()
                                for p in paths]
+                    start_metadata()
                     return self._json(200, {"results": results})
                 if url.path.rstrip("/") == "/api/collect":
                     if not collector:

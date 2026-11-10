@@ -11,6 +11,7 @@ DEFAULTS = {
     "battlenet": {"client_id": "", "client_secret": "", "regions": ["eu"], "locale": "de_DE",
                   "ruleset": "", "houses": []},
     "collector": {"interval_minutes": 60, "ladder_keep": 48, "fetch_metadata": True},
+    "metadata": {"source": "auto"},  # auto | wowhead | battlenet | none
     "auctionator": {"path": "", "wow_root": r"G:\World of Warcraft\_forever_", "region": "eu"},
 }
 

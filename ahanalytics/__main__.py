@@ -43,6 +43,8 @@ def main(argv=None):
                    help="Anzahl jüngster Snapshots je Haus mit Detaildatei")
     e.add_argument("--repo-url", default=None, help="Link zum Code (wird auf der Seite angezeigt)")
 
+    sub.add_parser("metadata", help="Item-Namen, Qualität, Kategorie und Icons nachladen")
+
     sub.add_parser("refresh", help="Zusammenfassungen neu berechnen")
     sub.add_parser("info", help="Datenbank-Statistik anzeigen")
 
@@ -110,6 +112,8 @@ def main(argv=None):
         export.export_site(con, out, history_days=args.history_days,
                            snapshot_files=args.snapshot_files,
                            repo_url=args.repo_url or cfg.get("publish", {}).get("repo_url", ""))
+    elif args.cmd == "metadata":
+        _maybe_metadata(cfg, con)
     elif args.cmd == "refresh":
         with db.transaction(con):
             db.refresh_summary(con)
@@ -127,19 +131,9 @@ def main(argv=None):
     return 0
 
 
-def _maybe_metadata(cfg, con):
-    bn = cfg["battlenet"]
-    if not (bn.get("client_id") and bn.get("client_secret")):
-        print("Hinweis: Ohne Battle.net-Zugang bleiben Item-Namen/Icons leer (\"Item #ID\").")
-        return
-    from .sources import battlenet
-    client = battlenet.BattleNetClient(bn["client_id"], bn["client_secret"],
-                                       region=(bn.get("regions") or ["eu"])[0],
-                                       locale=bn.get("locale", "de_DE"))
-    try:
-        battlenet.fetch_item_metadata(con, client)
-    except Exception as exc:  # noqa: BLE001
-        print(f"Metadaten konnten nicht geladen werden: {exc}")
+def _maybe_metadata(cfg, con, limit=10000):
+    from .metadata import fill_metadata
+    fill_metadata(cfg, con, limit=limit)
 
 
 if __name__ == "__main__":

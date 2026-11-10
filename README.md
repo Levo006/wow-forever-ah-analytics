@@ -1,5 +1,7 @@
 # Forever AH-Analytics
 
+> **© Levo006 – Alle Rechte vorbehalten.** Der Code ist öffentlich einsehbar, damit die Website über GitHub Pages abrufbar ist. Nutzung, Veränderung und Weitergabe des Codes sind ohne ausdrückliche Erlaubnis nicht gestattet. Spielinhalte (Item-Namen, Icons) gehören Blizzard Entertainment.
+
 Lokale Website zur Analyse der Auktionshauspreise in **WoW: Forever**: Preisverläufe, Kennzahlen, Drilldown bis zum einzelnen Snapshot, Vergleiche, Top-Movers und Deals.
 
 * **Keine Abhängigkeiten:** nur Python ≥ 3.11 (Standardbibliothek). Chart.js liegt lokal unter `static/vendor/`.
@@ -28,6 +30,7 @@ python run.py import-auctionator          # echte Daten importieren
 python run.py serve                       # Website starten (Port 8765)
 python run.py --db data/demo.sqlite demo  # Beispieldaten erzeugen
 python run.py --db data/demo.sqlite serve --port 8766
+python run.py metadata                    # Item-Namen/Icons nachladen (Wowhead)
 python run.py info                        # was ist in der Datenbank?
 python -m unittest discover -s tests      # Tests
 ```
@@ -97,7 +100,18 @@ Auctionator speichert pro Realm (in Forever: „PvE“, „PvP“) eine CBOR-kod
 
 Importe sind idempotent (gleicher Tag wird überschrieben). Ausrüstungsvarianten (`g:ID:ilvl`) werden zum Item zusammengeführt (Minimum der Preise, Summe der Mengen), Kampfhaustiere (`p:`) übersprungen. Tageswerte haben kein Median/Mittel und keine Tageszeitmuster.
 
-**Item-Namen:** Auctionator speichert keine Namen. Ohne Battle.net-Zugang erscheinen Items als „Item #ID“ (mit Wowhead-Link); mit konfiguriertem Zugang werden Name, Qualität, Klasse und Icon nach dem Import automatisch geladen.
+**Item-Namen und Icons:** Auctionator speichert keine Namen. Nach jedem Import lädt das Tool Name, Qualität, Klasse/Unterklasse und Icon für neue Items aus der **Wowhead-Datenbank für WoW: Forever** (`wowhead.com/forever/de/item=ID&xml`, gedrosselt, dauerhaft zwischengespeichert – jedes Item nur einmal). Manuell: `python run.py metadata`. Mit Battle.net-Zugang werden fehlende Items zusätzlich dort gesucht (`[metadata] source` in `config.toml`).
+
+### Wann erscheinen neue Preise auf der Website?
+
+| Schritt | Was passiert | Dauer |
+|---|---|---|
+| Scan im Spiel | Auctionator merkt sich pro Item den günstigsten Preis und die Menge **des Tages** (Vollscan oder Suche im Auktionshaus) | sofort |
+| `/reload` / Ausloggen | WoW schreibt `Auctionator.lua` | sofort |
+| `publish.bat` | Import → Item-Namen → Export → Push zu GitHub | ca. 1 Minute |
+| GitHub Pages | Seite wird neu bereitgestellt; Browser speichern bis zu 10 Minuten zwischen | 1–10 Minuten |
+
+Eine **selbst eingestellte Auktion** taucht also erst auf, wenn ein Scan sie danach erfasst hat **und** veröffentlicht wurde – theoretisch nach wenigen Minuten, praktisch beim nächsten `publish.bat`. Da Auctionator nur Tageswerte (günstigster Preis, maximale Menge) speichert, verändert sie den Wert nur, wenn sie der günstigste Preis ist oder die Tagesmenge erhöht. Mit der Battle.net API läuft das automatisch stündlich und umfasst alle Auktionen.
 
 ### 2. Battle.net API (live)
 

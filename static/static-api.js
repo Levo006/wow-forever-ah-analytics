@@ -202,7 +202,10 @@ const StaticAPI = (() => {
       if (v !== null && !isNaN(v)) rows = rows.filter((r) => r[col] !== null && (sgn > 0 ? r[col] >= v : r[col] <= v));
     }
     if (params.commodity === "0" || params.commodity === "1") rows = rows.filter((r) => (r.is_commodity || 0) === Number(params.commodity));
-    sortRows(rows, SORTS[params.sort] || "market_value", params.dir);
+    if (params.sort === "relevance" && q) {
+      const rank = (r) => { const n = r.name.toLowerCase(); return n.startsWith(q) ? 0 : n.includes(" " + q) ? 1 : 2; };
+      rows.sort((a, b) => rank(a) - rank(b) || (b.market_value || 0) - (a.market_value || 0) || a.item_id - b.item_id);
+    } else sortRows(rows, SORTS[params.sort] || "market_value", params.dir);
     const pg = page(rows, params);
     return { total: pg.total, page: pg.page, page_size: pg.page_size, items: pg.slice };
   }

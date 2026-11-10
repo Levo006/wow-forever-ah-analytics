@@ -94,11 +94,11 @@ function iconUrl(icon) {
   if (/^https?:/.test(icon)) return icon;
   return `https://wow.zamimg.com/images/wow/icons/medium/${encodeURIComponent(icon)}.jpg`;
 }
-function icon(it, big = false) {
+function icon(it, size = "") {
   const q = it.quality ?? 1;
   const url = iconUrl(it.icon);
   const letter = esc((it.name || "?").replace(/^Item #/, "#").slice(0, 1));
-  const cls = `ico ${big ? "big" : ""} bq${q}`;
+  const cls = `ico ${size === true ? "big" : size || ""} bq${q}`;
   if (!url) return `<span class="${cls}">${letter}</span>`;
   return `<img class="${cls}" src="${url}" alt="" loading="lazy" onerror="this.outerHTML='<span class=&quot;${cls}&quot;>${letter}</span>'">`;
 }
@@ -146,6 +146,7 @@ async function route() {
   if (r.params.house && houseById(r.params.house) && String(r.params.house) !== String(state.house)) {
     state.house = String(r.params.house); store.set("house", state.house);
     $("#houseSel").value = state.house; classCache = {};
+    updateFreshness();
   }
   inflight.forEach((c) => c.abort()); inflight.clear();
   state.charts.forEach((c) => c.destroy()); state.charts = [];
@@ -406,6 +407,9 @@ async function viewSearch(r) {
     go("/search", np, true);
   };
   form.addEventListener("submit", (e) => { e.preventDefault(); submit(); });
+  const qWrap = form.q.parentElement; qWrap.style.position = "relative";
+  qWrap.insertAdjacentHTML("beforeend", '<div class="ac" id="qRes" hidden></div>');
+  attachAutocomplete(form.q, $("#qRes"), p.house || state.house, (it) => (location.hash = `/item/${it.item_id}?house=${it.house_id}`), { showAll: false });
   form.class.addEventListener("change", () => { form.subclass.value = ""; submit(); });
   $$("select, input[type=checkbox]", form).forEach((el) => el.name !== "class" && el.addEventListener("change", submit));
   $("#reset").onclick = () => go("/search", {}, true);
@@ -485,7 +489,7 @@ async function viewItem(r) {
       <div><h1 class="q${it.quality ?? 1}">${esc(it.name)}</h1>
         <div class="meta"><span>ID ${id}</span>${it.quality_name ? `<span>${esc(it.quality_name)}</span>` : ""}${it.item_level ? `<span>Stufe ${it.item_level}</span>` : ""}
         ${it.is_commodity ? '<span class="pill">Handelsware</span>' : ""}${it.vendor_sell ? `<span>Händler: ${money(it.vendor_sell)}</span>` : ""}
-        <a href="https://www.wowhead.com/de/item=${id}" target="_blank" rel="noopener">Wowhead ↗</a></div></div>
+        <a href="https://www.wowhead.com/forever/de/item=${id}" target="_blank" rel="noopener">Wowhead ↗</a></div></div>
       <div class="actions">
         <select id="hsel" title="Auktionshaus">${info.houses.map((h) => `<option value="${h.house_id}" ${h.house_id === hid ? "selected" : ""}>${esc(h.house_name)}</option>`).join("")}</select>
         <button class="btn" id="cmpBtn">${inCmp ? "✓ Im Vergleich" : "+ Vergleich"}</button>
@@ -692,7 +696,7 @@ async function viewCompare(r) {
   $("#mode").onclick = (e) => { const b = e.target.closest("button"); if (b) setParams({ mode: b.dataset.o }); };
   $("#hs").onchange = (e) => setParams({ house: e.target.value });
   const setIds = (n) => { state.compare = n; store.set("compare", n); updateCompareBadge(); setParams({ items: n.join(",") }); };
-  attachAutocomplete($("#addItem"), $("#addRes"), house, (it) => { if (!ids.includes(it.item_id) && ids.length < 8) setIds([...ids, it.item_id]); });
+  attachAutocomplete($("#addItem"), $("#addRes"), house, (it) => { if (!ids.includes(it.item_id) && ids.length < 8) setIds([...ids, it.item_id]); }, { pickFirstOnEnter: true, showAll: false });
   if (!ids.length) {
     $("#chips").innerHTML = '<span class="muted">Noch keine Items gewählt – über das Suchfeld rechts oder „+ Vgl.“ in Tabellen hinzufügen.</span>';
     $("#cbox").innerHTML = '<div class="empty">Kein Item ausgewählt.</div>';
@@ -807,6 +811,20 @@ async function viewDeals(r) {
 }
 
 // ================================================================== Daten
+
+function dataFlowCard() {
+  return `<div class="card mt"><h2>Wie kommen die Preise auf diese Seite?</h2>
+    <ol class="flow">
+      <li><b>Scan im Spiel:</b> Das Addon Auctionator merkt sich bei jedem Auktionshaus-Scan (und bei jeder Suche dort) pro Item den niedrigsten Preis und die angebotene Menge des Tages.</li>
+      <li><b>Speichern:</b> WoW schreibt diese Daten erst beim <code>/reload</code>, Ausloggen oder Beenden in die Datei <code>Auctionator.lua</code>.</li>
+      <li><b>Import:</b> <code>start.bat</code> bzw. <code>publish.bat</code> liest die Datei ein, berechnet Kennzahlen und lädt Item-Namen und Icons (Wowhead-Datenbank für Forever).</li>
+      <li><b>Veröffentlichen:</b> <code>publish.bat</code> exportiert die Seite und lädt sie zu GitHub hoch; GitHub Pages stellt sie nach 1–2 Minuten bereit, Browser können bis zu 10 Minuten zwischenspeichern.</li>
+    </ol>
+    <div class="note"><b>Beispiel – eigene Auktion einstellen:</b> Sie erscheint erst, wenn danach ein Scan läuft, der sie erfasst (Auctionator speichert nur den <i>günstigsten</i> Preis und die Gesamtmenge pro Tag), dann <code>/reload</code> und <code>publish.bat</code>.
+      Theoretisch also nach wenigen Minuten, praktisch beim nächsten Veröffentlichen. Es gibt dabei nur <b>einen Wert pro Tag</b>; ein erneuter Scan am selben Tag überschreibt ihn.</div>
+    <p class="muted small">Mit einem Battle.net-API-Zugang sammelt das Tool stattdessen automatisch jede Stunde alle Auktionen aller Häuser (inkl. Median, Mittelwert und Preisstaffel) – unabhängig davon, ob jemand im Spiel scannt.</p>
+  </div>`;
+}
 async function viewData() {
   const [st, hs, lg] = await Promise.all([api("status"), api("houses"), api("import/log")]);
   const housesTable = () => table([
@@ -824,6 +842,7 @@ async function viewData() {
       Suche, Filter, Top-Movers, Deals und Vergleiche werden direkt im Browser berechnet. Historie: ${num(st.history_days)} Tage; Detaildaten für die jüngsten Snapshots.</p>
       <p>Eigene Instanz mit Import, Live-Sammler und vollständiger Historie: Code herunterladen${st.repo_url ? ` von <a href="${esc(st.repo_url)}" target="_blank" rel="noopener">${esc(st.repo_url.replace("https://", ""))}</a>` : ""} und <code>python run.py serve</code> starten (siehe README).</p>
     </div>
+    ${dataFlowCard()}
     <div class="card flush mt"><h2>Auktionshäuser</h2>${housesTable()}</div>
     <div class="card flush mt"><h2>Import-Protokoll</h2>${table([
       { label: "Zeit", fmt: (x) => dt(x.ts) }, { label: "Quelle", fmt: (x) => esc(x.source) },
@@ -848,6 +867,7 @@ async function viewData() {
         <p class="muted small">Endpunkte: <code>/data/wow/ruleset/{id}/auctions/{haus}</code> und <code>…/commodities</code>, Namespace <code>dynamic-forever-{region}</code>. Item-Namen und Icons kommen aus <code>static-forever-{region}</code>.</p>
       </div>
     </div>
+    ${dataFlowCard()}
     <div class="card flush mt"><h2>Auktionshäuser</h2>${table([
       { label: "ID", fmt: (h) => h.id }, { label: "Name", fmt: (h) => esc(h.name) }, { label: "Quelle", fmt: (h) => `<span class="pill">${esc(h.source)}</span>` },
       { label: "Region", fmt: (h) => esc(h.region) }, { label: "Fraktion", fmt: (h) => esc(h.faction || "–") },
@@ -880,30 +900,69 @@ async function viewData() {
 }
 
 // ======================================================== Autocomplete
-function attachAutocomplete(input, box, house, onPick) {
-  let timer, items = [], sel = -1;
-  const render = () => {
-    box.hidden = !items.length;
-    box.innerHTML = items.map((it, i) => `<a href="#/item/${it.item_id}?house=${it.house_id}" data-i="${i}" class="${i === sel ? "sel" : ""}">${icon(it)}<span class="q${it.quality ?? 1}">${esc(it.name)}</span><span class="meta">${moneyText(it.last_min)}</span></a>`).join("");
+/**
+ * Suchvorschläge mit Icon, Qualitätsfarbe, Kategorie und Preis.
+ * opts.pickFirstOnEnter: Enter ohne Auswahl übernimmt den ersten Treffer
+ * (sonst wird das umgebende Formular normal abgeschickt).
+ */
+function attachAutocomplete(input, box, house, onPick, opts = {}) {
+  let timer, items = [], total = 0, sel = -1, lastQ = "", seq = 0;
+  const hl = (name, q) => {
+    const i = name.toLowerCase().indexOf(q.toLowerCase());
+    if (i < 0 || !q) return esc(name);
+    return esc(name.slice(0, i)) + "<mark>" + esc(name.slice(i, i + q.length)) + "</mark>" + esc(name.slice(i + q.length));
   };
+  const render = () => {
+    if (!lastQ) { box.hidden = true; return; }
+    box.hidden = false;
+    if (!items.length) { box.innerHTML = `<div class="acempty">Keine Treffer für „${esc(lastQ)}“</div>`; return; }
+    box.innerHTML = items.map((it, i) => {
+      const cat = [it.class_name, it.subclass_name].filter(Boolean).map(esc).join(" › ");
+      return `<a href="#/item/${it.item_id}?house=${it.house_id}" data-i="${i}" class="acrow ${i === sel ? "sel" : ""}">
+        ${icon(it, "md")}
+        <span class="acmain"><span class="acname q${it.quality ?? 1}">${hl(it.name, lastQ)}</span>
+          <span class="acsub">${cat || "Kategorie unbekannt"} · ID ${it.item_id}</span></span>
+        <span class="acprice">${money(it.last_min)}<span class="acsub">${it.last_qty != null ? num(it.last_qty) + " Stk." : ""}</span></span></a>`;
+    }).join("") + (opts.showAll !== false && total > items.length
+      ? `<a href="#" data-all class="acall ${sel === items.length ? "sel" : ""}">Alle ${num(total)} Treffer anzeigen ›</a>` : "");
+  };
+  const query = (q) => {
+    const my = ++seq;
+    return api("search", { q, house: house || state.house, page_size: 8, sort: "relevance" }).then((r) => {
+      if (my !== seq) return;
+      items = r.items; total = r.total; sel = -1; lastQ = q; render();
+    }).catch(() => { /* abgebrochen */ });
+  };
+  input.setAttribute("role", "combobox");
+  input.setAttribute("aria-autocomplete", "list");
   input.addEventListener("input", () => {
     clearTimeout(timer);
     const q = input.value.trim();
-    if (q.length < 2) { items = []; render(); return; }
-    timer = setTimeout(async () => {
-      try { items = (await api("search", { q, house: house || state.house, page_size: 12, sort: "value" })).items; sel = -1; render(); } catch { /* abgebrochen */ }
-    }, 160);
+    if (!q) { lastQ = ""; items = []; render(); return; }
+    timer = setTimeout(() => query(q), 120);
   });
+  input.addEventListener("focus", () => { if (lastQ && input.value.trim() === lastQ) render(); });
   input.addEventListener("keydown", (e) => {
-    if (box.hidden) return;
-    if (e.key === "ArrowDown") { sel = Math.min(items.length - 1, sel + 1); render(); e.preventDefault(); }
-    else if (e.key === "ArrowUp") { sel = Math.max(0, sel - 1); render(); e.preventDefault(); }
-    else if (e.key === "Enter" && sel >= 0) { e.preventDefault(); pick(items[sel]); }
-    else if (e.key === "Escape") { items = []; render(); }
+    const max = items.length + (total > items.length && opts.showAll !== false ? 1 : 0) - 1;
+    if (e.key === "ArrowDown" && !box.hidden) { sel = Math.min(max, sel + 1); render(); e.preventDefault(); }
+    else if (e.key === "ArrowUp" && !box.hidden) { sel = Math.max(-1, sel - 1); render(); e.preventDefault(); }
+    else if (e.key === "Enter") {
+      if (sel >= 0 && sel < items.length) { e.preventDefault(); pick(items[sel]); }
+      else if (sel === items.length && items.length) { e.preventDefault(); showAll(); }
+      else if (opts.pickFirstOnEnter && items.length) { e.preventDefault(); pick(items[0]); }
+      else box.hidden = true;
+    } else if (e.key === "Escape") { box.hidden = true; sel = -1; }
   });
-  box.addEventListener("click", (e) => { const a = e.target.closest("a[data-i]"); if (a) { e.preventDefault(); pick(items[+a.dataset.i]); } });
+  box.addEventListener("mousedown", (e) => e.preventDefault()); // Fokus im Feld halten
+  box.addEventListener("click", (e) => {
+    if (e.target.closest("a[data-all]")) { e.preventDefault(); showAll(); return; }
+    const a = e.target.closest("a[data-i]");
+    if (a) { e.preventDefault(); pick(items[+a.dataset.i]); }
+  });
   document.addEventListener("click", (e) => { if (!box.contains(e.target) && e.target !== input) box.hidden = true; });
-  function pick(it) { box.hidden = true; input.value = ""; items = []; onPick(it); }
+  function reset() { box.hidden = true; input.value = ""; items = []; lastQ = ""; sel = -1; }
+  function pick(it) { reset(); input.blur(); onPick(it); }
+  function showAll() { const q = lastQ; reset(); go("/search", { q, house: house || state.house, sort: "relevance" }); }
 }
 
 // =================================================================== Start
@@ -916,6 +975,15 @@ async function loadHouses() {
   for (const h of state.houses) (groups[`${(h.region || "?").toUpperCase()} · ${h.source}`] ||= []).push(h);
   sel.innerHTML = state.houses.length ? Object.entries(groups).map(([g, hs]) => `<optgroup label="${esc(g)}">${hs.map((h) => `<option value="${h.id}" ${String(h.id) === String(state.house) ? "selected" : ""}>${esc(h.name)}</option>`).join("")}</optgroup>`).join("")
     : '<option value="">Keine Daten</option>';
+  updateFreshness();
+}
+function updateFreshness() {
+  const h = houseById(state.house), el = $("#fresh");
+  if (!el) return;
+  if (!h) { el.hidden = true; return; }
+  el.hidden = false;
+  el.textContent = `Stand: ${ago(h.last_ts)}`;
+  el.title = `Letzter Datenpunkt: ${dt(h.last_ts)}${h.granularity === "day" ? " (Tageswerte aus Auctionator)" : ""}${STATIC ? " · statischer Export" : ""}`;
 }
 
 function initTheme() {
@@ -935,6 +1003,7 @@ function initTheme() {
   try { await loadHouses(); } catch (e) { main.innerHTML = `<div class="error">Server nicht erreichbar: ${esc(e.message)}</div>`; return; }
   $("#houseSel").onchange = (e) => {
     state.house = e.target.value; store.set("house", state.house); classCache = {};
+    updateFreshness();
     const r = parseHash();
     const p = { ...r.params }; delete p.house; delete p.page;
     go(r.path, p, true);

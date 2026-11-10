@@ -20,6 +20,11 @@ interval_minutes = 60 # Abstand der Snapshots bei --collect / collect --loop
 ladder_keep = 48      # Preisstaffeln für die letzten N Snapshots je Haus behalten
 fetch_metadata = true # Item-Namen, Qualität, Klasse und Icons nachladen
 
+[metadata]
+# Herkunft von Item-Namen, Qualität, Kategorie und Icons:
+# auto = Wowhead (Forever-Datenbank), danach Battle.net falls konfiguriert
+source = "auto"       # auto | wowhead | battlenet | none
+
 [auctionator]
 # leer = automatisch unter wow_root\WTF\Account\*\SavedVariables\Auctionator.lua suchen
 path = ""

@@ -282,9 +282,16 @@ def search(con, params):
     wsql = ("WHERE " + " AND ".join(where)) if where else ""
     base = f"{SUMMARY_FROM} {wsql}"
     total = con.execute(f"SELECT COUNT(*) {base}", args).fetchone()[0]
+    order = f"{sort} IS NULL, {sort} {direction}, s.item_id"
+    order_args: list = []
+    if params.get("sort") == "relevance" and q:
+        # Treffer am Namensanfang zuerst, dann Wortanfang, dann beliebig; innerhalb nach Marktwert
+        order = ("CASE WHEN i.name LIKE ? THEN 0 WHEN i.name LIKE ? THEN 1 ELSE 2 END, "
+                 "market_value DESC, s.item_id")
+        order_args = [f"{q}%", f"% {q}%"]
     rows = con.execute(
-        f"SELECT {SUMMARY_COLS} {base} ORDER BY {sort} IS NULL, {sort} {direction}, s.item_id "
-        f"LIMIT ? OFFSET ?", args + [size, (page - 1) * size]).fetchall()
+        f"SELECT {SUMMARY_COLS} {base} ORDER BY {order} LIMIT ? OFFSET ?",
+        args + order_args + [size, (page - 1) * size]).fetchall()
     items = [_item_row(r) for r in rows]
     if params.get("spark") == "1" and items:
         _attach_sparklines(con, items)
