@@ -68,7 +68,7 @@ def _ranges_for(granularity):
 H = 3600
 # Auflösung der Historie in den statischen Dateien: (bis zu diesem Alter, Bucket-Größe; 0 = Original)
 TIERS_MARKET = [(2 * 86400, 0), (7 * 86400, 4 * H), (None, 86400)]   # Alle AHs / Neutral
-TIERS_HOUSE = [(7 * 86400, 6 * H)]                                  # Einzelhäuser: nur 7 Tage grob
+TIERS_HOUSE = [(2 * 86400, 0), (7 * 86400, 6 * H)]                 # Einzelhäuser: 48 h stündlich, bis 7 Tage 6-h-Mittel
 HOUSE_FIELDS = ["ts", "min", "median", "quantity", "n"]
 
 

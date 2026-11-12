@@ -156,7 +156,10 @@ class ExportTiersTest(unittest.TestCase):
         rows = [{"ts": latest - h * 3600, "min": 100, "median": 100, "quantity": 1} for h in range(10 * 24)]
         out = export.compact_history(rows, latest, tiers=export.TIERS_HOUSE)
         self.assertTrue(all(latest - r["ts"] <= 7 * 86400 + 3 * 3600 for r in out))
-        self.assertLessEqual(len(out), 30)
+        hourly = [r for r in out if r["n"] == 1]
+        self.assertEqual(len(hourly), 49)                       # letzte 48 h + aktueller Punkt stündlich
+        self.assertTrue(all(latest - r["ts"] <= 2 * 86400 for r in hourly))
+        self.assertLessEqual(len(out), 49 + 21)                 # davor 6-Stunden-Mittel
 
 
 class TooltipTest(unittest.TestCase):

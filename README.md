@@ -51,7 +51,7 @@ Die öffentliche Seite ist ein **statischer Export**, den GitHub Pages kostenlos
 5. Erst danach fehlende Namen in kleinen Portionen über Wowhead ergänzen (gedrosselt, dauert einige Minuten)
 6. Datenbank zurück ins Release legen
 
-**Größen im Dauerbetrieb** (gemessen mit 10 Tagen simulierter Vollhistorie): Datenbank ~210 MB (gepackt ~42 MB), Website-Export ~80 MB, wächst danach nur noch um ~1 MB pro Tag. In der Website-Historie sind die letzten 48 h stündlich, bis 7 Tage 4-Stunden-Mittel, davor Tageswerte (Einzelhäuser: 7 Tage in 6-Stunden-Mitteln).
+**Größen im Dauerbetrieb** (gemessen mit 10 Tagen simulierter Vollhistorie): Datenbank ~210 MB (gepackt ~42 MB), Website-Export ~110 MB (gemessen am 12.11.2026 mit der Live-Datenbank: 112 MB), wächst danach nur noch um ~1 MB pro Tag. In der Website-Historie sind die letzten 48 h stündlich, bis 7 Tage 4-Stunden-Mittel, davor Tageswerte (Einzelhäuser: 48 h stündlich, bis 7 Tage 6-Stunden-Mittel).
 
 Manuell starten: `publish.bat` öffnet die Workflow-Seite → **Run workflow**. Die Zugangsdaten liegen als Repository-Secrets `BLIZZARD_CLIENT_ID` / `BLIZZARD_CLIENT_SECRET` (*Settings → Secrets and variables → Actions*), nie im Code. Hinweis: GitHub pausiert geplante Workflows, wenn im Repository 60 Tage lang nichts passiert – dann unter *Actions* einmal „Enable workflow“ klicken.
 
