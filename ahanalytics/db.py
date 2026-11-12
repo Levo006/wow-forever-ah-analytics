@@ -254,28 +254,49 @@ def upsert_item(con, item_id: int, status="ok", **fields):
 
 # ------------------------------------------------------------ Marktgruppen
 #
-# Neben den einzelnen Auktionshäusern gibt es zwei Sammel-"Häuser":
-#   <region>-alle     alle Fraktions-Auktionshäuser (Allianz + Horde) zusammen
+# Neben den einzelnen Auktionshäusern gibt es je Fraktion ein Sammel-"Haus":
+#   <region>-allianz  alle Allianz-Auktionshäuser (aller Server-Verbünde) zusammen
+#   <region>-horde    alle Horde-Auktionshäuser zusammen
 #   <region>-neutral  alle neutralen Auktionshäuser (Schwarzmeerräuber) zusammen
 # Sie verhalten sich wie normale Häuser (eigene Zeitreihe, Summary, Export).
 
 GROUPS = {
-    "alle": ("Alle Auktionshäuser", "Alle", ("Allianz", "Horde")),
+    "allianz": ("Allianz · alle Verbünde", "Allianz", ("Allianz",)),
+    "horde": ("Horde · alle Verbünde", "Horde", ("Horde",)),
     "neutral": ("Neutral · Schwarzmeerräuber", "Neutral", ("Neutral",)),
 }
+LEGACY_GROUPS = ("alle",)  # frühere Sammelgruppe Allianz + Horde, wird entfernt
 
 
 def house_kind(source: str, ext_id: str) -> str:
-    """alle | neutral | haus | scan"""
+    """allianz | horde | neutral | haus | scan | legacy"""
     ext = str(ext_id)
     for key in GROUPS:
         if ext.endswith("-" + key):
             return key
+    for key in LEGACY_GROUPS:
+        if ext.endswith("-" + key):
+            return "legacy"
     return "scan" if source == "auctionator" else "haus"
 
 
 def group_for_faction(faction: str) -> str:
-    return "neutral" if faction == "Neutral" else "alle"
+    return {"Allianz": "allianz", "Horde": "horde"}.get(faction, "neutral")
+
+
+def drop_legacy_groups(con, log=print) -> int:
+    """Entfernt die frühere Sammelgruppe „Alle Auktionshäuser“ samt Daten."""
+    ids = [r[0] for r in con.execute("SELECT id, source, ext_id FROM houses")
+           if house_kind(r[1], r[2]) == "legacy"]
+    for hid in ids:
+        with transaction(con):
+            con.execute("DELETE FROM ladders WHERE snapshot_id IN (SELECT id FROM snapshots WHERE house_id=?)", (hid,))
+            for t in ("prices", "snapshots", "item_summary"):
+                con.execute(f"DELETE FROM {t} WHERE house_id=?", (hid,))
+            con.execute("DELETE FROM houses WHERE id=?", (hid,))
+    if ids:
+        log(f"Alte Sammelgruppe entfernt: {len(ids)}")
+    return len(ids)
 
 
 def upsert_group_house(con, source: str, region: str, key: str) -> int:

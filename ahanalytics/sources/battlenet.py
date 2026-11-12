@@ -192,9 +192,10 @@ def collect(con, client: BattleNetClient, ruleset=None, only_houses=None,
     touched = []
     commodity_items: set[int] = set()
     # Sammelgruppen: alle Einzelauktionen gemeinsam auswerten (exakter Median usw.)
-    pools: dict[str, list] = {"alle": [], "neutral": []}
-    pool_ts: dict[str, int] = {"alle": 0, "neutral": 0}
-    pool_mins: dict[str, list] = {"alle": [], "neutral": []}  # je Haus {item: (min, menge)}
+    db.drop_legacy_groups(con, log=log)
+    pools: dict[str, list] = {k: [] for k in db.GROUPS}
+    pool_ts: dict[str, int] = {k: 0 for k in db.GROUPS}
+    pool_mins: dict[str, list] = {k: [] for k in db.GROUPS}  # je Haus {item: (preis, menge)}
     for h in houses:
         hid_ext = f"{client.region}-{h['id']}"
         faction = faction_from_name(h["name"])

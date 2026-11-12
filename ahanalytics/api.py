@@ -89,11 +89,11 @@ def house_latest(con, house_id):
 
 
 def _default_house(con):
-    # bevorzugt: Sammelgruppe "Alle Auktionshäuser" mit aktuellen Daten
+    # bevorzugt: Sammelmarkt Allianz mit aktuellen Daten
     for (hid, src, ext) in con.execute(
             "SELECT h.id, h.source, h.ext_id FROM houses h WHERE EXISTS "
             "(SELECT 1 FROM snapshots s WHERE s.house_id=h.id) ORDER BY h.id"):
-        if db.house_kind(src, ext) == "alle":
+        if db.house_kind(src, ext) == "allianz":
             return hid
     return _default_house_fallback(con)
 
@@ -184,7 +184,8 @@ def _house_info(con) -> dict:
 
 
 def decorate_houses(hs: list[dict]) -> list[dict]:
-    """Ergänzt kind (alle|neutral|haus|scan), verbund (A, B, …) und lesbare Bezeichnungen.
+    """Ergänzt kind (allianz|horde|neutral|haus|scan), verbund (A, B, …), group (Sammelmarkt
+    der eigenen Fraktion) und lesbare Bezeichnungen.
 
     Die Battle.net-Häuser von Forever kommen in Dreiergruppen (Allianz/Horde/Neutral
     eines Server-Verbunds): 110/113/116, 111/114/117, 112/115/118, danach 119–121,
@@ -207,10 +208,12 @@ def decorate_houses(hs: list[dict]) -> list[dict]:
     letters = {k: chr(65 + i) for i, k in enumerate(keys)}
     for h in hs:
         k = h["kind"]
-        if k == "alle":
-            h["label"], h["short"] = "Alle Auktionshäuser", "Alle AHs"
+        if k in ("allianz", "horde"):
+            h["label"], h["short"] = f"{h['faction']} · alle Verbünde", h["faction"]
         elif k == "neutral":
             h["label"], h["short"] = "Neutral · Schwarzmeerräuber", "Neutral"
+        elif k == "legacy":
+            h["label"] = h["short"] = h["name"]
         elif k == "scan":
             h["label"], h["short"] = f"Eigene Scans · {h['name']}", "Eigene Scans"
         else:
@@ -220,7 +223,8 @@ def decorate_houses(hs: list[dict]) -> list[dict]:
             fac = h.get("faction") or "?"
             h["label"] = f"{fac} · Verbund {v} (#{num})" if v else h["name"]
             h["short"] = f"{fac} {v}" if v else h["name"]
-    order = {"alle": 0, "neutral": 1, "haus": 2, "scan": 3}
+            h["group"] = db.group_for_faction(fac) if h.get("source") == "battlenet" else None
+    order = {"allianz": 0, "horde": 1, "neutral": 2, "haus": 3, "scan": 4, "legacy": 5}
     fo = {"Allianz": 0, "Horde": 1, "Neutral": 2}
     hs.sort(key=lambda h: (order[h["kind"]], h.get("verbund") or "", fo.get(h.get("faction"), 9), h["name"]))
     return hs
@@ -407,7 +411,7 @@ def item(con, item_id, params):
     info = _house_info(con)
     for h in hs:
         d = info.get(h["house_id"], {})
-        for k in ("kind", "label", "short", "verbund"):
+        for k in ("kind", "label", "short", "verbund", "group"):
             h[k] = d.get(k)
     return {"item": meta, "houses": hs}
 

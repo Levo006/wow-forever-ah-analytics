@@ -36,17 +36,20 @@ class TypicalMinTest(unittest.TestCase):
 class GroupBackfillTest(unittest.TestCase):
     def setUp(self):
         self.con = db.connect(":memory:")
-        a, h, n = _house(self.con, 110, "Allianz"), _house(self.con, 113, "Horde"), _house(self.con, 116, "Neutral")
+        a, h, n = _house(self.con, 110, "Allianz"), _house(self.con, 111, "Allianz"), _house(self.con, 116, "Neutral")
+        _house(self.con, 113, "Horde")  # ohne Daten
         for k in range(3):
             ts = T0 + k * 3600
             db.write_snapshot(self.con, a, ts, "t", {1: {"min": 100, "median": 120, "mean": 125, "max": 200, "quantity": 300, "auctions": 3}})
             db.write_snapshot(self.con, h, ts + 60, "t", {1: {"min": 80, "median": 90, "mean": 95, "max": 150, "quantity": 100, "auctions": 2}})
             db.write_snapshot(self.con, n, ts, "t", {1: {"min": 400, "median": 400, "mean": 400, "max": 400, "quantity": 5, "auctions": 1}})
-        self.alle = db.upsert_group_house(self.con, "battlenet", "eu", "alle")
+        self.alle = db.upsert_group_house(self.con, "battlenet", "eu", "allianz")
+        self.horde = db.upsert_group_house(self.con, "battlenet", "eu", "horde")
         self.neutral = db.upsert_group_house(self.con, "battlenet", "eu", "neutral")
 
     def test_members(self):
         self.assertEqual(len(db.group_members(self.con, self.alle)), 2)
+        self.assertEqual(len(db.group_members(self.con, self.horde)), 1)
         self.assertEqual(len(db.group_members(self.con, self.neutral)), 1)
 
     def test_backfill(self):
@@ -69,14 +72,23 @@ class GroupBackfillTest(unittest.TestCase):
         db.refresh_summary(self.con)
         hs = api.houses(self.con, {})
         kinds = [h["kind"] for h in hs["houses"]]
-        self.assertEqual(kinds[:2], ["alle", "neutral"])
-        self.assertEqual(hs["default"], self.alle)
+        self.assertEqual(kinds[:3], ["allianz", "horde", "neutral"])
+        self.assertEqual(hs["default"], self.alle)            # Standard: Allianz
         by = {h["ext_id"]: h for h in hs["houses"]}
-        self.assertEqual(by["eu-110"]["verbund"], "A")
-        self.assertEqual(by["eu-113"]["verbund"], "A")
+        self.assertEqual((by["eu-110"]["verbund"], by["eu-111"]["verbund"]), ("A", "B"))
+        self.assertEqual(by["eu-116"]["verbund"], "A")
         self.assertEqual(by["eu-110"]["short"], "Allianz A")
+        self.assertEqual((by["eu-110"]["group"], by["eu-116"]["group"]), ("allianz", "neutral"))
+        self.assertEqual(by["eu-allianz"]["short"], "Allianz")
         info = api.item(self.con, 1, {})
-        self.assertEqual({h["kind"] for h in info["houses"]}, {"alle", "neutral", "haus"})
+        self.assertEqual({h["kind"] for h in info["houses"]}, {"allianz", "neutral", "haus"})
+
+    def test_legacy_group_removed(self):
+        old = db.upsert_house(self.con, "battlenet", "eu-alle", "Alle Auktionshäuser", region="eu", faction="Alle")
+        db.write_snapshot(self.con, old, T0, "t", {1: {"min": 1, "quantity": 1}})
+        self.assertEqual(db.drop_legacy_groups(self.con, log=QUIET), 1)
+        self.assertIsNone(self.con.execute("SELECT 1 FROM houses WHERE id=?", (old,)).fetchone())
+        self.assertEqual(self.con.execute("SELECT COUNT(*) FROM prices WHERE house_id=?", (old,)).fetchone()[0], 0)
 
 
 class CollectGroupsTest(unittest.TestCase):
@@ -109,8 +121,8 @@ class CollectGroupsTest(unittest.TestCase):
     def test_pools(self):
         battlenet.collect(self.con, self.client, fetch_metadata=False, log=QUIET)
         g = {r["ext_id"]: r["id"] for r in self.con.execute("SELECT * FROM houses")}
-        alle = self.con.execute("SELECT * FROM prices WHERE house_id=?", (g["eu-alle"],)).fetchone()
-        self.assertEqual(alle["quantity"], 801)
+        alle = self.con.execute("SELECT * FROM prices WHERE house_id=?", (g["eu-allianz"],)).fetchone()
+        self.assertEqual(alle["quantity"], 501)
         self.assertEqual(alle["min"], 100)      # typischer Tiefstpreis, nicht das 5c-Lockangebot
         self.assertEqual(alle["median"], 100)   # exakt aus allen Einzelauktionen
         neu = self.con.execute("SELECT * FROM prices WHERE house_id=?", (g["eu-neutral"],)).fetchone()
@@ -118,7 +130,9 @@ class CollectGroupsTest(unittest.TestCase):
         res = battlenet.collect(self.con, self.client, fetch_metadata=False, log=QUIET)
         self.assertEqual(res.snapshots, 0)      # gleicher Stand: nichts doppelt
         self.assertEqual(self.con.execute("SELECT COUNT(*) FROM snapshots WHERE house_id=?",
-                                          (g["eu-alle"],)).fetchone()[0], 1)
+                                          (g["eu-allianz"],)).fetchone()[0], 1)
+        horde = self.con.execute("SELECT * FROM prices WHERE house_id=?", (g["eu-horde"],)).fetchone()
+        self.assertEqual((horde["min"], horde["quantity"]), (110, 300))
 
 
 class ExportTiersTest(unittest.TestCase):

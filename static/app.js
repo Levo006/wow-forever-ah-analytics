@@ -170,9 +170,10 @@ const groupId = (k) => state.houses.find((h) => h.kind === k)?.id;
 /** <option>s mit Gruppen: Märkte, Verbund A, B, …, eigene Scans. */
 function houseOptions(selected, { markets = true } = {}) {
   const groups = [];
-  if (markets) groups.push(["Märkte", state.houses.filter((h) => h.kind === "alle" || h.kind === "neutral"), hname]);
+  if (markets) groups.push(["Gesamt je Fraktion", state.houses.filter((h) => ["allianz", "horde", "neutral"].includes(h.kind)), hname]);
   const byV = {};
   for (const h of state.houses.filter((h) => !h.kind || h.kind === "haus")) (byV[h.verbund ? "Verbund " + h.verbund : "Auktionshäuser"] ||= []).push(h);
+  for (const hs of Object.values(byV)) hs.sort((a, b) => ["Allianz", "Horde", "Neutral"].indexOf(a.faction) - ["Allianz", "Horde", "Neutral"].indexOf(b.faction));
   for (const [g, hs] of Object.entries(byV).sort()) groups.push([g, hs, (h) => h.verbund ? `${h.faction} #${String(h.ext_id).split("-").pop()}` : h.name]);
   groups.push(["Eigene Scans", state.houses.filter((h) => h.kind === "scan"), (h) => h.name]);
   return groups.filter(([, hs]) => hs.length).map(([g, hs, lab]) => `<optgroup label="${esc(g)}">${hs.map((h) =>
@@ -180,7 +181,7 @@ function houseOptions(selected, { markets = true } = {}) {
 }
 function scopeText(h) {
   if (!h) return "";
-  if (h.kind === "alle") return "Allianz + Horde aller Server-Verbünde zusammengefasst";
+  if (h.kind === "allianz" || h.kind === "horde") return `Alle ${h.faction}-Auktionshäuser aller Server-Verbünde zusammengefasst`;
   if (h.kind === "neutral") return "Neutrale Auktionshäuser (Beutebucht, Gadgetzan, Everlook) aller Verbünde";
   if (h.kind === "scan") return "Eigene Auctionator-Scans (Tageswerte)";
   return h.verbund ? `Einzelnes Auktionshaus · ${h.faction} · Verbund ${h.verbund}` : "Einzelnes Auktionshaus";
@@ -476,6 +477,13 @@ async function viewCategories(r) {
 }
 
 // ================================================================= Item
+const FACTIONS = [
+  { k: "allianz", name: "Allianz", fac: "Allianz", sub: "alle Verbünde" },
+  { k: "horde", name: "Horde", fac: "Horde", sub: "alle Verbünde" },
+  { k: "neutral", name: "Neutral", fac: "Neutral", sub: "Schwarzmeerräuber" },
+];
+const GROUP_KINDS = FACTIONS.map((f) => f.k);
+
 function wowTooltip(it) {
   const d = it.details;
   const lines = (d && d.lines) || [];
@@ -487,190 +495,270 @@ function wowTooltip(it) {
     ${it.vendor_sell ? `<div class="sell">Verkaufspreis: ${money(it.vendor_sell)}</div>` : ""}</div>`;
 }
 
+/** Aufklappbarer Abschnitt; Inhalt wird erst beim ersten Öffnen gerendert (Zustand wird gemerkt). */
+function fold(key, title, summary = "") {
+  const open = store.get("fold." + key, false);
+  return `<details class="fold" data-fold="${key}" ${open ? "open" : ""}><summary><span class="ft">${title}</span>${summary ? `<span class="fs">${summary}</span>` : ""}<span class="chev" aria-hidden="true">›</span></summary><div class="fb" id="fb-${key}"></div></details>`;
+}
+function wireFolds(renderers) {
+  $$("details.fold").forEach((d) => {
+    const k = d.dataset.fold;
+    const run = () => {
+      if (d.open && renderers[k] && !d._done) {
+        d._done = true;
+        Promise.resolve(renderers[k]($("#fb-" + k))).catch((e) => { if (e.name !== "AbortError") $("#fb-" + k).innerHTML = `<div class="error">${esc(e.message)}</div>`; });
+      }
+    };
+    d.addEventListener("toggle", () => { store.set("fold." + k, d.open); run(); });
+    run();
+  });
+}
+
 async function viewItem(r) {
   const id = +r.parts[1];
   const p = { range: "7d", ...r.params };
   const info = await api(`item/${id}`);
   const it = info.item;
   if (!info.houses.length) { main.innerHTML = `<div class="empty">Für dieses Item gibt es keine Preisdaten.</div>`; return; }
-  const gAll = info.houses.find((h) => h.kind === "alle");
-  const gNeu = info.houses.find((h) => h.kind === "neutral");
-  const want = p.house || state.house;
-  const house = info.houses.find((h) => String(h.house_id) === String(want)) || gAll || info.houses[0];
-  const hid = house.house_id;
-  const single = house.kind === "haus" || house.kind === "scan";
-  const daily = house.granularity === "day";
-  const ranges = daily ? ["7d", "30d", "90d", "all"] : ["24h", "7d", "30d", "all"];
-  if (!ranges.includes(p.range)) p.range = daily ? "30d" : "7d";
-  const anaRange = p.range === "24h" ? "7d" : p.range;
-  const metric = p.metric || (house.last_median != null ? "median" : "min");
-  const shown = new Set((p.show || (house.last_median != null ? "min,median" : "min,max")).split(","));
-  const [hist, ana] = await Promise.all([
-    api(`item/${id}/history`, { house: hid, range: p.range, max_points: 800 }),
-    api(`item/${id}/analysis`, { house: hid, range: anaRange, metric, tz: TZ }),
-  ]);
-  // Trend/Schwankung erst ab 2 Tagen Historie – vorher ist das nur Rauschen
-  const enough = (house.last_ts || 0) - (house.first_ts || house.last_ts || 0) >= 2 * 86400;
-  const t = enough ? ana.trend || {} : {}, v = enough ? ana.volatility || {} : {};
+
+  // Auswahl: Haus aus URL/globaler Auswahl → zugehörige Fraktion
+  const want = String(p.house || state.house || "");
+  const wantH = houseById(want);
+  let house = info.houses.find((h) => String(h.house_id) === want);
+  let fk = house ? (GROUP_KINDS.includes(house.kind) ? house.kind : house.group) : (wantH && GROUP_KINDS.includes(wantH.kind) ? wantH.kind : wantH?.group);
+  if (!fk) fk = "allianz";
+  if (!house) house = info.houses.find((h) => h.kind === fk) || null;
+  const fac = FACTIONS.find((f) => f.k === fk);
+  const groupRow = (k) => info.houses.find((h) => h.kind === k);
+  const total = groupRow(fk);
+  // Häuser der Fraktion, auch ohne Angebot (dann „nicht angeboten“)
+  const allSingles = state.houses.filter((h) => h.kind === "haus" && h.group === fk).sort((a, b) => (a.verbund || "").localeCompare(b.verbund || ""));
+  const rowOf = (hid) => info.houses.find((h) => h.house_id === hid);
+  const listed = allSingles.map((h) => rowOf(h.id)).filter((x) => x && x.last_min);
+  const cheapest = listed.reduce((m, h) => (!m || h.last_min < m.last_min ? h : m), null);
+  const hid = house?.house_id;
   const inCmp = state.compare.includes(id);
 
-  // Kopf: Name + kompakte Merkmale
+  // Kopf
   const catHref = (extra = "") => `#/categories?class=${it.class_id ?? -1}${extra}`;
   const tags = [
-    it.class_name ? `<a class="tag" href="${catHref()}">${esc(it.class_name)}${it.subclass_name ? ` › ${esc(it.subclass_name)}` : ""}</a>` : `<span class="tag">Kategorie unbekannt</span>`,
+    it.class_name ? `<a class="tag" href="${catHref()}">${esc(it.class_name)}${it.subclass_name ? ` › ${esc(it.subclass_name)}` : ""}</a>` : "",
     it.slot ? `<span class="tag">${esc(it.slot)}</span>` : "",
-    it.quality_name ? `<span class="tag"><span class="q${it.quality}">●</span> ${esc(it.quality_name)}</span>` : "",
     it.item_level ? `<span class="tag">Stufe <b>${it.item_level}</b></span>` : "",
     it.required_level ? `<span class="tag">ab Level <b>${it.required_level}</b></span>` : "",
-    it.is_commodity ? `<span class="tag" title="Wird stapelweise gehandelt">Handelsware</span>` : (it.details?.stackable === false ? `<span class="tag">Einzelstück</span>` : ""),
+    it.is_commodity ? `<span class="tag">Handelsware</span>` : "",
     it.vendor_sell ? `<span class="tag">Händler zahlt ${money(it.vendor_sell)}</span>` : "",
-    `<a class="tag" href="https://www.wowhead.com/forever/de/item=${id}" target="_blank" rel="noopener">Wowhead ↗</a>`,
   ].filter(Boolean).join("");
 
-  // Marktkarten: Fraktions-AHs gesamt und Neutral nebeneinander
-  const mcard = (g, kind, title, sub) => {
-    const cls = `mcard ${kind === "neutral" ? "neutral" : ""}`;
-    if (!g) return `<div class="${cls}" style="cursor:default"><div class="mt1"><b>${title}</b><span>${sub}</span></div><div class="none">Derzeit nicht angeboten</div></div>`;
-    return `<button type="button" class="${cls} ${g.house_id === hid ? "on" : ""}" data-h="${g.house_id}">
-      <div class="mt1"><b>${title}</b><span>${sub}</span></div>
-      <div class="big">${money(g.last_min)}</div>
-      <div class="mrow"><span>Median <b>${money(g.last_median)}</b></span><span><b>${num(g.last_qty)}</b> Stück</span>${g.last_auctions ? `<span><b>${num(g.last_auctions)}</b> Auktionen</span>` : ""}<span>24 h ${pct(g.chg24_min)}</span></div></button>`;
-  };
-  const marketCards = gAll || gNeu ? `<div class="markets" id="mk">
-      ${mcard(gAll, "alle", "Alle Auktionshäuser", "Allianz + Horde · typischer Tiefstpreis")}
-      ${mcard(gNeu, "neutral", "Neutral · Schwarzmeerräuber", "Beutebucht, Gadgetzan, Everlook")}</div>` : "";
+  // Fraktions-Reiter mit Preis
+  const tabs = FACTIONS.map((f) => {
+    const g = groupRow(f.k);
+    return `<button type="button" class="ftab ${f.k} ${f.k === fk ? "on" : ""}" data-k="${f.k}" role="tab" aria-selected="${f.k === fk}">
+      <span class="fn"><span><span class="fac ${f.fac}"></span>${f.name}</span><small>${f.sub}</small></span>
+      <span class="fp">${g ? money(g.last_min) : '<span class="muted">nicht angeboten</span>'}</span>
+      ${g ? `<span class="fd">${pct(g.chg24_min)}</span>` : ""}</button>`;
+  }).join("");
 
-  // Hinweise (nur wenn etwas auffällt)
+  // Karten: Gesamt + Verbünde
+  const card = (row, title, sub, opts = {}) => {
+    const hidC = row ? row.house_id : opts.hid;
+    const on = hidC && hidC === hid;
+    if (!row || !row.last_min) return `<div class="hcard off ${opts.total ? "total" : ""}"><div class="ht"><b>${title}</b><span>${sub}</span></div><div class="hp muted">nicht angeboten</div></div>`;
+    return `<button type="button" class="hcard ${opts.total ? "total" : ""} ${on ? "on" : ""}" data-h="${hidC}">
+      <div class="ht"><b>${title}</b><span>${sub}</span></div>
+      <div class="hp">${money(row.last_min)}</div>
+      <div class="hm"><span>Median ${money(row.last_median)}</span><span>${compact(row.last_qty)} Stück</span></div>
+      <div class="hm"><span>24 h ${pct(row.chg24_min)}</span>${cheapest && row.house_id === cheapest.house_id && listed.length > 1 ? '<span class="best">★ günstigstes</span>' : ""}</div></button>`;
+  };
+  const cards = card(total, `${fac.name} gesamt`, "typischer Tiefstpreis", { total: true, hid: groupId(fk) }) +
+    allSingles.map((h) => card(rowOf(h.id), `Verbund ${h.verbund || "?"}`, `#${String(h.ext_id).split("-").pop()}`, { hid: h.id })).join("");
+
+  // Hinweise
   const hints = [];
-  if (it.vendor_sell && house.last_min && house.last_min < it.vendor_sell)
-    hints.push(`💰 Im AH günstiger als der Händlerpreis (${money(it.vendor_sell)}) – kaufen und beim Händler verkaufen lohnt sich.`);
-  if (house.avg7_min && house.last_min && house.last_min < house.avg7_min * 0.85)
+  if (house && it.vendor_sell && house.last_min && house.last_min < it.vendor_sell)
+    hints.push(`💰 Günstiger als der Händlerpreis (${money(it.vendor_sell)}) – kaufen und beim Händler verkaufen lohnt sich.`);
+  if (house && house.avg7_min && house.last_min && house.last_min < house.avg7_min * 0.85)
     hints.push(`▼ Gerade ${num((1 - house.last_min / house.avg7_min) * 100, 0)} % unter dem 7-Tage-Schnitt.`);
 
-  // Einzelhäuser (für die Seitenleiste)
-  const singles = info.houses.filter((h) => h.kind === "haus").sort((a, b) => (a.verbund || "").localeCompare(b.verbund || "") || (a.faction || "").localeCompare(b.faction || ""));
-  const cheapest = singles.reduce((m, h) => (h.last_min && (!m || h.last_min < m.last_min) ? h : m), null);
+  const selName = !house ? fac.name : GROUP_KINDS.includes(house.kind) ? `${fac.name} gesamt` : `${fac.name} · Verbund ${house.verbund || "?"}`;
+  const daily = house?.granularity === "day";
+  const ranges = daily ? ["7d", "30d", "90d", "all"] : ["24h", "7d", "30d", "all"];
+  if (!ranges.includes(p.range)) p.range = daily ? "30d" : "7d";
+  const shown = new Set((p.show || "min,median").split(","));
+  const overlay = p.cmp === "1";
 
   main.innerHTML = `
     <div class="crumbs"><a href="#/categories">Kategorien</a> › <a href="${catHref()}">${esc(it.class_name || "Ohne Metadaten")}</a>${it.subclass_name ? ` › <a href="${catHref(`&subclass=${it.subclass_id}`)}">${esc(it.subclass_name)}</a>` : ""}</div>
     <div class="ihead">
       <div class="who">${icon(it, true)}
         <div style="min-width:0"><h1 class="q${it.quality ?? 1}">${esc(it.name)}</h1>
-          ${it.name_en && it.name_en !== it.name ? `<div class="en">${esc(it.name_en)} · ID ${id}</div>` : `<div class="en">ID ${id}</div>`}
-          <div class="chiprow">${tags}</div></div></div>
+          <div class="en">${it.name_en && it.name_en !== it.name ? esc(it.name_en) + " · " : ""}ID ${id} · <a href="https://www.wowhead.com/forever/de/item=${id}" target="_blank" rel="noopener">Wowhead ↗</a></div>
+          ${tags ? `<div class="chiprow">${tags}</div>` : ""}</div></div>
       <div class="actions">
         <button class="btn" id="cmpBtn">${inCmp ? "✓ Im Vergleich" : "+ Vergleich"}</button>
-        <a class="btn" href="#/compare?items=${[...new Set([...state.compare, id])].join(",")}&house=${hid}">Vergleichen ›</a>
+        <a class="btn" href="#/compare?items=${[...new Set([...state.compare, id])].join(",")}${hid ? "&house=" + hid : ""}">Vergleichen ›</a>
       </div></div>
-    <div class="ilayout"><div style="min-width:0">
-    ${marketCards}
-    ${single ? `<div class="note" style="margin-bottom:16px">Gefiltert auf <b><span class="fac ${esc(house.faction)}"></span>${esc(house.label || house.house_name)}</b> · <a href="#/item/${id}?house=${gAll ? gAll.house_id : ""}" id="unfilter">Filter aufheben</a></div>` : ""}
+    <div class="ftabs" role="tablist" id="ftabs">${tabs}</div>
+    <div class="hcards" id="hcards">${cards}</div>
     ${hints.map((h) => `<div class="hint">${h}</div>`).join("")}
-    <div class="mini">
-      <div class="kpi"><div class="l">Ø 7 Tage</div><div class="v">${money(house.avg7_min)}</div><div class="d">Ø 30 T ${money(house.avg30_min)}</div></div>
-      <div class="kpi"><div class="l">30-Tage-Spanne</div><div class="v">${money(house.low30_min)}</div><div class="d">bis ${money(house.high30_min)}</div></div>
-      <div class="kpi"><div class="l">Änderung 7 Tage</div><div class="v">${pct(house.chg7d_min)}</div><div class="d">24 h ${pct(house.chg24_min)}</div></div>
-      <div class="kpi" title="Lineare Regression auf ln(Preis) über ${anaRange}"><div class="l">Trend</div><div class="v">${t.pct_per_day == null ? "–" : (t.pct_per_day > 0 ? "+" : "") + num(t.pct_per_day, 1) + " %/Tag"}</div><div class="d">${esc(t.direction || "ab 2 Tagen Daten")}</div></div>
-      <div class="kpi" title="Tägliche Schwankung (Std.-Abw. der Log-Renditen)"><div class="l">Schwankung</div><div class="v">${v.daily == null ? "–" : num(v.daily * 100, 1) + " %/Tag"}</div><div class="d">${v.daily == null ? "ab 2 Tagen Daten" : v.daily < 0.03 ? "stabil" : v.daily < 0.1 ? "normal" : "stark"}</div></div>
-    </div>
+    ${house ? `
     <div class="card">
-      <div class="cardhead"><h2>Preisverlauf <span class="muted small" style="font-weight:400">· ${esc(house.short || house.house_name)}</span></h2>
+      <div class="cardhead"><h2>Preisverlauf <span class="muted small" style="font-weight:400">· ${esc(selName)}</span></h2>
         <div class="right">
-          <div class="toggles" id="tog">${[["min", "Min", "--s1"], ["p10", "10 %", "--s7"], ["median", "Median", "--s2"], ["mean", "Mittel", "--s3"], ["max", "Max", "--s4"]].map(([k, l, c]) =>
-            `<label><input type="checkbox" value="${k}" ${shown.has(k) ? "checked" : ""}><span class="sw" style="background:var(${c})"></span>${l}</label>`).join("")}
-            <label title="Ausreißer markieren"><input type="checkbox" value="out" ${p.out !== "0" ? "checked" : ""}>Ausreißer</label></div>
           <div class="seg" id="rng">${ranges.map((x) => `<button data-r="${x}" class="${x === p.range ? "on" : ""}">${x === "all" ? "Alles" : x.replace("d", " T").replace("h", " h")}</button>`).join("")}</div>
+          <details class="pop"><summary class="btn small" title="Anzeige anpassen">Anzeige ▾</summary>
+            <div class="popbody" id="tog">
+              ${[["min", "Min", "--s1"], ["p10", "10 %-Perzentil", "--s7"], ["median", "Median", "--s2"], ["mean", "Mittelwert", "--s3"], ["max", "Max", "--s4"]].map(([k, l, c]) =>
+                `<label><input type="checkbox" value="${k}" ${shown.has(k) ? "checked" : ""}><span class="sw" style="background:var(${c})"></span>${l}</label>`).join("")}
+              <label><input type="checkbox" value="out" ${p.out !== "0" ? "checked" : ""}>Ausreißer markieren</label>
+              <hr><label title="Mindestpreis aller Verbünde dieser Fraktion in einem Chart"><input type="checkbox" value="cmp" ${overlay ? "checked" : ""}>Verbünde vergleichen</label>
+            </div></details>
         </div></div>
       <div class="chartbox"><canvas id="pc"></canvas></div>
-      <div class="muted small" style="margin-top:6px">${hist.raw_points} Datenpunkte · Klick auf den Chart öffnet den Snapshot</div>
-      <h3 class="mt">Angebotsmenge</h3>
-      <div class="chartbox sm"><canvas id="vc"></canvas></div>
+      <div class="muted small" id="pcnote" style="margin-top:6px"></div>
     </div>
-    <div class="grid g2 mt">
-      <div class="card"><div class="cardhead"><h2>Tageszeit</h2><span class="right muted small">Abweichung vom Tagesmittel</span></div>
-        <div class="chartbox sm" id="hbox"><canvas id="hc"></canvas></div></div>
-      <div class="card"><div class="cardhead"><h2>Wochentag</h2><span class="right muted small">Abweichung vom Wochenmittel</span></div>
-        <div class="chartbox sm" id="wbox"><canvas id="wc"></canvas></div></div>
-    </div>
-    <div class="card flush mt"><h2>Ausreißer</h2>${table([
+    <div class="folds">
+      ${fold("kpi", "Kennzahlen", house.avg7_min ? `Ø 7 T ${money(house.avg7_min)} · 7 T ${pct(house.chg7d_min)}` : "")}
+      ${fold("qty", "Angebotsmenge", house.last_qty != null ? `${num(house.last_qty)} Stück aktuell` : "")}
+      ${fold("season", "Tageszeit & Wochentag", "Wann ist es am günstigsten?")}
+      ${fold("all", "Alle Auktionshäuser im Vergleich", `${info.houses.filter((h) => h.kind === "haus").length} Häuser`)}
+      ${fold("out", "Ausreißer", "")}
+      ${fold("snaps", "Einzelne Snapshots", "")}
+      ${fold("info", "Item-Details", it.details?.lines?.length ? "Tooltip wie im Spiel" : "")}
+    </div>` : `<div class="card"><div class="empty">Bei der ${esc(fac.name)} derzeit nicht angeboten.</div></div>
+    <div class="folds">${fold("all", "Alle Auktionshäuser im Vergleich", "")}${fold("info", "Item-Details", "")}</div>`}`;
+
+  // Interaktion
+  $("#ftabs").onclick = (e) => { const b = e.target.closest("button[data-k]"); if (b) { const g = groupId(b.dataset.k); if (g) setParams({ house: g }); } };
+  $("#hcards").onclick = (e) => { const b = e.target.closest("button[data-h]"); if (b) setParams({ house: b.dataset.h }); };
+  $("#cmpBtn").onclick = (e) => { toggleCompare(id); e.target.textContent = state.compare.includes(id) ? "✓ Im Vergleich" : "+ Vergleich"; };
+
+  const allTable = (el) => {
+    const rows = info.houses.filter((h) => GROUP_KINDS.includes(h.kind) || h.kind === "haus")
+      .sort((a, b) => (GROUP_KINDS.indexOf(a.group || a.kind) - GROUP_KINDS.indexOf(b.group || b.kind)) || ((GROUP_KINDS.includes(b.kind) ? 1 : 0) - (GROUP_KINDS.includes(a.kind) ? 1 : 0)) || (a.verbund || "").localeCompare(b.verbund || ""));
+    const ref = (h) => groupRow(h.group || h.kind);
+    el.innerHTML = table([
+      { label: "Auktionshaus", fmt: (h) => GROUP_KINDS.includes(h.kind) ? `<b><span class="fac ${esc(h.faction)}"></span>${esc(h.faction)} gesamt</b>` : `<span class="fac ${esc(h.faction)}"></span>${esc(h.faction)} · Verbund ${esc(h.verbund || "?")}` },
+      { label: "Min", num: true, fmt: (h) => money(h.last_min) },
+      { label: "Median", num: true, fmt: (h) => money(h.last_median) },
+      { label: "Ø 7 T", num: true, fmt: (h) => money(h.avg7_min) },
+      { label: "Stück", num: true, fmt: (h) => num(h.last_qty) },
+      { label: "Δ 24 h", num: true, fmt: (h) => pct(h.chg24_min) },
+      { label: "vs. Fraktion", num: true, title: "Mindestpreis im Vergleich zum Fraktions-Gesamtpreis", fmt: (h) => GROUP_KINDS.includes(h.kind) || !ref(h)?.last_min ? '<span class="muted">—</span>' : pct((h.last_min / ref(h).last_min - 1) * 100, 0) },
+    ], rows, { rowHref: (h) => `/item/${id}?house=${h.house_id}&range=${p.range}` });
+  };
+  const infoBox = (el) => {
+    el.innerHTML = `<div class="infogrid">${wowTooltip(it) || '<div class="muted">Für dieses Item liegen keine Tooltip-Daten vor.</div>'}
+      <table class="t kv"><tbody>
+        ${[["Item-ID", id], ["Englischer Name", esc(it.name_en || "–")], ["Qualität", esc(it.quality_name || "–")], ["Kategorie", esc([it.class_name, it.subclass_name].filter(Boolean).join(" › ") || "–")],
+          ["Gegenstandsstufe", it.item_level || "–"], ["Benötigte Stufe", it.required_level || "–"], ["Platz", esc(it.slot || "–")],
+          ["Handelsware", it.is_commodity ? "ja (stapelweise gehandelt)" : "nein"], ["Händler-Verkaufspreis", it.vendor_sell ? money(it.vendor_sell) : "–"]]
+          .map(([k, v]) => `<tr class="nohover"><td class="muted">${k}</td><td>${v}</td></tr>`).join("")}
+      </tbody></table></div>`;
+  };
+  if (!house) { wireFolds({ all: allTable, info: infoBox }); return; }
+
+  $("#rng").onclick = (e) => { const b = e.target.closest("button[data-r]"); if (b) setParams({ range: b.dataset.r }); };
+  $("#tog").onchange = () => {
+    const sel = $$("#tog input:checked").map((x) => x.value);
+    setParams({ show: sel.filter((x) => !["out", "cmp"].includes(x)).join(","), out: sel.includes("out") ? "" : "0", cmp: sel.includes("cmp") ? "1" : "" });
+  };
+
+  const anaRange = p.range === "24h" ? "7d" : p.range;
+  const metric = p.metric || (house.last_median != null ? "median" : "min");
+  const [hist, ana] = await Promise.all([
+    api(`item/${id}/history`, { house: hid, range: p.range, max_points: 800 }),
+    api(`item/${id}/analysis`, { house: hid, range: anaRange, metric, tz: TZ }),
+  ]);
+  const pts = hist.points;
+  const span = pts.length ? pts[pts.length - 1].ts - pts[0].ts : 86400;
+
+  // Preis-Chart (optional: alle Verbünde der Fraktion überlagert)
+  const ds = [];
+  if (overlay) {
+    const members = [total, ...allSingles.map((h) => rowOf(h.id))].filter(Boolean);
+    const series = await Promise.all(members.map((m) => api(`item/${id}/history`, { house: m.house_id, range: p.range, max_points: 400 })));
+    members.forEach((m, i) => ds.push(line(GROUP_KINDS.includes(m.kind) ? `${fac.name} gesamt` : `Verbund ${m.verbund}`,
+      series[i].points.map((x) => ({ x: x.ts, y: x.min, ts: x.ts })), SERIES[i], GROUP_KINDS.includes(m.kind) ? { borderWidth: 3 } : { borderWidth: 1.6 })));
+  } else {
+    for (const [k, l, c] of [["min", "Min", "--s1"], ["p10", "10 %-Perzentil", "--s7"], ["median", "Median", "--s2"], ["mean", "Mittel", "--s3"], ["max", "Max", "--s4"]]) {
+      if (!shown.has(k) || !pts.some((x) => x[k] != null)) continue;
+      ds.push(line(l, pts.map((x) => ({ x: x.ts, y: x[k], ts: x.ts })), c, k === "max" ? { borderDash: [4, 3], borderWidth: 1.5 } : {}));
+    }
+    if (p.out !== "0" && ana.outliers.length) {
+      const lo = pts.length ? pts[0].ts : 0;
+      const o = ana.outliers.filter((x) => x.ts >= lo);
+      if (o.length) ds.push({ type: "scatter", label: "Ausreißer", data: o.map((x) => ({ x: x.ts, y: x.value, ts: x.ts })), pointRadius: 5, pointHoverRadius: 7,
+        backgroundColor: css("--s8"), borderColor: css("--surface-1"), borderWidth: 2, pointStyle: "triangle" });
+    }
+  }
+  $("#pcnote").textContent = overlay ? "Mindestpreis je Verbund · Klick auf einen Eintrag in der Legende blendet ihn aus" : `${hist.raw_points} Datenpunkte · Klick auf den Chart öffnet den Snapshot`;
+  if (pts.length < 2) $("#pc").parentElement.innerHTML = `<div class="empty">${pts.length ? "Erst ein Datenpunkt – der Verlauf füllt sich stündlich." : "Keine Preisdaten im Zeitraum."}</div>`;
+  else if (!ds.length) $("#pc").parentElement.innerHTML = '<div class="empty">Keine Kennzahl ausgewählt – über „Anzeige ▾“ einblenden.</div>';
+  else timeLineChart($("#pc"), ds, { span, onClick: overlay ? undefined : (pt) => (location.hash = `/snapshot/${hid}/${pt.ts}?item=${id}`) });
+
+  // Aufklappbare Abschnitte
+  const enough = (house.last_ts || 0) - (house.first_ts || house.last_ts || 0) >= 2 * 86400;
+  const t = enough ? ana.trend || {} : {}, v = enough ? ana.volatility || {} : {};
+  wireFolds({
+    kpi: (el) => {
+      el.innerHTML = `<div class="mini">
+        <div class="kpi"><div class="l">Ø 7 Tage</div><div class="v">${money(house.avg7_min)}</div><div class="d">Ø 30 T ${money(house.avg30_min)}</div></div>
+        <div class="kpi"><div class="l">30-Tage-Spanne</div><div class="v">${money(house.low30_min)}</div><div class="d">bis ${money(house.high30_min)}</div></div>
+        <div class="kpi"><div class="l">Änderung 7 Tage</div><div class="v">${pct(house.chg7d_min)}</div><div class="d">24 h ${pct(house.chg24_min)}</div></div>
+        <div class="kpi" title="Lineare Regression auf ln(Preis) über ${anaRange}"><div class="l">Trend</div><div class="v">${t.pct_per_day == null ? "–" : (t.pct_per_day > 0 ? "+" : "") + num(t.pct_per_day, 1) + " %/Tag"}</div><div class="d">${esc(t.direction || "ab 2 Tagen Daten")}</div></div>
+        <div class="kpi" title="Tägliche Schwankung (Std.-Abw. der Log-Renditen)"><div class="l">Schwankung</div><div class="v">${v.daily == null ? "–" : num(v.daily * 100, 1) + " %/Tag"}</div><div class="d">${v.daily == null ? "ab 2 Tagen Daten" : v.daily < 0.03 ? "stabil" : v.daily < 0.1 ? "normal" : "stark"}</div></div>
+        <div class="kpi"><div class="l">Auktionen</div><div class="v">${num(house.last_auctions)}</div><div class="d">Median ${money(house.last_median)}</div></div>
+      </div>`;
+    },
+    qty: (el) => {
+      if (!pts.length) { el.innerHTML = '<div class="empty">Keine Daten.</div>'; return; }
+      el.innerHTML = '<div class="chartbox sm"><canvas></canvas></div>';
+      makeChart($("canvas", el), {
+        type: "bar",
+        data: { datasets: [{ label: "Menge", data: pts.map((x) => ({ x: x.ts, y: x.quantity })), backgroundColor: css("--s1") + "99", borderRadius: 2, barPercentage: 1, categoryPercentage: 1 }] },
+        options: {
+          responsive: true, maintainAspectRatio: false, parsing: false,
+          scales: { x: { type: "linear", ticks: { callback: timeTick(span), maxRotation: 0 }, grid: { display: false } }, y: { ticks: { callback: (v) => compact(v) } } },
+          plugins: { legend: { display: false }, tooltip: { callbacks: { title: (i) => dt(i[0].parsed.x), label: (c) => ` Menge: ${num(c.parsed.y)}` } } },
+        },
+      });
+    },
+    season: (el) => {
+      const se = ana.seasonality || {};
+      el.innerHTML = `<div class="grid g2"><div><h3>Tageszeit</h3><div class="chartbox sm" id="hbox"><canvas id="hc"></canvas></div></div>
+        <div><h3>Wochentag</h3><div class="chartbox sm" id="wbox"><canvas id="wc"></canvas></div></div></div>`;
+      if (se.hourly) divergingBars($("#hc"), se.hourly.map((x) => x.hour + " h"), se.hourly.map((x) => x.pct ?? 0), "Tageszeit");
+      else $("#hbox").innerHTML = `<div class="empty">Ab 2 Tagen stündlicher Daten.</div>`;
+      if (se.weekday) divergingBars($("#wc"), se.weekday.map((x) => x.day), se.weekday.map((x) => x.pct ?? 0), "Wochentag");
+      else $("#wbox").innerHTML = `<div class="empty">Ab 14 Tagen Historie.</div>`;
+    },
+    all: allTable,
+    out: (el) => {
+      el.innerHTML = table([
         { label: "Zeitpunkt", fmt: (o) => dt(o.ts) },
         { label: "Art", fmt: (o) => `<span class="${o.kind === "Spitze" ? "up" : "down"}">${o.kind === "Spitze" ? "▲" : "▼"} ${o.kind}</span>` },
         { label: "Wert", num: true, fmt: (o) => money(o.value) },
         { label: "Erwartet", num: true, fmt: (o) => money(o.expected) },
         { label: "Abw.", num: true, fmt: (o) => pct(o.deviation_pct, 0) }],
-        ana.outliers.slice().reverse().slice(0, 8), { rowHref: (o) => `/snapshot/${hid}/${o.ts}?item=${id}`, empty: "Keine Ausreißer im Zeitraum." })}</div>
-    <div class="card flush mt" id="snaps"><div class="loading">Lade Snapshots …</div></div>
-    </div>
-    <div class="side">
-      ${wowTooltip(it)}
-      ${singles.length ? `<div class="card flush"><h2>Je Auktionshaus</h2>${table([
-        { label: "Haus", fmt: (h) => `<span class="fac ${esc(h.faction)}"></span>${esc(h.short || h.house_name)}${cheapest && h.house_id === cheapest.house_id ? ' <span title="Günstigstes Haus">★</span>' : ""}` },
-        { label: "Min", num: true, fmt: (h) => money(h.last_min) },
-        { label: "Stück", num: true, fmt: (h) => compact(h.last_qty) }],
-        singles, { rowHref: (h) => `/item/${id}?house=${h.house_id}&range=${p.range}` })}
-        <p class="muted small" style="padding:0 16px 12px;margin:6px 0 0">Klick filtert auf ein Haus. Verbund = Server-Gruppe mit gemeinsamem Markt.</p></div>` : ""}
-    </div></div>`;
-
-  // Interaktion
-  const mk = $("#mk");
-  if (mk) mk.onclick = (e) => { const b = e.target.closest("button[data-h]"); if (b) setParams({ house: b.dataset.h }); };
-  $("#cmpBtn").onclick = (e) => { toggleCompare(id); e.target.textContent = state.compare.includes(id) ? "✓ Im Vergleich" : "+ Vergleich"; };
-  $("#rng").onclick = (e) => { const b = e.target.closest("button[data-r]"); if (b) setParams({ range: b.dataset.r }); };
-  $("#tog").onchange = () => {
-    const sel = $$("#tog input:checked").map((x) => x.value);
-    setParams({ show: sel.filter((x) => x !== "out").join(","), out: sel.includes("out") ? "" : "0" });
-  };
-
-  // Preis-Chart
-  const pts = hist.points;
-  const span = pts.length ? pts[pts.length - 1].ts - pts[0].ts : 86400;
-  const ds = [];
-  const defs = [["min", "Min", "--s1"], ["p10", "10 %-Perzentil", "--s7"], ["median", "Median", "--s2"], ["mean", "Mittel", "--s3"], ["max", "Max", "--s4"]];
-  for (const [k, l, c] of defs) {
-    if (!shown.has(k) || !pts.some((x) => x[k] != null)) continue;
-    ds.push(line(l, pts.map((x) => ({ x: x.ts, y: x[k], ts: x.ts })), c, k === "max" ? { borderDash: [4, 3], borderWidth: 1.5 } : {}));
-  }
-  if (p.out !== "0" && ana.outliers.length) {
-    const lo = pts.length ? pts[0].ts : 0;
-    const o = ana.outliers.filter((x) => x.ts >= lo);
-    ds.push({ type: "scatter", label: `Ausreißer (${ana.metric})`, data: o.map((x) => ({ x: x.ts, y: x.value, ts: x.ts })), pointRadius: 5, pointHoverRadius: 7,
-      backgroundColor: css("--s8"), borderColor: css("--surface-1"), borderWidth: 2, pointStyle: "triangle" });
-  }
-  if (pts.length < 2) $("#pc").parentElement.innerHTML = `<div class="empty">${pts.length ? "Erst ein Datenpunkt – der Verlauf füllt sich stündlich." : "Keine Preisdaten im Zeitraum."}</div>`;
-  else if (!ds.length) $("#pc").parentElement.innerHTML = '<div class="empty">Keine Kennzahl ausgewählt.</div>';
-  else timeLineChart($("#pc"), ds, { span, onClick: (pt) => (location.hash = `/snapshot/${hid}/${pt.ts}?item=${id}`) });
-
-  // Volumen-Chart
-  if (pts.length) makeChart($("#vc"), {
-    type: "bar",
-    data: { datasets: [{ label: "Menge", data: pts.map((x) => ({ x: x.ts, y: x.quantity })), backgroundColor: css("--s1") + "99", borderRadius: 2, barPercentage: 1, categoryPercentage: 1 }] },
-    options: {
-      responsive: true, maintainAspectRatio: false, parsing: false,
-      scales: { x: { type: "linear", ticks: { callback: timeTick(span), maxRotation: 0 }, grid: { display: false } }, y: { ticks: { callback: (v) => compact(v) } } },
-      plugins: { legend: { display: false }, tooltip: { callbacks: { title: (i) => dt(i[0].parsed.x), label: (c) => ` Menge: ${num(c.parsed.y)}` } } },
+        ana.outliers.slice().reverse().slice(0, 10), { rowHref: (o) => `/snapshot/${hid}/${o.ts}?item=${id}`, empty: "Keine Ausreißer im Zeitraum." });
     },
+    snaps: (el) => {
+      const load = async (page) => {
+        const s = await api(`item/${id}/snapshots`, { house: hid, page, page_size: 10 });
+        el.innerHTML = table([
+          { label: "Zeitpunkt", fmt: (x) => x.daily ? `${dt(x.ts, false)} <span class="pill" title="Mittel aus ${x.n} Snapshots">Tagesmittel</span>`
+              : x.merged ? `${dt(x.ts)} <span class="pill" title="Mittel aus ${x.n} stündlichen Snapshots">Ø ${x.n} Std.</span>` : dt(x.ts) },
+          { label: "Min", num: true, fmt: (x) => money(x.min) },
+          { label: "Median", num: true, fmt: (x) => money(x.median) },
+          { label: "Menge", num: true, fmt: (x) => num(x.quantity) },
+          { label: "Δ Min", num: true, fmt: (x) => pct(x.chg_min) },
+        ], s.rows, { rowHref: (x) => (x.daily || x.merged ? null : `/snapshot/${hid}/${x.ts}?item=${id}`) }) + pager(s.total, s.page, s.page_size, load);
+      };
+      return load(1);
+    },
+    info: infoBox,
   });
-
-  // Saisonalität
-  const se = ana.seasonality || {};
-  if (se.hourly) divergingBars($("#hc"), se.hourly.map((x) => x.hour + " h"), se.hourly.map((x) => x.pct ?? 0), "Tageszeit");
-  else $("#hbox").innerHTML = `<div class="empty">Ab 2 Tagen stündlicher Daten.</div>`;
-  if (se.weekday) divergingBars($("#wc"), se.weekday.map((x) => x.day), se.weekday.map((x) => x.pct ?? 0), "Wochentag");
-  else $("#wbox").innerHTML = `<div class="empty">Ab 14 Tagen Historie.</div>`;
-
-  // Snapshot-Liste
-  const loadSnaps = async (page) => {
-    const s = await api(`item/${id}/snapshots`, { house: hid, page, page_size: 10 });
-    $("#snaps").innerHTML = `<h2>Einzelne Snapshots</h2>` + table([
-      { label: "Zeitpunkt", fmt: (x) => x.daily ? `${dt(x.ts, false)} <span class="pill" title="Mittel aus ${x.n} Snapshots">Tagesmittel</span>`
-          : x.merged ? `${dt(x.ts)} <span class="pill" title="Mittel aus ${x.n} stündlichen Snapshots">Ø ${x.n} Std.</span>` : dt(x.ts) },
-      { label: "Min", num: true, fmt: (x) => money(x.min) },
-      { label: "Median", num: true, fmt: (x) => money(x.median) },
-      { label: "Menge", num: true, fmt: (x) => num(x.quantity) },
-      { label: "Auktionen", num: true, fmt: (x) => num(x.auctions) }, { label: "Δ Min", num: true, fmt: (x) => pct(x.chg_min) },
-    ], s.rows, { rowHref: (x) => (x.daily || x.merged ? null : `/snapshot/${hid}/${x.ts}?item=${id}`) }) + pager(s.total, s.page, s.page_size, loadSnaps);
-  };
-  loadSnaps(1);
 }
 
 function nearestSnap(ts, pts) {
@@ -892,7 +980,7 @@ function dataFlowCard() {
   return `<div class="card mt"><h2>Woher kommen die Preise?</h2>
     <ol class="flow">
       <li><b>Blizzard</b> veröffentlicht etwa stündlich alle Auktionen aller Auktionshäuser (Battle.net API).</li>
-      <li><b>Zusammenfassen:</b> „Alle AHs“ bündelt Allianz und Horde aller Server-Verbünde; „Neutral“ (Schwarzmeerräuber) bleibt getrennt, weil dort andere Preise gelten.</li>
+      <li><b>Zusammenfassen:</b> Je Fraktion (Allianz, Horde, Neutral) werden die Auktionshäuser aller Server-Verbünde gebündelt; jedes einzelne Haus bleibt zusätzlich sichtbar.</li>
       <li><b>Veröffentlichen:</b> Die Seite wird danach automatisch neu gebaut. Eine neue Auktion erscheint so nach etwa 1–2 Stunden.</li>
     </ol>
   </div>`;
@@ -900,7 +988,7 @@ function dataFlowCard() {
 async function viewData() {
   const [st, hs, lg] = await Promise.all([api("status"), api("houses"), api("import/log")]);
   const housesTable = () => table([
-      { label: "Bezeichnung", fmt: (h) => `<span class="fac ${esc(h.kind === "alle" ? "Alle" : h.faction)}"></span>${esc(hname(h))}` }, { label: "Blizzard-Name", fmt: (h) => `<span class="muted">${esc(h.kind === "haus" ? h.name : "–")}</span>` },
+      { label: "Bezeichnung", fmt: (h) => `<span class="fac ${esc(h.faction)}"></span>${esc(hname(h))}` }, { label: "Blizzard-Name", fmt: (h) => `<span class="muted">${esc(h.kind === "haus" ? h.name : "–")}</span>` },
       { label: "Region", fmt: (h) => esc(h.region) }, { label: "Fraktion", fmt: (h) => esc(h.faction || "–") },
       { label: "Auflösung", fmt: (h) => (h.granularity === "day" ? "Tag" : "Stunde") },
       { label: "Snapshots", num: true, fmt: (h) => num(h.snapshots) }, { label: "Items", num: true, fmt: (h) => num(h.items) },
@@ -939,7 +1027,7 @@ async function viewData() {
     </div>
     ${dataFlowCard()}
     <div class="card flush mt"><h2>Auktionshäuser</h2>${table([
-      { label: "Bezeichnung", fmt: (h) => `<span class="fac ${esc(h.kind === "alle" ? "Alle" : h.faction)}"></span>${esc(hname(h))}` }, { label: "Blizzard-Name", fmt: (h) => `<span class="muted">${esc(h.kind === "haus" ? h.name : "–")}</span>` },
+      { label: "Bezeichnung", fmt: (h) => `<span class="fac ${esc(h.faction)}"></span>${esc(hname(h))}` }, { label: "Blizzard-Name", fmt: (h) => `<span class="muted">${esc(h.kind === "haus" ? h.name : "–")}</span>` },
       { label: "Region", fmt: (h) => esc(h.region) }, { label: "Fraktion", fmt: (h) => esc(h.faction || "–") },
       { label: "Auflösung", fmt: (h) => (h.granularity === "day" ? "Tag" : "Stunde") },
       { label: "Snapshots", num: true, fmt: (h) => num(h.snapshots) }, { label: "Items", num: true, fmt: (h) => num(h.items) },
@@ -1054,8 +1142,8 @@ function renderMarket() {
     b.hidden = !groupId(b.dataset.k);
     b.classList.toggle("on", !!h && h.kind === b.dataset.k);
   });
-  const single = h && h.kind !== "alle" && h.kind !== "neutral";
-  const hasGroups = !!(groupId("alle") || groupId("neutral"));
+  const single = h && (h.kind === "haus" || h.kind === "scan");
+  const hasGroups = !!(groupId("allianz") || groupId("horde") || groupId("neutral"));
   const sel = $("#houseSel");
   sel.innerHTML = state.houses.length
     ? (hasGroups ? '<option value="">Einzelnes AH …</option>' : "") + houseOptions(state.house, { markets: !hasGroups })
@@ -1097,7 +1185,7 @@ function initTheme() {
   updateCompareBadge();
   STATIC = await StaticAPI.detect();
   try { await loadHouses(); } catch (e) { main.innerHTML = `<div class="error">Server nicht erreichbar: ${esc(e.message)}</div>`; return; }
-  $("#houseSel").onchange = (e) => setHouse(e.target.value || groupId("alle"));
+  $("#houseSel").onchange = (e) => setHouse(e.target.value || groupId(houseById(state.house)?.group || "allianz") || groupId("allianz"));
   $("#market").addEventListener("click", (e) => { const b = e.target.closest("button[data-k]"); if (b) setHouse(groupId(b.dataset.k)); });
   attachAutocomplete($("#quickInput"), $("#quickResults"), null, (it) => (location.hash = `/item/${it.item_id}?house=${it.house_id}`));
   $("#quickSearch").onsubmit = (e) => { e.preventDefault(); const q = $("#quickInput").value.trim(); if (q) { $("#quickResults").hidden = true; go("/search", { q, house: state.house }); } };

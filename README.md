@@ -46,7 +46,7 @@ Die öffentliche Seite ist ein **statischer Export**, den GitHub Pages kostenlos
 
 1. Datenbank aus dem Release **„datenbank“** laden (beim allerersten Lauf: `seed/ah.sqlite.gz`)
 2. Auktionen aller Häuser über die Battle.net API holen, Namen neuer Items nachladen (DE + EN)
-3. Verdichten (`python run.py compact`): Märkte „Alle AHs“/„Neutral“ 7 Tage stündlich, danach Tageswerte bis 180 Tage; einzelne Häuser nur 2 Tage stündlich und 14 Tage insgesamt
+3. Verdichten (`python run.py compact`): Fraktionsmärkte Allianz/Horde/Neutral 7 Tage stündlich, danach Tageswerte bis 180 Tage; einzelne Häuser nur 2 Tage stündlich und 14 Tage insgesamt
 4. Website bauen und direkt auf GitHub Pages veröffentlichen (ohne Commits – das Repository wächst nicht)
 5. Erst danach fehlende Namen in kleinen Portionen über Wowhead ergänzen (gedrosselt, dauert einige Minuten)
 6. Datenbank zurück ins Release legen
@@ -61,15 +61,13 @@ Manuell starten: `publish.bat` öffnet die Workflow-Seite → **Run workflow**. 
 
 ---
 
-## Märkte: „Alle AHs“ und „Neutral“
+## Märkte: Allianz, Horde, Neutral
 
-Oben rechts wählt man den Markt:
+Oben rechts wählt man die Fraktion – **Allianz** (Standard), **Horde** oder **Neutral** (Schwarzmeerräuber: Beutebucht, Gadgetzan, Everlook). Jede Fraktion ist ein eigener Sammelmarkt aus den Auktionshäusern aller Server-Verbünde. „Einzelnes AH …“ filtert optional auf ein Haus. Blizzard liefert Häuser in Dreiergruppen (Allianz/Horde/Neutral eines Server-Verbunds, z. B. #110/#113/#116); die Seite nennt sie „Verbund A, B, C, D“.
 
-* **Alle AHs** (Standard): alle Fraktions-Auktionshäuser (Allianz + Horde) aller Server-Verbünde zusammengefasst – der allgemeine Marktpreis.
-* **Neutral**: die neutralen Auktionshäuser der Schwarzmeerräuber (Beutebucht, Gadgetzan, Everlook), getrennt, weil dort deutlich andere Preise gelten.
-* **Einzelnes AH …**: optionaler Filter auf ein einzelnes Haus. Blizzard liefert Häuser in Dreiergruppen (Allianz/Horde/Neutral eines Server-Verbunds, z. B. #110/#113/#116); die Seite nennt sie „Verbund A, B, …“.
+In den Sammelmärkten ist **Min der typische Tiefstpreis**: je Haus die günstige Preisstufe (10 %-Perzentil der angebotenen Menge), davon der mengengewichtete Median über die Häuser. So verfälscht ein einzelnes Lockangebot den Preis nicht. Median, Mittel, Menge und Auktionen werden exakt aus allen Einzelauktionen berechnet.
 
-In den beiden Sammelmärkten ist **Min der typische Tiefstpreis**: je Haus die günstige Preisstufe (10 %-Perzentil der angebotenen Menge), davon der mengengewichtete Median über alle Häuser. So verfälscht ein einzelnes Lockangebot in irgendeinem Haus den Preis nicht. Median, Mittel, Menge und Auktionen werden exakt aus allen Einzelauktionen berechnet. Die Item-Seite zeigt beide Märkte nebeneinander, den Tooltip wie im Spiel (Werte, Bindung, Benötigt-Stufe usw. von Battle.net) und die Preise je Einzelhaus (★ = günstigstes).
+**Item-Seite:** oben drei Reiter mit dem Preis je Fraktion, darunter direkt die Preise der Fraktion gesamt und ihrer vier Verbünde (★ = günstigstes Haus; Klick zeigt den Verlauf dieses Hauses). Alles Weitere ist aufklappbar (der Zustand wird gemerkt): Kennzahlen, Angebotsmenge, Tageszeit & Wochentag, alle Auktionshäuser im Vergleich, Ausreißer, Snapshots, Item-Details mit Tooltip. Unter „Anzeige ▾“ am Chart: Kennzahlen ein-/ausblenden und **Verbünde vergleichen** (Mindestpreis aller Verbünde der Fraktion in einem Chart).
 
 ## Ansichten
 
@@ -203,7 +201,7 @@ ahanalytics/
   lua.py, cbor.py  Parser für SavedVariables und Auctionator-CBOR
   sources/         auctionator.py, battlenet.py, wowhead.py, demo.py
 static/            index.html, app.css, app.js, vendor/chart.umd.min.js
-tests/             55 Tests (Parser, Ingest, Battle.net mit Fake-HTTP, Kennzahlen, API)
+tests/             56 Tests (Parser, Ingest, Battle.net mit Fake-HTTP, Kennzahlen, API)
 data/              SQLite-Datenbanken (ah.sqlite = echt, demo.sqlite = Beispieldaten)
 site/              Export für GitHub Pages (wird im Workflow gebaut, nicht in main)
 seed/              Startdatenbank für den allerersten Workflow-Lauf

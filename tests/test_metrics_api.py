@@ -185,7 +185,7 @@ class CompactTest(unittest.TestCase):
     def test_retention_markets_vs_single_houses(self):
         con = db.connect(":memory:")
         single = db.upsert_house(con, "battlenet", "eu-110", "Haus", faction="Allianz")
-        market = db.upsert_group_house(con, "battlenet", "eu", "alle")
+        market = db.upsert_group_house(con, "battlenet", "eu", "allianz")
         day0 = 1_790_000_000 // 86400 * 86400
         for h in range(20 * 24):  # 20 Tage stündlich
             for hid in (single, market):
