@@ -42,12 +42,26 @@ jobs:
         run: |
           newest=$(gh run list --workflow update.yml --limit 20 --json databaseId,status,createdAt --jq '[.[] | select(.status != "completed")] | sort_by(.createdAt) | last | .databaseId')
           echo "Jüngster offener Lauf: $newest, dieser Lauf: ${{ github.run_id }}"
-          if [ "$newest" = "${{ github.run_id }}" ]; then
-            gh workflow run update.yml --ref ${{ github.ref_name }}
-            echo "Nächster Lauf gestartet"
-          else
+          if [ "$newest" != "${{ github.run_id }}" ]; then
             echo "Ein neuerer Lauf führt die Kette fort – nichts zu tun"
+            exit 0
           fi
+          # Starten und prüfen, ob der neue Lauf wirklich anläuft (GitHub meldet selten
+          # "startup_failure" – dann bräche die Kette ab). Bis zu 4 Versuche.
+          for attempt in 1 2 3 4; do
+            before=$(gh run list --workflow update.yml --limit 1 --json databaseId --jq '.[0].databaseId')
+            gh workflow run update.yml --ref ${{ github.ref_name }} || true
+            sleep 45
+            read -r id concl <<< "$(gh run list --workflow update.yml --limit 1 --json databaseId,conclusion --jq '.[0] | "\(.databaseId) \(.conclusion // "-")"')"
+            if [ "$id" != "$before" ] && [ "$concl" != "startup_failure" ]; then
+              echo "Nächster Lauf gestartet (Versuch $attempt, Lauf $id)"
+              exit 0
+            fi
+            echo "Start nicht erfolgreich (Lauf $id, Ergebnis $concl) – neuer Versuch"
+            sleep 60
+          done
+          echo "Nächsten Lauf nicht starten können – der Zeitplan springt als Reserve ein"
+          exit 1
 
   update:
     name: "Daten holen und Seite veröffentlichen"
