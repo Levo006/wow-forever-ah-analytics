@@ -45,6 +45,7 @@ Die öffentliche Seite ist ein **statischer Export**, den GitHub Pages kostenlos
 **Automatische Aktualisierung (stündlich, kostenlos auf GitHub):** Der Workflow `.github/workflows/update.yml` läuft etwa stündlich auf GitHubs Servern: Jeder Lauf startet nach ~55 Minuten selbst den nächsten (GitHubs eigener Zeitplan lässt Läufe oft ausfallen und dient nur als Reserve) – dein PC muss dafür nicht laufen:
 
 1. Datenbank aus dem Release **„datenbank“** laden (beim allerersten Lauf: `seed/ah.sqlite.gz`)
+   und Rezepte prüfen (`python run.py recipes`: lädt nur neu, wenn älter als 7 Tage oder bei neuer Spielversion, sonst eine Anfrage)
 2. Auktionen aller Häuser über die Battle.net API holen, Namen neuer Items nachladen (DE + EN)
 3. Verdichten (`python run.py compact`): Fraktionsmärkte Allianz/Horde/Neutral 7 Tage stündlich, danach Tageswerte bis 180 Tage; einzelne Häuser nur 2 Tage stündlich und 14 Tage insgesamt
 4. Website bauen und direkt auf GitHub Pages veröffentlichen (ohne Commits – das Repository wächst nicht)
@@ -68,6 +69,21 @@ Oben rechts wählt man die Fraktion – **Allianz** (Standard), **Horde** oder *
 In den Sammelmärkten ist **Min der typische Tiefstpreis**: je Haus die günstige Preisstufe (10 %-Perzentil der angebotenen Menge), davon der mengengewichtete Median über die Häuser. So verfälscht ein einzelnes Lockangebot den Preis nicht. Median, Mittel, Menge und Auktionen werden exakt aus allen Einzelauktionen berechnet.
 
 **Item-Seite:** oben drei Reiter mit dem Preis je Fraktion, darunter direkt die Preise der Fraktion gesamt und ihrer vier Verbünde (★ = günstigstes Haus; Klick zeigt den Verlauf dieses Hauses). Alles Weitere ist aufklappbar (der Zustand wird gemerkt): Kennzahlen, Angebotsmenge, Tageszeit & Wochentag, alle Auktionshäuser im Vergleich, Ausreißer, Snapshots, Item-Details mit Tooltip. Unter „Anzeige ▾“ am Chart: Kennzahlen ein-/ausblenden und **Verbünde vergleichen** (Mindestpreis aller Verbünde der Fraktion in einem Chart).
+
+## Herstellung & Verwendung (Berufe und Rezepte)
+
+Auf jeder Item-Seite zeigt der aufklappbare Abschnitt **„Herstellung & Verwendung“**:
+
+* **Hergestellt aus:** Rezepte, die das Item herstellen, mit Zutaten, Stückpreisen und Materialkosten je Stück. Herstellbare Zutaten lassen sich aufklappen (z. B. Bronzebarren → Kupfer- und Zinnbarren → Erz).
+* **Verwendet in · daraus wird …:** alle Rezepte, in denen das Item Zutat ist, nach Beruf gruppiert. Jede Zeile lässt sich weiter aufklappen (Kupfererz → Kupferbarren → Bronzebarren → Schmiedeitems …). Kreisläufe werden mit ↻ markiert und nicht weiter verfolgt; „Alles aufklappen“ öffnet bis zu 3 Ebenen.
+* **Materialkosten, AH-Preis und Spanne** je Stück für die gewählte Fraktion (typischer Tiefstpreis des Fraktionsmarkts; Spanne = AH-Preis nach 5 % Gebühr minus Materialkosten). Fehlende Preise stehen als „kein Preis“ da (meist Händlerware wie Faden oder Phiolen), die Kosten dann als „unvollständig“. Optional **„günstigster Weg“**: Zutaten, die sich billiger selbst herstellen lassen, werden mit ihren Herstellkosten gerechnet.
+* Filter nach Beruf; jeder Eintrag führt zur Item-Seite. Items, die nie im AH auftauchen (z. B. Rüstung, die nur hergestellt wird), bekommen eine Seite nur mit Herstellung/Verwendung.
+
+**Quelle:** die offizielle Battle.net Static API für Forever (`static-forever-eu`: `/data/wow/profession/index` → `…/skill-tier/{id}` → `/data/wow/recipe/{id}`), deutsch. Stand 13.11.2026 (Build `static-1.60.1_70399`): **2486 Rezepte in 12 Berufen** (Schneiderei, Kochkunst, Lederverarbeitung, Kürschnerei, Verzauberkunst, Bergbau, Schmiedekunst, Ingenieurskunst, Angeln, Alchimie, Kräuterkunde, Erste Hilfe) mit 2701 beteiligten Items; Abruf ~40 s. Begründung: offiziell, Forever-spezifisch, deutsch und über dieselben Zugangsdaten verfügbar. Client-Datenbanken (wago.tools/DB2) bräuchten eine Build-Zuordnung und eigene Spell-Logik, Wowhead ist gedrosselt.
+
+**Nicht abgedeckt** (liefert die API nicht): benötigte Fertigkeitsstufe je Rezept, Lehrer/Fundort von Rezepten, Entzauberungs-Ergebnisse; Händlerpreise von Zutaten (nur AH-Preise). 180 Verzauberungen und 3 Ingenieursrezepte haben kein Ergebnis-Item (erscheinen mit ✦, ohne Preis). Verworfen werden 7 Rezepte ohne Namen (Platzhalter) und ein doppeltes „Kupfer verhütten“ unter einem namenlosen Beruf.
+
+**Robustheit:** Rezepte liegen in der Datenbank (`professions`, `recipes`, `recipe_reagents`) und werden höchstens wöchentlich bzw. bei einem neuen Namespace-Build neu geladen. Ein neuer Abruf ersetzt den Bestand nur, wenn höchstens 2 % (mind. 5) der Rezept-Abrufe fehlschlagen und mindestens die Hälfte des bisherigen Bestands ankommt. Der Website-Export enthält eine Datei `data/recipes.json` (~490 KB, gzip ~120 KB) mit den aktuellen Fraktionspreisen der Rezept-Items (nur Preise der letzten 48 h); Bäume und Kosten rechnet `static/recipes-core.js` im Browser.
 
 ## Ansichten
 
@@ -180,19 +196,20 @@ Einzelne Auktionen lassen sich mit `aggregate.aggregate_listings([(item_id, stü
 | Backend | Python-Standardbibliothek (`http.server`, `sqlite3`, `tomllib`) | Keine Abhängigkeiten, läuft mit dem vorhandenen Python. Threading-Server, eine DB-Verbindung pro Thread, LRU-Cache, der bei jedem Import über `data_version` ungültig wird. |
 | Frontend | Vanilla-JS-SPA (Hash-Routing) + Chart.js 4.4.1 (lokal) | Kein Build-Schritt, alle Ansichten sind per URL teil- und verlinkbar; lange Zeiträume werden serverseitig auf ≤ 800 Punkte verdichtet. |
 
-**Tabellen:** `houses` (Auktionshäuser/Realms je Quelle), `items` (Metadaten), `snapshots` (ein Eintrag pro Haus und Zeitpunkt), `prices` (Kennzahlen pro Haus/Item/Zeitpunkt, Kupfer), `ladders` (Preisstaffel, nur jüngste Snapshots), `item_summary`, `import_log`, `meta`.
+**Tabellen:** `houses` (Auktionshäuser/Realms je Quelle), `items` (Metadaten), `professions`/`recipes`/`recipe_reagents` (Rezepte), `snapshots` (ein Eintrag pro Haus und Zeitpunkt), `prices` (Kennzahlen pro Haus/Item/Zeitpunkt, Kupfer), `ladders` (Preisstaffel, nur jüngste Snapshots), `item_summary`, `import_log`, `meta`.
 
-**API** (alle `GET`, JSON): `/api/houses`, `/api/overview`, `/api/classes`, `/api/search`, `/api/item/{id}`, `/api/item/{id}/history`, `/api/item/{id}/analysis`, `/api/item/{id}/snapshots`, `/api/snapshot/{haus}/{ts}`, `/api/compare`, `/api/movers`, `/api/deals`, `/api/status`, `/api/import/log`; `POST /api/import/auctionator` (Datei im Body), `POST /api/import/auctionator/auto`, `POST /api/collect`.
+**API** (alle `GET`, JSON): `/api/houses`, `/api/overview`, `/api/classes`, `/api/search`, `/api/item/{id}`, `/api/item/{id}/history`, `/api/item/{id}/analysis`, `/api/item/{id}/snapshots`, `/api/snapshot/{haus}/{ts}`, `/api/compare`, `/api/movers`, `/api/deals`, `/api/status`, `/api/recipes`, `/api/import/log`; `POST /api/import/auctionator` (Datei im Body), `POST /api/import/auctionator/auto`, `POST /api/collect`.
 
 **Projektstruktur**
 
 ```
 ahanalytics/
-  __main__.py      Kommandozeile (serve, demo, import-auctionator, collect, refresh, info)
+  __main__.py      Kommandozeile (serve, demo, import-auctionator, collect, recipes, refresh, info)
   config.py        config.toml + Umgebungsvariablen
   db.py            Schema, Upserts, item_summary
   aggregate.py     Auktionen → Kennzahlen (mengengewichtete Perzentile)
   export.py        statischer Export (verdichtete Historie, spaltenweise JSON)
+  recipes.py       Berufe/Rezepte von Battle.net (wöchentlich), Export-Struktur
   publish.py       Veröffentlichung auf den Zweig gh-pages
   metadata.py      Item-Namen/Icons: Battle.net (DE+EN), sonst Wowhead (Forever)
   metrics.py       Volatilität, Trend, Ausreißer, Saisonalität, Verdichtung
@@ -200,8 +217,8 @@ ahanalytics/
   server.py        HTTP-Server, Cache, Hintergrund-Sammler
   lua.py, cbor.py  Parser für SavedVariables und Auctionator-CBOR
   sources/         auctionator.py, battlenet.py, wowhead.py, demo.py
-static/            index.html, app.css, app.js, vendor/chart.umd.min.js
-tests/             56 Tests (Parser, Ingest, Battle.net mit Fake-HTTP, Kennzahlen, API)
+static/            index.html, app.css, app.js, static-api.js, recipes-core.js, vendor/chart.umd.min.js
+tests/             68 Tests (Parser, Ingest, Battle.net mit Fake-HTTP, Kennzahlen, API, Rezepte; recipes_core.test.js über Node)
 data/              SQLite-Datenbanken (ah.sqlite = echt, demo.sqlite = Beispieldaten)
 site/              Export für GitHub Pages (wird im Workflow gebaut, nicht in main)
 seed/              Startdatenbank für den allerersten Workflow-Lauf

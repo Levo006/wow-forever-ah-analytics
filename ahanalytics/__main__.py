@@ -59,6 +59,10 @@ def main(argv=None):
     cp.add_argument("--house-keep-days", type=int, default=14, help="Einzelhäuser: Tage insgesamt")
     cp.add_argument("--vacuum", action="store_true", help="Datei danach verkleinern (nur wenn etwas gelöscht wurde)")
 
+    rc = sub.add_parser("recipes", help="Berufe und Rezepte von Battle.net laden (nur wenn veraltet)")
+    rc.add_argument("--force", action="store_true", help="auch laden, wenn der Bestand aktuell ist")
+    rc.add_argument("--max-age-days", type=int, default=7)
+
     sub.add_parser("refresh", help="Zusammenfassungen neu berechnen")
     sub.add_parser("info", help="Datenbank-Statistik anzeigen")
 
@@ -164,6 +168,13 @@ def main(argv=None):
         if args.vacuum and (st["days"] or st["deleted"]):
             con.execute("VACUUM")
             con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    elif args.cmd == "recipes":
+        from . import recipes
+        from .sources import battlenet
+        bn = cfg["battlenet"]
+        client = battlenet.BattleNetClient(bn["client_id"], bn["client_secret"],
+                                           region=(bn.get("regions") or ["eu"])[0], locale=bn.get("locale", "de_DE"))
+        recipes.update(con, client, force=args.force, max_age_days=args.max_age_days)
     elif args.cmd == "refresh":
         with db.transaction(con):
             db.refresh_summary(con)

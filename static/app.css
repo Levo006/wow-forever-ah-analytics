@@ -337,3 +337,39 @@ a.tag:hover { text-decoration: none; border-color: var(--link); color: var(--tex
 .infogrid { display: grid; grid-template-columns: minmax(0, 320px) minmax(0, 1fr); gap: 16px; align-items: start; }
 @media (max-width: 760px) { .infogrid { grid-template-columns: minmax(0, 1fr); } }
 .kv td { white-space: normal; }
+
+/* ------------------------------------------- Item-Seite: Herstellung & Verwendung */
+.rbar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.rbar label { display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-secondary); }
+.rchips { display: flex; flex-wrap: wrap; gap: 6px; }
+.rchips button { border: 1px solid var(--border); background: var(--surface-2); color: var(--text-secondary); border-radius: 14px; padding: 3px 11px; font-size: 12.5px; cursor: pointer; }
+.rchips button span { color: var(--text-muted); margin-left: 3px; }
+.rchips button:hover { color: var(--text-primary); }
+.rchips button.on { background: var(--link); border-color: var(--link); color: #fff; }
+.rchips button.on span { color: rgba(255,255,255,.8); }
+.rnote { margin-bottom: 10px; }
+.fold .fb h3 { font-size: 14px; margin: 14px 0 8px; }
+.rhead { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.rprof { margin-bottom: 12px; }
+.rprof h4 { font-size: 13px; margin: 10px 0 4px; }
+.tscroll { overflow-x: auto; }
+.rt td, .rt th { padding: 5px 8px; }
+@media (max-width: 640px) { .rt td, .rt th { padding: 5px 5px; } .rcard { padding: 8px; } .rind { padding-left: calc(var(--d, 0) * 12px); } }
+.rt td.itemcell { max-width: none; width: 100%; white-space: normal; }
+.rind { display: inline-flex; align-items: center; gap: 6px; padding-left: calc(var(--d, 0) * 20px); min-width: 0; }
+.rind .item { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.rtog { width: 20px; height: 20px; flex: none; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 5px;
+  background: var(--surface-2); color: var(--text-secondary); cursor: pointer; font-size: 11px; padding: 0; line-height: 1; }
+.rtog:hover { color: var(--text-primary); border-color: var(--link); }
+.rtog.off { border-color: transparent; background: none; cursor: default; color: var(--text-muted); }
+.rname { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
+.rcat { font-size: 11.5px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rt tr[data-d]:not([data-d="0"]) { background: color-mix(in srgb, var(--surface-2) 45%, transparent); }
+.rt tr.rsub td { border-bottom: 0; padding-top: 8px; }
+.miss { color: var(--text-muted); font-style: italic; font-size: 12px; }
+.rcards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 10px; }
+.rcard { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); padding: 10px 12px; min-width: 0; }
+.rcard .t th { background: var(--surface-2); }
+.rcardh { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; margin-bottom: 4px; }
+.rfoot { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 8px; font-size: 13px; color: var(--text-secondary); }
+.rfoot b { color: var(--text-primary); font-weight: 600; }

@@ -323,8 +323,18 @@ const StaticAPI = (() => {
     }
     return f._houses;
   }
+  const recipes = () => load("data/recipes.json");
   async function item(id) {
-    const f = await itemFile(id);
+    // Item ohne AH-Daten, aber aus Rezepten bekannt → Seite nur mit Herstellung/Verwendung
+    const r = await recipes().catch(() => null);
+    const m = r?.items?.[String(id)];
+    const onlyRecipe = () => ({ item: { id, name: m[0], quality: m[1], icon: m[2] }, houses: [] });
+    if (m && !m[3]) return onlyRecipe();
+    let f;
+    try { f = await itemFile(id); } catch (e) {
+      if (!m) throw e;
+      return onlyRecipe();
+    }
     return { item: f.item, houses: await itemHouses(f) };
   }
   async function history(id, params) {
@@ -425,6 +435,7 @@ const StaticAPI = (() => {
     [/^compare$/, (m, p) => compare(p)],
     [/^movers$/, (m, p) => movers(p)],
     [/^deals$/, (m, p) => deals(p)],
+    [/^recipes$/, () => recipes()],
     [/^import\/log$/, async () => ({ log: (await meta()).import_log || [] })],
   ];
 

@@ -496,8 +496,8 @@ function wowTooltip(it) {
 }
 
 /** Aufklappbarer Abschnitt; Inhalt wird erst beim ersten Öffnen gerendert (Zustand wird gemerkt). */
-function fold(key, title, summary = "") {
-  const open = store.get("fold." + key, false);
+function fold(key, title, summary = "", openByDefault = false) {
+  const open = store.get("fold." + key, openByDefault);
   return `<details class="fold" data-fold="${key}" ${open ? "open" : ""}><summary><span class="ft">${title}</span>${summary ? `<span class="fs">${summary}</span>` : ""}<span class="chev" aria-hidden="true">›</span></summary><div class="fb" id="fb-${key}"></div></details>`;
 }
 function wireFolds(renderers) {
@@ -514,12 +514,204 @@ function wireFolds(renderers) {
   });
 }
 
+// ============================================================ Rezepte
+let recipeIdxP = null;
+/** Rezeptdaten einmal laden und indizieren (wird über Seitenwechsel hinweg behalten). */
+function loadRecipes() {
+  if (!recipeIdxP) recipeIdxP = api("recipes").then((d) => RecipeCore.buildIndex(d)).catch((e) => { recipeIdxP = null; throw e; });
+  return recipeIdxP;
+}
+const RC_MAX_DEPTH = 8;
+
+/** Kurzbeschreibung für die Kopfzeile des Abschnitts. */
+function recipeSummary(idx, id) {
+  const uses = RecipeCore.usedIn(idx, id), made = RecipeCore.madeBy(idx, id);
+  if (!uses.length && !made.length) return "kein bekanntes Rezept";
+  const parts = [];
+  if (made.length) parts.push(`herstellbar · ${[...new Set(made.map((r) => r.prof))].join(", ")}`);
+  if (uses.length) {
+    const profs = [...new Set(uses.map((r) => r.prof))];
+    parts.push(`Zutat in ${num(uses.length)} Rezept${uses.length === 1 ? "" : "en"} · ${profs.slice(0, 3).join(", ")}${profs.length > 3 ? ` +${profs.length - 3}` : ""}`);
+    const down = RecipeCore.countTree(RecipeCore.usesTree(idx, id, { maxDepth: 4, maxNodes: 1500 })).items;
+    if (down > uses.length) parts.push(`daraus ${num(down)} Items`);
+  }
+  return parts.join(" · ");
+}
+
+function renderRecipes(el, id, fk) {
+  return loadRecipes().then((idx) => {
+    const fac = FACTIONS.find((f) => f.k === fk) || FACTIONS[0];
+    const hid = groupId(fk);
+    const uses = RecipeCore.usedIn(idx, id), made = RecipeCore.madeBy(idx, id);
+    if (!uses.length && !made.length) {
+      el.innerHTML = '<div class="empty">Dieses Item wird in keinem bekannten Rezept hergestellt oder verwendet.</div>';
+      return;
+    }
+    const profs = RecipeCore.professionsFor(idx, id);
+    let prof = store.get("rec.prof", "");
+    if (prof && !profs.some((p) => p.prof === prof)) prof = "";
+    let best = store.get("rec.best", false);
+    const opts = () => ({ mode: best ? "best" : "ah" });
+
+    const info = (iid) => RecipeCore.itemInfo(idx, iid);
+    const label = (iid) => {
+      const it = info(iid);
+      return itemLabel({ id: iid, name: it.name, quality: it.quality, icon: it.icon, house_id: hid });
+    };
+    const resultCell = (r) => r.item ? label(r.item) : `<span class="item"><span class="ico bq1">✦</span><span title="${esc(r.name)}">${esc(r.name)}</span></span>`;
+    const yieldTxt = (r) => (r.qmin === r.qmax ? num(r.qmin) : `${num(r.qmin)}–${num(r.qmax)}`) + "×";
+    const noPrice = (title = "Derzeit kein Angebot im AH (evtl. Händlerware)") => `<span class="miss" title="${esc(title)}">kein Preis</span>`;
+    const costCell = (m) => m.complete ? money(m.perUnit ?? m.cost)
+      : `<span class="miss" title="${m.missing.length} Zutat(en) ohne AH-Preis">unvollständig</span>`;
+    const priceCell = (iid) => { const p = iid ? RecipeCore.price(idx, fk, iid) : null; return iid ? (p ? money(p.min) : noPrice()) : '<span class="muted">—</span>'; };
+    const marginCell = (r) => {
+      if (!r.item) return '<span class="muted">—</span>';
+      const g = RecipeCore.margin(idx, fk, r, opts());
+      if (g.profit == null) return '<span class="muted">–</span>';
+      return `<span class="${g.profit >= 0 ? "up" : "down"}">${g.profit >= 0 ? "+" : ""}${money(g.profit)}</span>${g.pct != null ? ` <span class="muted small">${num(g.pct, 0)} %</span>` : ""}`;
+    };
+
+    // ----- „Verwendet in“: Baumtabelle, Ebenen werden per Klick nachgeladen
+    const useRow = (r, parentItem, depth, path) => {
+      const reag = r.reagents.find((x) => x.id === parentItem);
+      const cyc = r.item && path.includes(r.item);
+      const next = r.item && !cyc ? RecipeCore.usedIn(idx, r.item).length : 0;
+      const m = RecipeCore.materialCost(idx, fk, r, opts());
+      const tog = cyc ? '<span class="rtog off" title="Kreislauf: dieses Item kommt im Pfad schon vor">↻</span>'
+        : next && depth < RC_MAX_DEPTH ? `<button type="button" class="rtog" title="Daraus wird … (${next})" aria-expanded="false">▸</button>`
+        : '<span class="rtog off"></span>';
+      return `<tr class="nohover" data-d="${depth}" data-item="${r.item || ""}" data-path="${[...path, r.item].filter(Boolean).join(",")}">
+        <td class="itemcell"><span class="rind" style="--d:${depth}">${tog}<span class="rname">${resultCell(r)}<span class="rcat">${depth ? esc(r.prof) + " · " : ""}${esc(r.cat)}${next && !cyc ? ` · <span title="Wird in ${next} weiteren Rezepten verwendet">→ ${next} weitere</span>` : ""}</span></span></span></td>
+        <td class="n">${reag ? num(reag.q) + "×" : ""}</td>
+        <td class="n">${r.item ? yieldTxt(r) : ""}</td>
+        <td class="n">${costCell(m)}</td>
+        <td class="n">${priceCell(r.item)}</td>
+        <td class="n">${marginCell(r)}</td></tr>`;
+    };
+    const useHead = `<thead><tr><th>Ergebnis</th><th class="n" title="Benötigte Menge der Zutat in der Zeile darüber">Benötigt</th><th class="n">Ergibt</th>
+      <th class="n" title="Materialkosten je hergestelltem Stück">Material/Stk</th><th class="n">AH-Preis</th><th class="n" title="AH-Preis nach 5 % Gebühr minus Materialkosten, je Stück">Spanne</th></tr></thead>`;
+
+    // ----- „Hergestellt aus“: je Rezept Zutatenliste, herstellbare Zutaten aufklappbar
+    const madeRows = (r, depth, path) => {
+      const m = RecipeCore.materialCost(idx, fk, r, opts());
+      return m.parts.map((x) => {
+        const cyc = path.includes(x.id);
+        const sub = !cyc && depth < RC_MAX_DEPTH ? RecipeCore.madeBy(idx, x.id) : [];
+        const src = x.source === "craft" ? ' <span class="pill" title="Selbst herstellen ist günstiger als kaufen">selbst</span>' : "";
+        return `<tr class="nohover" data-d="${depth}" data-mitem="${x.id}" data-path="${[...path, x.id].join(",")}">
+          <td class="itemcell"><span class="rind" style="--d:${depth}">${cyc ? '<span class="rtog off" title="Kreislauf">↻</span>'
+            : sub.length ? `<button type="button" class="rtog" title="Zutat selbst herstellen: ${esc(sub.map((s) => s.name).join(", "))}" aria-expanded="false">▸</button>` : '<span class="rtog off"></span>'}${label(x.id)}</span></td>
+          <td class="n">${num(x.q)}×</td><td class="n">${x.unit == null ? noPrice() : money(x.unit) + src}</td><td class="n">${x.sum == null ? "" : money(x.sum)}</td></tr>`;
+      }).join("");
+    };
+    const madeCard = (r) => {
+      const m = RecipeCore.materialCost(idx, fk, r, opts());
+      const g = RecipeCore.margin(idx, fk, r, opts());
+      const sell = RecipeCore.price(idx, fk, r.item);
+      return `<div class="rcard">
+        <div class="rcardh"><b>${esc(r.name)}</b><span class="muted small">${esc(r.prof)}${r.cat ? " · " + esc(r.cat) : ""} · ergibt ${yieldTxt(r)}</span></div>
+        <div class="tscroll"><table class="t rt"><thead><tr><th>Zutat</th><th class="n">Menge</th><th class="n">Stückpreis</th><th class="n">Summe</th></tr></thead>
+          <tbody data-kind="made">${madeRows(r, 0, [id])}</tbody></table></div>
+        <div class="rfoot">
+          <span>Material je Stück <b>${m.complete ? money(m.perUnit) : `≥ ${money(m.partial / r.qavg)} <span class="miss">${m.missing.length} ohne Preis</span>`}</b></span>
+          <span>AH-Preis <b>${sell ? money(sell.min) : noPrice()}</b></span>
+          <span>Spanne <b>${marginCell(r)}</b></span></div></div>`;
+    };
+
+    const draw = () => {
+      const u = uses.filter((r) => !prof || r.prof === prof);
+      const mk = made.filter((r) => !prof || r.prof === prof);
+      const byProf = new Map();
+      for (const r of u) (byProf.get(r.prof) || byProf.set(r.prof, []).get(r.prof)).push(r);
+      el.innerHTML = `
+        <div class="rbar">
+          <div class="rchips" id="rprof">${[["", "Alle Berufe", uses.length + made.length], ...profs.map((p) => [p.prof, p.prof, p.count])]
+            .map(([k, l, n]) => `<button type="button" class="${k === prof ? "on" : ""}" data-p="${esc(k)}">${esc(l)} <span>${n}</span></button>`).join("")}</div>
+          <label class="small" title="Zutaten, die sich günstiger selbst herstellen lassen, mit Herstellkosten statt AH-Preis rechnen"><input type="checkbox" id="rbest" ${best ? "checked" : ""}> günstigster Weg (selbst herstellen)</label>
+        </div>
+        <div class="muted small rnote"><span class="fac ${fac.fac}"></span>Preise: ${esc(fac.name)} gesamt · typischer Tiefstpreis · Spanne nach 5 % AH-Gebühr</div>
+        ${mk.length ? `<h3>Hergestellt aus</h3><div class="rcards">${mk.map(madeCard).join("")}</div>` : ""}
+        ${u.length ? `<div class="rhead"><h3>Verwendet in · daraus wird …</h3><button type="button" class="btn small" id="rexp">Alles aufklappen</button></div>
+          ${[...byProf.entries()].map(([pn, rs]) => `<div class="rprof"><h4>${esc(pn)} <span class="muted small">${rs.length} Rezept${rs.length === 1 ? "" : "e"}</span></h4>
+            <div class="tscroll"><table class="t rt">${useHead}<tbody data-kind="use">${rs.map((r) => useRow(r, id, 0, [id])).join("")}</tbody></table></div></div>`).join("")}` : ""}
+        ${!u.length && !mk.length ? '<div class="empty">Keine Rezepte für diesen Beruf.</div>' : ""}`;
+    };
+
+    // Auf-/Zuklappen einer Zeile: Kinder direkt darunter einfügen bzw. entfernen
+    const collapse = (tr) => {
+      const d = +tr.dataset.d;
+      let n = tr.nextElementSibling;
+      while (n && +n.dataset.d > d) { const x = n.nextElementSibling; n.remove(); n = x; }
+      const b = $(".rtog", tr); if (b) { b.textContent = "▸"; b.setAttribute("aria-expanded", "false"); }
+    };
+    const expand = (tr) => {
+      const d = +tr.dataset.d, path = tr.dataset.path.split(",").map(Number);
+      const kind = tr.parentElement.dataset.kind;
+      let html = "";
+      if (kind === "use") {
+        const iid = +tr.dataset.item;
+        html = RecipeCore.usedIn(idx, iid).map((r) => useRow(r, iid, d + 1, path)).join("");
+      } else {
+        const iid = +tr.dataset.mitem;
+        html = RecipeCore.madeBy(idx, iid).map((r) => `<tr class="nohover rsub" data-d="${d + 1}"><td colspan="4"><span class="rind muted small" style="--d:${d + 1}">${esc(r.prof)} · ${esc(r.name)} · ergibt ${yieldTxt(r)}</span></td></tr>`
+          + madeRows(r, d + 1, path)).join("");
+      }
+      tr.insertAdjacentHTML("afterend", html);
+      const b = $(".rtog", tr); if (b) { b.textContent = "▾"; b.setAttribute("aria-expanded", "true"); }
+    };
+    el.onclick = (e) => {
+      const pb = e.target.closest("#rprof button");
+      if (pb) { prof = pb.dataset.p; store.set("rec.prof", prof); draw(); return; }
+      if (e.target.closest("#rexp")) {
+        // bis 3 Ebenen, höchstens ~400 Zeilen
+        for (let level = 0; level < 3; level++) {
+          const rows = $$('tbody[data-kind="use"] tr', el).filter((tr) => +tr.dataset.d === level && $("button.rtog[aria-expanded=false]", tr));
+          if ($$('tbody[data-kind="use"] tr', el).length > 400) break;
+          rows.forEach(expand);
+        }
+        return;
+      }
+      const b = e.target.closest("button.rtog");
+      if (!b) return;
+      const tr = b.closest("tr");
+      if (b.getAttribute("aria-expanded") === "true") collapse(tr); else expand(tr);
+    };
+    el.onchange = (e) => { if (e.target.id === "rbest") { best = e.target.checked; store.set("rec.best", best); draw(); } };
+    draw();
+    // Wenige direkte Verwendungen (z. B. Erz → Barren): erste Ebene gleich aufklappen
+    const top = $$('tbody[data-kind="use"] tr', el);
+    if (top.length && top.length <= 3) top.forEach((tr) => { if ($("button.rtog", tr)) expand(tr); });
+  });
+}
+
+/** Kopfzeile „Herstellung & Verwendung“ füllen, sobald die Rezeptdaten da sind; ohne Daten ausblenden. */
+function setRecipeSummary(id) {
+  loadRecipes().then((idx) => {
+    const fs = $('details[data-fold="rec"] .fs');
+    if (!fs) return;
+    if (!idx.recipes.length) { fs.closest("details").remove(); return; }
+    fs.textContent = recipeSummary(idx, id);
+  }).catch(() => $('details[data-fold="rec"]')?.remove());
+}
+
 async function viewItem(r) {
   const id = +r.parts[1];
   const p = { range: "7d", ...r.params };
   const info = await api(`item/${id}`);
   const it = info.item;
-  if (!info.houses.length) { main.innerHTML = `<div class="empty">Für dieses Item gibt es keine Preisdaten.</div>`; return; }
+  if (!info.houses.length) {
+    // Item ohne AH-Daten (z. B. nur aus Rezepten bekannt): Kopf + Herstellung/Verwendung
+    const sh = houseById(state.house);
+    const fk0 = (sh && (GROUP_KINDS.includes(sh.kind) ? sh.kind : sh.group)) || "allianz";
+    main.innerHTML = `<div class="ihead"><div class="who">${icon(it, true)}
+        <div style="min-width:0"><h1 class="q${it.quality ?? 1}">${esc(it.name)}</h1>
+          <div class="en">${it.name_en && it.name_en !== it.name ? esc(it.name_en) + " · " : ""}ID ${id} · <a href="https://www.wowhead.com/forever/de/item=${id}" target="_blank" rel="noopener">Wowhead ↗</a></div></div></div></div>
+      <div class="card"><div class="empty">Dieses Item wird derzeit in keinem Auktionshaus angeboten.</div></div>
+      <div class="folds">${fold("rec", "Herstellung & Verwendung", "Lade Rezepte …", true)}</div>`;
+    wireFolds({ rec: (el) => renderRecipes(el, id, fk0) });
+    setRecipeSummary(id);
+    return;
+  }
 
   // Auswahl: Haus aus URL/globaler Auswahl → zugehörige Fraktion
   const want = String(p.house || state.house || "");
@@ -618,6 +810,7 @@ async function viewItem(r) {
       <div class="muted small" id="pcnote" style="margin-top:6px"></div>
     </div>
     <div class="folds">
+      ${fold("rec", "Herstellung & Verwendung", "Lade Rezepte …", true)}
       ${fold("kpi", "Kennzahlen", house.avg7_min ? `Ø 7 T ${money(house.avg7_min)} · 7 T ${pct(house.chg7d_min)}` : "")}
       ${fold("qty", "Angebotsmenge", house.last_qty != null ? `${num(house.last_qty)} Stück aktuell` : "")}
       ${fold("season", "Tageszeit & Wochentag", "Wann ist es am günstigsten?")}
@@ -626,7 +819,9 @@ async function viewItem(r) {
       ${fold("snaps", "Einzelne Snapshots", "")}
       ${fold("info", "Item-Details", it.details?.lines?.length ? "Tooltip wie im Spiel" : "")}
     </div>` : `<div class="card"><div class="empty">Bei der ${esc(fac.name)} derzeit nicht angeboten.</div></div>
-    <div class="folds">${fold("all", "Alle Auktionshäuser im Vergleich", "")}${fold("info", "Item-Details", "")}</div>`}`;
+    <div class="folds">${fold("rec", "Herstellung & Verwendung", "Lade Rezepte …", true)}${fold("all", "Alle Auktionshäuser im Vergleich", "")}${fold("info", "Item-Details", "")}</div>`}`;
+  setRecipeSummary(id);
+  const recFold = (el) => renderRecipes(el, id, fk);
 
   // Interaktion
   $("#ftabs").onclick = (e) => { const b = e.target.closest("button[data-k]"); if (b) { const g = groupId(b.dataset.k); if (g) setParams({ house: g }); } };
@@ -656,7 +851,7 @@ async function viewItem(r) {
           .map(([k, v]) => `<tr class="nohover"><td class="muted">${k}</td><td>${v}</td></tr>`).join("")}
       </tbody></table></div>`;
   };
-  if (!house) { wireFolds({ all: allTable, info: infoBox }); return; }
+  if (!house) { wireFolds({ rec: recFold, all: allTable, info: infoBox }); return; }
 
   $("#rng").onclick = (e) => { const b = e.target.closest("button[data-r]"); if (b) setParams({ range: b.dataset.r }); };
   $("#tog").onchange = () => {
@@ -701,6 +896,7 @@ async function viewItem(r) {
   const enough = (house.last_ts || 0) - (house.first_ts || house.last_ts || 0) >= 2 * 86400;
   const t = enough ? ana.trend || {} : {}, v = enough ? ana.volatility || {} : {};
   wireFolds({
+    rec: recFold,
     kpi: (el) => {
       el.innerHTML = `<div class="mini">
         <div class="kpi"><div class="l">Ø 7 Tage</div><div class="v">${money(house.avg7_min)}</div><div class="d">Ø 30 T ${money(house.avg30_min)}</div></div>

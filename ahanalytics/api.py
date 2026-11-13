@@ -662,6 +662,11 @@ def deals(con, params):
             "deals": [_item_row(r) for r in rows]}
 
 
+def recipes(con, params):
+    from . import recipes as rc
+    return rc.export_data(con, rc.group_houses(con))
+
+
 def import_log(con, params):
     rows = con.execute("SELECT * FROM import_log ORDER BY id DESC LIMIT 50").fetchall()
     return {"log": [dict(r) for r in rows]}
