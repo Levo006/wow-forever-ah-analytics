@@ -99,6 +99,7 @@ jobs:
 
       # Rezepte/Quests/Sets ändern sich nur mit neuen Spielversionen: wöchentlich bzw. bei neuem Build neu laden,
       # sonst nur eine Anfrage. Fehler hier dürfen den Lauf nicht aufhalten (alter Bestand bleibt).
+      # Der Quest-Abruf hat ein eigenes Zeitbudget (6 Min.) und setzt im nächsten Lauf fort.
       - name: Rezepte, Quests und Sets prüfen (wöchentlich)
         continue-on-error: true
         timeout-minutes: 10
@@ -119,6 +120,17 @@ jobs:
           path: site
 
       - id: deploy
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+
+      # deploy-pages findet das eben hochgeladene Artefakt gelegentlich nicht („No artifacts named
+      # github-pages“) – kurz warten und einmal wiederholen.
+      - name: Veröffentlichen wiederholen
+        if: ${{ steps.deploy.outcome == 'failure' }}
+        run: sleep 30
+
+      - id: deploy2
+        if: ${{ steps.deploy.outcome == 'failure' }}
         uses: actions/deploy-pages@v4
 
       # Erst nach dem Veröffentlichen: der gedrosselte Wowhead-Abruf dauert einige

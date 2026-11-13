@@ -9,12 +9,18 @@ Quelle: Namespace ``static-forever-{region}``
 Wie bei den Rezepten: lokal in der Datenbank, höchstens wöchentlich bzw. bei neuem
 Namespace-Build neu geladen; ein unvollständiger Abruf ersetzt den Bestand nicht.
 
+Der Quest-Abruf (~7000 Anfragen) läuft in Etappen: bereits geladene Quests landen in
+``gamedata_cache`` (je Build), ein Lauf hört nach ``TIME_BUDGET`` Sekunden auf und der
+nächste macht dort weiter. So kann ein langsamer oder hängender Abruf den stündlichen
+Lauf nicht blockieren, und kein Fortschritt geht verloren.
+
 Nicht in der API: welche Items eine Quest *verlangt* (Questziele), Beute von Gegnern,
 Händlerangebote.
 """
 from __future__ import annotations
 
 import json
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -53,7 +59,19 @@ CREATE TABLE IF NOT EXISTS item_set_items (
     PRIMARY KEY (set_id, item_id)
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS item_set_items_item ON item_set_items(item_id);
+CREATE TABLE IF NOT EXISTS gamedata_cache (  -- Zwischenstand eines Abrufs über mehrere Läufe
+    kind  TEXT NOT NULL,
+    id    INTEGER NOT NULL,
+    build TEXT NOT NULL,
+    data  TEXT,                          -- JSON des geparsten Eintrags, NULL = ohne Titel/verworfen
+    PRIMARY KEY (kind, id)
+) WITHOUT ROWID;
 """
+
+TIME_BUDGET = 360      # Sekunden je Lauf für Quest-Details, danach Fortsetzung im nächsten Lauf
+CHUNK = 250            # Quests je Block (nach jedem Block wird der Zwischenstand gespeichert)
+WORKERS = 16
+MAX_RPS = 80           # Battle.net erlaubt 100 Anfragen/s
 
 FACTIONS = {"ALLIANCE": "Allianz", "HORDE": "Horde"}
 
@@ -62,7 +80,26 @@ def ensure_schema(con):
     con.executescript(SCHEMA)
 
 
+class _RateLimit:
+    """Höchstens ``rps`` Anfragen pro Sekunde über alle Threads."""
+
+    def __init__(self, rps):
+        self.gap, self.next, self.lock = 1.0 / rps, 0.0, threading.Lock()
+
+    def wait(self):
+        with self.lock:
+            now = time.monotonic()
+            t = max(now, self.next)
+            self.next = t + self.gap
+        if t > now:
+            time.sleep(t - now)
+
+
+_LIMIT = _RateLimit(MAX_RPS)
+
+
 def _get(client, path):
+    _LIMIT.wait()
     try:
         payload, _ = client.get(path, "static")
         return payload, None
@@ -70,7 +107,7 @@ def _get(client, path):
         return None, f"{path}: {exc}"
 
 
-def _pmap(client, paths, workers=8):
+def _pmap(client, paths, workers=WORKERS):
     with ThreadPoolExecutor(max_workers=workers) as pool:
         return list(pool.map(lambda p: _get(client, p), paths))
 
@@ -101,7 +138,9 @@ def parse_quest(payload: dict, zone_hint: str | None = None) -> dict | None:
             "rewards": rewards}
 
 
-def fetch_quests(client, log=print):
+def fetch_quests(client, log=print, con=None, deadline=None):
+    """Alle Quests laden. Mit ``con`` wird der Fortschritt zwischengespeichert; ist ``deadline``
+    erreicht, bevor alles da ist, kommt ``None`` statt der Liste zurück (Fortsetzung beim nächsten Mal)."""
     idx = []
     build = ""
     for kind, path, key in (("area", "/data/wow/quest/area/index", "areas"),
@@ -117,10 +156,35 @@ def fetch_quests(client, log=print):
         for q in (d or {}).get("quests") or []:
             hint.setdefault(int(q["id"]), name)
     ids = sorted(hint)
-    log(f"Quests: {len(idx)} Gebiete/Kategorien, {len(ids)} Quests – lade Details …")
-    res = _pmap(client, [f"/data/wow/quest/{q}" for q in ids])
-    errors += [e for _, e in res if e]
-    quests = [q for q in (parse_quest(d, hint[i]) for i, (d, _) in zip(ids, res)) if q]
+    done = {}
+    if con is not None:
+        ensure_schema(con)
+        con.execute("DELETE FROM gamedata_cache WHERE kind='quest' AND build<>?", (build,))
+        done = {i: (json.loads(d) if d else None)
+                for i, d in con.execute("SELECT id, data FROM gamedata_cache WHERE kind='quest'")}
+    todo = [q for q in ids if q not in done]
+    log(f"Quests: {len(idx)} Gebiete/Kategorien, {len(ids)} Quests – {len(done)} schon geladen, "
+        f"lade {len(todo)} …")
+    t0 = time.time()
+    for k in range(0, len(todo), CHUNK):
+        if deadline and time.time() > deadline:
+            log(f"Quests: Zeitbudget erreicht – {len(done)} von {len(ids)} geladen, "
+                f"Fortsetzung im nächsten Lauf.")
+            return None, build, len(ids) + len(idx), len(errors)
+        part = todo[k:k + CHUNK]
+        rows = []
+        for i, (d, e) in zip(part, _pmap(client, [f"/data/wow/quest/{q}" for q in part])):
+            if e:
+                errors.append(e)
+                continue
+            done[i] = parse_quest(d, hint[i])
+            rows.append(("quest", i, build, json.dumps(done[i], ensure_ascii=False) if done[i] else None))
+        if con is not None and rows:
+            with db.transaction(con):
+                con.executemany("INSERT OR REPLACE INTO gamedata_cache(kind, id, build, data) VALUES (?,?,?,?)", rows)
+        n = k + len(part)
+        log(f"Quests: {n}/{len(todo)} ({n / max(time.time() - t0, 0.001):.0f}/s, {len(errors)} Fehler)")
+    quests = [done[i] for i in ids if done.get(i)]
     if errors:
         log(f"Quests: {len(errors)} Abrufe fehlgeschlagen (z. B. {errors[0]})")
     return quests, build, len(ids) + len(idx), len(errors)
@@ -142,6 +206,7 @@ def store_quests(con, quests, build="", log=print) -> bool:
         _ensure_items(con, {r["item_id"]: r["item_name"] for q in quests for r in q["rewards"]})
         db.set_meta(con, "quests_fetched", int(time.time()))
         db.set_meta(con, "quests_build", build)
+        con.execute("DELETE FROM gamedata_cache WHERE kind='quest'")
     n = sum(1 for q in quests if q["rewards"])
     log(f"Quests gespeichert: {len(quests)} Quests, davon {n} mit Item-Belohnung")
     return True
@@ -159,7 +224,7 @@ def parse_set(payload: dict) -> dict | None:
     return {"id": int(payload["id"]), "name": payload["name"], "effects": json.dumps(effects, ensure_ascii=False), "items": items}
 
 
-def fetch_sets(client, log=print):
+def fetch_sets(client, log=print, con=None, deadline=None):  # noqa: ARG001 – klein, ohne Etappen
     d, err = _get(client, "/data/wow/item-set/index")
     if err:
         raise RuntimeError(err)
@@ -212,11 +277,14 @@ def _stale(con, kind, table, client, max_age_days):
     return False, "aktuell"
 
 
-def update(con, client, force=False, max_age_days=MAX_AGE_DAYS, log=print) -> dict:
-    """Quests und Sets bei Bedarf neu laden. Gibt {quests: bool, sets: bool} zurück."""
+def update(con, client, force=False, max_age_days=MAX_AGE_DAYS, log=print, budget=None) -> dict:
+    """Quests und Sets bei Bedarf neu laden. Gibt {quests: bool, sets: bool} zurück.
+
+    ``budget``: Sekunden für die Quest-Details in diesem Lauf (Standard ``TIME_BUDGET``)."""
     out = {}
-    for kind, table, fetch, store, label in (("quests", "quests", fetch_quests, store_quests, "Quests"),
-                                             ("sets", "item_sets", fetch_sets, store_sets, "Sets")):
+    deadline = time.time() + (TIME_BUDGET if budget is None else budget)
+    for kind, table, fetch, store, label in (("sets", "item_sets", fetch_sets, store_sets, "Sets"),
+                                             ("quests", "quests", fetch_quests, store_quests, "Quests")):
         stale, why = (True, "erzwungen") if force else _stale(con, kind, table, client, max_age_days)
         if not stale:
             log(f"{label}: {why} – kein Abruf nötig.")
@@ -224,7 +292,10 @@ def update(con, client, force=False, max_age_days=MAX_AGE_DAYS, log=print) -> di
             continue
         t = time.time()
         log(f"{label}: lade neu ({why}) …")
-        data, build, total, errors = fetch(client, log=log)
+        data, build, total, errors = fetch(client, log=log, con=con, deadline=deadline)
+        if data is None:
+            out[kind] = False
+            continue
         if errors > max(MAX_ERRORS, total * MAX_ERROR_RATIO):
             log(f"{label}: {errors} von {total} Abrufen fehlgeschlagen – Bestand bleibt unverändert.")
             out[kind] = False

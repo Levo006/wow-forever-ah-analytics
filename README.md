@@ -83,7 +83,7 @@ Auf jeder Item-Seite zeigt der aufklappbare Abschnitt **„Herkunft & Verwendung
 
 **Quelle:** die offizielle Battle.net Static API für Forever (`static-forever-eu`: `/data/wow/profession/index` → `…/skill-tier/{id}` → `/data/wow/recipe/{id}`), deutsch. Stand 13.11.2026 (Build `static-1.60.1_70399`): **2486 Rezepte in 12 Berufen** (Schneiderei, Kochkunst, Lederverarbeitung, Kürschnerei, Verzauberkunst, Bergbau, Schmiedekunst, Ingenieurskunst, Angeln, Alchimie, Kräuterkunde, Erste Hilfe) mit 2701 beteiligten Items; Abruf ~40 s. Begründung: offiziell, Forever-spezifisch, deutsch und über dieselben Zugangsdaten verfügbar. Client-Datenbanken (wago.tools/DB2) bräuchten eine Build-Zuordnung und eigene Spell-Logik, Wowhead ist gedrosselt.
 
-**Quests und Sets** kommen aus derselben API (`/data/wow/quest/area|category/{id}` → `/data/wow/quest/{id}`, `/data/wow/item-set/{id}`): Stand 13.11.2026 **6857 Quests, davon 2167 mit Item-Belohnung** (2632 verschiedene Items), und **154 Sets**; Abruf ~100 s bzw. ~3 s. 196 Quests ohne Titel (Platzhalter) werden verworfen. Website-Datei `data/quests.json` ~430 KB (gzip ~100 KB).
+**Quests und Sets** kommen aus derselben API (`/data/wow/quest/area|category/{id}` → `/data/wow/quest/{id}`, `/data/wow/item-set/{id}`): Stand 13.11.2026 **6857 Quests, davon 2167 mit Item-Belohnung** (2632 verschiedene Items), und **154 Sets**; Abruf lokal ~100 s bzw. ~3 s (höchstens 80 Anfragen/s). Der Quest-Abruf läuft in Etappen: je Lauf höchstens 6 Minuten, der Zwischenstand liegt in `gamedata_cache` und der nächste Lauf macht dort weiter – ein langsamer Abruf blockiert so nie den stündlichen Lauf. 196 Quests ohne Titel (Platzhalter) werden verworfen. Website-Datei `data/quests.json` ~430 KB (gzip ~100 KB).
 
 **Nicht abgedeckt** (liefert die API nicht): welche Items eine Quest *verlangt* (Questziele), Beute von Gegnern und aus Dungeons, Händlerangebote, Behälterinhalte; benötigte Fertigkeitsstufe je Rezept, Lehrer/Fundort von Rezepten, Entzauberungs-Ergebnisse; Händlerpreise von Zutaten (nur AH-Preise). Diese Daten gäbe es in der QuestieDB (Forever-Release auf GitHub), deren Inhalte laut Lizenz-Hinweis aber im Zweifel „all rights reserved“ sind – deshalb nicht eingebaut. 180 Verzauberungen und 3 Ingenieursrezepte haben kein Ergebnis-Item (erscheinen mit ✦, ohne Preis). Verworfen werden 7 Rezepte ohne Namen (Platzhalter) und ein doppeltes „Kupfer verhütten“ unter einem namenlosen Beruf.
 
@@ -223,7 +223,7 @@ ahanalytics/
   lua.py, cbor.py  Parser für SavedVariables und Auctionator-CBOR
   sources/         auctionator.py, battlenet.py, wowhead.py, demo.py
 static/            index.html, app.css, app.js, static-api.js, recipes-core.js, vendor/chart.umd.min.js
-tests/             73 Tests (Parser, Ingest, Battle.net mit Fake-HTTP, Kennzahlen, API, Rezepte, Quests/Sets; recipes_core.test.js über Node)
+tests/             74 Tests (Parser, Ingest, Battle.net mit Fake-HTTP, Kennzahlen, API, Rezepte, Quests/Sets; recipes_core.test.js über Node)
 data/              SQLite-Datenbanken (ah.sqlite = echt, demo.sqlite = Beispieldaten)
 site/              Export für GitHub Pages (wird im Workflow gebaut, nicht in main)
 seed/              Startdatenbank für den allerersten Workflow-Lauf

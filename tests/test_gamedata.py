@@ -100,6 +100,33 @@ class StoreExportTest(unittest.TestCase):
         self.assertFalse(res["quests"])
         self.assertEqual(self.con.execute("SELECT COUNT(*) FROM quests").fetchone()[0], 3)
 
+    def test_resume_after_time_budget(self):
+        class After:                        # Frist, die nach n Prüfungen abläuft
+            def __init__(self, n):
+                self.n = n
+
+            def __lt__(self, other):
+                self.n -= 1
+                return self.n < 0
+
+        old = gamedata.CHUNK
+        gamedata.CHUNK = 1
+        try:
+            con = db.connect(":memory:")
+            q, _, _, err = gamedata.fetch_quests(fake_client(), QUIET, con=con, deadline=After(2))
+            self.assertIsNone(q)                                     # abgebrochen …
+            self.assertEqual(con.execute("SELECT COUNT(*) FROM gamedata_cache").fetchone()[0], 2)  # … Fortschritt bleibt
+            # Fortsetzung: 33 und 40 kommen aus dem Zwischenstand, obwohl ihr Abruf jetzt fehlschlägt
+            q, _, _, err = gamedata.fetch_quests(fake_client(fail=(33, 40)), QUIET, con=con)
+            self.assertEqual((sorted(x["id"] for x in q), err), ([33, 40, 41], 0))
+            # Zeitbudget 0: Sets werden trotzdem gespeichert, Quests im nächsten Lauf
+            con = db.connect(":memory:")
+            self.assertEqual(gamedata.update(con, fake_client(), log=QUIET, budget=0), {"sets": True, "quests": False})
+            self.assertEqual(gamedata.update(con, fake_client(), log=QUIET), {"sets": False, "quests": True})
+            self.assertEqual(con.execute("SELECT COUNT(*) FROM gamedata_cache").fetchone()[0], 0)
+        finally:
+            gamedata.CHUNK = old
+
     def test_export(self):
         al = db.upsert_group_house(self.con, "battlenet", "eu", "allianz")
         db.write_snapshot(self.con, al, 1_790_000_000, "t", {6070: {"min": 250, "quantity": 2}})

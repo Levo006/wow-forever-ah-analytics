@@ -174,7 +174,8 @@ def main(argv=None):
         from . import gamedata, recipes
         from .sources import battlenet
         bn = cfg["battlenet"]
-        client = battlenet.BattleNetClient(bn["client_id"], bn["client_secret"],
+        # kurzes Timeout: eine hängende Verbindung soll nicht minutenlang einen Thread blockieren
+        client = battlenet.BattleNetClient(bn["client_id"], bn["client_secret"], timeout=20,
                                            region=(bn.get("regions") or ["eu"])[0], locale=bn.get("locale", "de_DE"))
         failed = False
         for mod in ((recipes, gamedata) if args.cmd == "gamedata" else (recipes,)):
