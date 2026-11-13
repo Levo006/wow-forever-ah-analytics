@@ -373,3 +373,13 @@ a.tag:hover { text-decoration: none; border-color: var(--link); color: var(--tex
 .rcardh { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; margin-bottom: 4px; }
 .rfoot { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 8px; font-size: 13px; color: var(--text-secondary); }
 .rfoot b { color: var(--text-primary); font-weight: 600; }
+.qlist { display: flex; flex-direction: column; gap: 6px; }
+.qrow { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; }
+.qt { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.qt a { font-weight: 600; color: var(--text-primary); }
+.qrw { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.qri { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px 2px 2px; border-radius: 8px; }
+.qri.me { background: color-mix(in srgb, var(--link) 18%, transparent); }
+.qri .qp { font-size: 12.5px; }
+.rt tr.me { background: color-mix(in srgb, var(--link) 14%, transparent); }
+.sfx { margin-top: 8px; font-size: 12.5px; color: var(--cg, #1eff00); display: flex; flex-direction: column; gap: 2px; }

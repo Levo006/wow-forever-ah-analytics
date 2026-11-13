@@ -148,5 +148,50 @@
     return { nodes: n, items: seen.size };
   }
 
-  return { AH_FEE, buildIndex, itemInfo, price, usedIn, madeBy, professionsFor, usesTree, madeFromTree, unitCost, materialCost, margin, countTree };
+  // ------------------------------------------------------------ Quests & Sets
+  const REPEAT = ["", "wiederholbar", "täglich", "wöchentlich"];
+
+  /** Index aus quests.json (bzw. /api/quests): Belohnungen und Set-Zugehörigkeit je Item. */
+  function buildQuestIndex(data) {
+    const rowsOf = (t) => {
+      const cols = t?.cols || [];
+      return (t?.rows || []).map((r) => Object.fromEntries(cols.map((c, i) => [c, r[i]])));
+    };
+    const quests = rowsOf(data?.quests).map((q) => ({
+      ...q, repeatLabel: REPEAT[q.repeatable || 0] || "",
+      rewards: (q.rewards || []).filter((x) => Array.isArray(x) && x[0]).map(([id, choice]) => ({ id, choice: !!choice })),
+    })).filter((q) => q.rewards.length);
+    const sets = rowsOf(data?.sets).map((s) => ({ ...s, items: (s.items || []).filter(Boolean), effects: s.effects || [] })).filter((s) => s.items.length);
+    const byReward = new Map(), bySet = new Map();
+    for (const q of quests) for (const r of q.rewards) push(byReward, r.id, q);
+    for (const s of sets) for (const id of s.items) push(bySet, id, s);
+    return { quests, sets, byReward, bySet, items: data?.items || {}, prices: data?.prices || {} };
+  }
+
+  /** Quests, die das Item als Belohnung geben (Fraktionsquests der anderen Seite zuletzt). */
+  function rewardedBy(qidx, id, faction = null) {
+    const fac = { allianz: "Allianz", horde: "Horde" }[faction] || null;
+    return (qidx.byReward.get(id) || []).slice().sort((a, b) =>
+      ((a.faction && fac && a.faction !== fac) ? 1 : 0) - ((b.faction && fac && b.faction !== fac) ? 1 : 0) || a.id - b.id);
+  }
+
+  /** Belohnungen einer Quest mit Preisen; best = wertvollste Wahlbelohnung (nur mit Preis). */
+  function questRewards(qidx, faction, quest) {
+    const list = quest.rewards.map((r) => ({ ...r, price: price(qidx, faction, r.id) }));
+    const choices = list.filter((r) => r.choice && r.price);
+    const best = choices.length > 1 ? choices.reduce((m, r) => (r.price.min > m.price.min ? r : m)) : null;
+    return { list, best: best ? best.id : null };
+  }
+
+  const setsOf = (qidx, id) => qidx.bySet.get(id) || [];
+
+  /** Set-Kosten im AH: Summe der verfügbaren Teile, Anzahl fehlender Teile. */
+  function setCost(qidx, faction, set) {
+    let total = 0, have = 0;
+    const parts = set.items.map((id) => { const p = price(qidx, faction, id); if (p) { total += p.min; have++; } return { id, price: p }; });
+    return { parts, total, have, count: set.items.length, complete: have === set.items.length };
+  }
+
+  return { AH_FEE, buildIndex, itemInfo, price, usedIn, madeBy, professionsFor, usesTree, madeFromTree, unitCost, materialCost, margin, countTree,
+    buildQuestIndex, rewardedBy, questRewards, setsOf, setCost };
 });

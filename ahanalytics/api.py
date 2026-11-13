@@ -667,6 +667,12 @@ def recipes(con, params):
     return rc.export_data(con, rc.group_houses(con))
 
 
+def quests(con, params):
+    from . import gamedata
+    from . import recipes as rc
+    return gamedata.export_data(con, rc.group_houses(con))
+
+
 def import_log(con, params):
     rows = con.execute("SELECT * FROM import_log ORDER BY id DESC LIMIT 50").fetchall()
     return {"log": [dict(r) for r in rows]}

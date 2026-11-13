@@ -15,6 +15,7 @@ Layout::
       data/house/<id>/snap/<ts>.json      Items eines Snapshots (+ Preisstaffeln)
       data/item/<id>.json                 Metadaten, Historie und Analysen je Haus
       data/recipes.json                   Berufe, Rezepte, Rezept-Items + aktuelle Fraktionspreise
+      data/quests.json                    Quests mit Item-Belohnung, Item-Sets (+ Preise)
 
 Lokale Pfade (z. B. der WoW-Account-Ordner) werden NICHT exportiert.
 """
@@ -25,7 +26,7 @@ import os
 import shutil
 import time
 
-from . import api, db, recipes
+from . import api, db, gamedata, recipes
 
 STATIC_SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
 
@@ -218,6 +219,11 @@ def export_site(con, out_dir: str, history_days: int = 180, snapshot_files: int 
     stats["recipes"] = len(rdata["recipes"]["rows"])
     if stats["recipes"]:
         _write(os.path.join(data_dir, "recipes.json"), rdata)
+    qdata = gamedata.export_data(con, recipes.group_houses(con))
+    stats["quests"] = len(qdata["quests"]["rows"])
+    stats["sets"] = len(qdata["sets"]["rows"])
+    if stats["quests"] or stats["sets"]:
+        _write(os.path.join(data_dir, "quests.json"), qdata)
 
     meta = {
         "generated_at": int(time.time()),
@@ -227,7 +233,8 @@ def export_site(con, out_dir: str, history_days: int = 180, snapshot_files: int 
         "houses": [{k: v for k, v in h.items() if k != "latest"} for h in houses],
         "default": api._default_house(con),
         "counts": {"houses": len(houses), "items": len(item_ids),
-                   "snapshots": sum(h["snapshots"] for h in houses), "recipes": stats["recipes"]},
+                   "snapshots": sum(h["snapshots"] for h in houses), "recipes": stats["recipes"],
+                   "quests": stats["quests"], "sets": stats["sets"]},
         "import_log": [dict(r) for r in con.execute(
             "SELECT ts, source, status, message FROM import_log ORDER BY id DESC LIMIT 20")],
     }
@@ -236,5 +243,5 @@ def export_site(con, out_dir: str, history_days: int = 180, snapshot_files: int 
     size = sum(os.path.getsize(os.path.join(dp, f)) for dp, _, fs in os.walk(data_dir) for f in fs)
     stats["data_mb"] = round(size / 1048576, 1)
     log(f"Export fertig: {stats['houses']} Häuser, {stats['items']} Items, "
-        f"{stats['snap_files']} Snapshot-Dateien, {stats['recipes']} Rezepte, {stats['data_mb']} MB in {stats['seconds']} s → {out_dir}")
+        f"{stats['snap_files']} Snapshot-Dateien, {stats['recipes']} Rezepte, {stats['quests']} Quests, {stats['sets']} Sets, {stats['data_mb']} MB in {stats['seconds']} s → {out_dir}")
     return stats

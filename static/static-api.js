@@ -324,10 +324,11 @@ const StaticAPI = (() => {
     return f._houses;
   }
   const recipes = () => load("data/recipes.json");
+  const quests = () => load("data/quests.json");
   async function item(id) {
-    // Item ohne AH-Daten, aber aus Rezepten bekannt → Seite nur mit Herstellung/Verwendung
-    const r = await recipes().catch(() => null);
-    const m = r?.items?.[String(id)];
+    // Item ohne AH-Daten, aber aus Rezepten/Quests/Sets bekannt → Seite nur mit Herkunft/Verwendung
+    const [r, q] = await Promise.all([recipes().catch(() => null), quests().catch(() => null)]);
+    const m = r?.items?.[String(id)] || q?.items?.[String(id)];
     const onlyRecipe = () => ({ item: { id, name: m[0], quality: m[1], icon: m[2] }, houses: [] });
     if (m && !m[3]) return onlyRecipe();
     let f;
@@ -436,6 +437,7 @@ const StaticAPI = (() => {
     [/^movers$/, (m, p) => movers(p)],
     [/^deals$/, (m, p) => deals(p)],
     [/^recipes$/, () => recipes()],
+    [/^quests$/, () => quests()],
     [/^import\/log$/, async () => ({ log: (await meta()).import_log || [] })],
   ];
 

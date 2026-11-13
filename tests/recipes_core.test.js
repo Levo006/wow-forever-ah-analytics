@@ -140,4 +140,44 @@ test("leere bzw. kaputte Daten", () => {
   assert.deepEqual(RC.madeFromTree(e, 1), []);
 });
 
+// ------------------------------------------------------------ Quests & Sets
+const qdata = {
+  quests: { cols: ["id", "title", "zone", "type", "faction", "classes", "repeatable", "xp", "money", "rewards"], rows: [
+    [33, "Wölfe an der Grenze", "Nordhaintal", null, null, null, 0, 170, null, [[80, 1], [6070, 1]]],
+    [40, "Hordequest", "Brachland", "Dungeon", "Horde", null, 2, 0, 500, [[80, 0]]],
+    [41, "Allianzquest", "Westfall", null, "Allianz", "Krieger", 0, 0, 0, [[80, 0], [99, 1]]],
+    [42, "kaputt", "x", null, null, null, 0, 0, 0, []],
+  ] },
+  sets: { cols: ["id", "name", "items", "effects"], rows: [[144, "Eisenfederrüstung", [15066, 15067], [[2, "Set: +20 Schaden"]]], [1, "leer", [], []]] },
+  items: { 80: ["Weiche Schuhe", 1, null, 1], 6070: ["Wolfhaut-Armschienen", 1, null, 1], 15066: ["Brust", 3, null, 1] },
+  prices: { allianz: { items: { 80: [100, 100, 1], 6070: [250, 260, 2], 15066: [50000, 50000, 1] } } },
+};
+const qi = RC.buildQuestIndex(qdata);
+
+test("Quests: Index und Reihenfolge nach Fraktion", () => {
+  assert.equal(qi.quests.length, 3);                       // ohne Belohnung ignoriert
+  assert.deepEqual(RC.rewardedBy(qi, 80, "allianz").map((q) => q.id), [33, 41, 40]);   // Horde-Quest zuletzt
+  assert.deepEqual(RC.rewardedBy(qi, 80, "horde").map((q) => q.id), [33, 40, 41]);
+  assert.equal(RC.rewardedBy(qi, 80).find((q) => q.id === 40).repeatLabel, "täglich");
+  assert.deepEqual(RC.rewardedBy(qi, 424242), []);
+});
+
+test("Quests: wertvollste Wahlbelohnung", () => {
+  const r = RC.questRewards(qi, "allianz", qi.quests[0]);
+  assert.equal(r.best, 6070);
+  assert.equal(r.list.length, 2);
+  const h = RC.questRewards(qi, "horde", qi.quests[0]);   // keine Preise → keine Empfehlung
+  assert.equal(h.best, null);
+  const one = RC.questRewards(qi, "allianz", qi.quests.find((q) => q.id === 41)); // nur eine Wahl mit Preis
+  assert.equal(one.best, null);
+});
+
+test("Sets: Zugehörigkeit und Kosten", () => {
+  assert.equal(RC.setsOf(qi, 15067)[0].name, "Eisenfederrüstung");
+  assert.equal(qi.sets.length, 1);
+  const c = RC.setCost(qi, "allianz", qi.sets[0]);
+  assert.deepEqual([c.total, c.have, c.count, c.complete], [50000, 1, 2, false]);
+  assert.deepEqual(RC.buildQuestIndex({}).quests, []);
+});
+
 console.log(`recipes-core: ${n} Tests OK`);

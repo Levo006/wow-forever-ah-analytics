@@ -59,9 +59,11 @@ def main(argv=None):
     cp.add_argument("--house-keep-days", type=int, default=14, help="Einzelhäuser: Tage insgesamt")
     cp.add_argument("--vacuum", action="store_true", help="Datei danach verkleinern (nur wenn etwas gelöscht wurde)")
 
-    rc = sub.add_parser("recipes", help="Berufe und Rezepte von Battle.net laden (nur wenn veraltet)")
-    rc.add_argument("--force", action="store_true", help="auch laden, wenn der Bestand aktuell ist")
-    rc.add_argument("--max-age-days", type=int, default=7)
+    for name, hlp in (("recipes", "Berufe und Rezepte von Battle.net laden (nur wenn veraltet)"),
+                      ("gamedata", "Rezepte, Quests und Sets von Battle.net laden (nur wenn veraltet)")):
+        rc = sub.add_parser(name, help=hlp)
+        rc.add_argument("--force", action="store_true", help="auch laden, wenn der Bestand aktuell ist")
+        rc.add_argument("--max-age-days", type=int, default=7)
 
     sub.add_parser("refresh", help="Zusammenfassungen neu berechnen")
     sub.add_parser("info", help="Datenbank-Statistik anzeigen")
@@ -168,13 +170,21 @@ def main(argv=None):
         if args.vacuum and (st["days"] or st["deleted"]):
             con.execute("VACUUM")
             con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-    elif args.cmd == "recipes":
-        from . import recipes
+    elif args.cmd in ("recipes", "gamedata"):
+        from . import gamedata, recipes
         from .sources import battlenet
         bn = cfg["battlenet"]
         client = battlenet.BattleNetClient(bn["client_id"], bn["client_secret"],
                                            region=(bn.get("regions") or ["eu"])[0], locale=bn.get("locale", "de_DE"))
-        recipes.update(con, client, force=args.force, max_age_days=args.max_age_days)
+        failed = False
+        for mod in ((recipes, gamedata) if args.cmd == "gamedata" else (recipes,)):
+            try:
+                mod.update(con, client, force=args.force, max_age_days=args.max_age_days)
+            except Exception as exc:  # noqa: BLE001 – ein Teil darf den anderen nicht verhindern
+                print(f"Fehler beim Laden ({mod.__name__}): {exc}")
+                failed = True
+        if failed:
+            return 1
     elif args.cmd == "refresh":
         with db.transaction(con):
             db.refresh_summary(con)

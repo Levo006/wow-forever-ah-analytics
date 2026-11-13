@@ -269,24 +269,42 @@ def export_data(con, group_houses: dict[str, int] | None = None) -> dict:
         if r["item_id"]:
             item_ids.add(r["item_id"])
         item_ids.update(x[0] for x in reag[r["id"]])
-    in_ah = {r[0] for r in con.execute("SELECT DISTINCT item_id FROM item_summary")}
-    items = {}
     fallback = {}
     for r in rows:
         if r["item_id"] and r["item_name"]:
             fallback[r["item_id"]] = r["item_name"]
     for r in con.execute("SELECT item_id, item_name FROM recipe_reagents"):
         fallback.setdefault(r[0], r[1])
-    meta = {}
-    ids = sorted(item_ids)
+    items = item_table(con, item_ids, fallback)
+    prices = price_table(con, group_houses, item_ids)
+    return {
+        "build": db.get_meta(con, "recipes_build", ""),
+        "fetched": int(db.get_meta(con, "recipes_fetched", "0") or 0) or None,
+        "professions": profs, "categories": cats,
+        "recipes": {"cols": ["id", "prof", "cat", "name", "item", "qmin", "qmax", "reagents"], "rows": out_rows},
+        "items": items, "prices": prices,
+    }
+
+
+def item_table(con, item_ids, fallback=None) -> dict:
+    """{id: [Name, Qualität, Icon, im AH (0/1)]} für die Website."""
+    fallback = fallback or {}
+    in_ah = {r[0] for r in con.execute("SELECT DISTINCT item_id FROM item_summary")}
+    meta, ids = {}, sorted(item_ids)
     for i in range(0, len(ids), 900):
         chunk = ids[i:i + 900]
         for r in con.execute(f"SELECT id, name, quality, icon FROM items WHERE id IN ({','.join('?' * len(chunk))})", chunk):
             meta[r[0]] = r
+    out = {}
     for iid in ids:
         m = meta.get(iid)
         name = (m["name"] if m and m["name"] else None) or fallback.get(iid) or f"Item #{iid}"
-        items[str(iid)] = [name, m["quality"] if m else None, m["icon"] if m else None, 1 if iid in in_ah else 0]
+        out[str(iid)] = [name, m["quality"] if m else None, m["icon"] if m else None, 1 if iid in in_ah else 0]
+    return out
+
+
+def price_table(con, group_houses, item_ids) -> dict:
+    """Aktuelle Fraktionspreise (nur Preise der letzten 48 h): {allianz: {house_id, items: {id: [min, median, Stück]}}}."""
     prices = {}
     for key, hid in (group_houses or {}).items():
         p = {}
@@ -297,13 +315,7 @@ def export_data(con, group_houses: dict[str, int] | None = None) -> dict:
             if r[0] in item_ids:
                 p[str(r[0])] = [r[1], r[2], r[3]]
         prices[key] = {"house_id": hid, "items": p}
-    return {
-        "build": db.get_meta(con, "recipes_build", ""),
-        "fetched": int(db.get_meta(con, "recipes_fetched", "0") or 0) or None,
-        "professions": profs, "categories": cats,
-        "recipes": {"cols": ["id", "prof", "cat", "name", "item", "qmin", "qmax", "reagents"], "rows": out_rows},
-        "items": items, "prices": prices,
-    }
+    return prices
 
 
 def group_houses(con) -> dict[str, int]:

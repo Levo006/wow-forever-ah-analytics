@@ -97,12 +97,12 @@ jobs:
           gunzip -f data/ah.sqlite.gz
           python run.py info
 
-      # Rezepte ändern sich nur mit neuen Spielversionen: wöchentlich bzw. bei neuem Build neu laden,
+      # Rezepte/Quests/Sets ändern sich nur mit neuen Spielversionen: wöchentlich bzw. bei neuem Build neu laden,
       # sonst nur eine Anfrage. Fehler hier dürfen den Lauf nicht aufhalten (alter Bestand bleibt).
-      - name: Rezepte prüfen (wöchentlich)
+      - name: Rezepte, Quests und Sets prüfen (wöchentlich)
         continue-on-error: true
-        timeout-minutes: 8
-        run: python run.py recipes
+        timeout-minutes: 10
+        run: python run.py gamedata
 
       - name: Auktionen holen (Battle.net)
         id: collect

@@ -521,13 +521,25 @@ function loadRecipes() {
   if (!recipeIdxP) recipeIdxP = api("recipes").then((d) => RecipeCore.buildIndex(d)).catch((e) => { recipeIdxP = null; throw e; });
   return recipeIdxP;
 }
+let questIdxP = null;
+function loadQuests() {
+  if (!questIdxP) questIdxP = api("quests").then((d) => RecipeCore.buildQuestIndex(d)).catch((e) => { questIdxP = null; throw e; });
+  return questIdxP;
+}
+/** Rezepte + Quests/Sets; fehlt eine Datei, bleibt der jeweilige Teil leer. */
+function loadGame() {
+  return Promise.all([loadRecipes().catch(() => RecipeCore.buildIndex({})), loadQuests().catch(() => RecipeCore.buildQuestIndex({}))]);
+}
 const RC_MAX_DEPTH = 8;
 
 /** Kurzbeschreibung für die Kopfzeile des Abschnitts. */
-function recipeSummary(idx, id) {
+function recipeSummary(idx, id, qidx = null) {
   const uses = RecipeCore.usedIn(idx, id), made = RecipeCore.madeBy(idx, id);
-  if (!uses.length && !made.length) return "kein bekanntes Rezept";
+  const quests = qidx ? qidx.byReward.get(id) || [] : [], sets = qidx ? RecipeCore.setsOf(qidx, id) : [];
+  if (!uses.length && !made.length && !quests.length && !sets.length) return "keine Rezepte, Quests oder Sets bekannt";
   const parts = [];
+  if (quests.length) parts.push(`Belohnung aus ${num(quests.length)} Quest${quests.length === 1 ? "" : "s"}`);
+  if (sets.length) parts.push(`Set: ${sets.map((s) => s.name).join(", ")}`);
   if (made.length) parts.push(`herstellbar · ${[...new Set(made.map((r) => r.prof))].join(", ")}`);
   if (uses.length) {
     const profs = [...new Set(uses.map((r) => r.prof))];
@@ -539,21 +551,23 @@ function recipeSummary(idx, id) {
 }
 
 function renderRecipes(el, id, fk) {
-  return loadRecipes().then((idx) => {
+  return loadGame().then(([idx, qidx]) => {
     const fac = FACTIONS.find((f) => f.k === fk) || FACTIONS[0];
     const hid = groupId(fk);
     const uses = RecipeCore.usedIn(idx, id), made = RecipeCore.madeBy(idx, id);
-    if (!uses.length && !made.length) {
-      el.innerHTML = '<div class="empty">Dieses Item wird in keinem bekannten Rezept hergestellt oder verwendet.</div>';
+    const quests = RecipeCore.rewardedBy(qidx, id, fk), sets = RecipeCore.setsOf(qidx, id);
+    if (!uses.length && !made.length && !quests.length && !sets.length) {
+      el.innerHTML = '<div class="empty">Für dieses Item sind keine Rezepte, Quest-Belohnungen oder Sets bekannt.</div>';
       return;
     }
+    let questsAll = false;
     const profs = RecipeCore.professionsFor(idx, id);
     let prof = store.get("rec.prof", "");
     if (prof && !profs.some((p) => p.prof === prof)) prof = "";
     let best = store.get("rec.best", false);
     const opts = () => ({ mode: best ? "best" : "ah" });
 
-    const info = (iid) => RecipeCore.itemInfo(idx, iid);
+    const info = (iid) => (idx.items[String(iid)] ? RecipeCore.itemInfo(idx, iid) : RecipeCore.itemInfo(qidx, iid));
     const label = (iid) => {
       const it = info(iid);
       return itemLabel({ id: iid, name: it.name, quality: it.quality, icon: it.icon, house_id: hid });
@@ -618,23 +632,58 @@ function renderRecipes(el, id, fk) {
           <span>Spanne <b>${marginCell(r)}</b></span></div></div>`;
     };
 
+    // ----- Quests: Belohnungen mit Preisen, wertvollste Wahl markiert
+    const questRow = (q) => {
+      const rw = RecipeCore.questRewards(qidx, fk, q);
+      const mine = q.rewards.find((r) => r.id === id);
+      const tags = [
+        q.type ? `<span class="pill">${esc(q.type)}</span>` : "",
+        q.faction ? `<span class="pill"><span class="fac ${esc(q.faction)}"></span>${esc(q.faction)}</span>` : "",
+        q.classes ? `<span class="pill" title="Nur für diese Klassen">${esc(q.classes)}</span>` : "",
+        q.repeatLabel ? `<span class="pill">${esc(q.repeatLabel)}</span>` : "",
+        mine?.choice ? `<span class="pill" title="Eine Belohnung zur Wahl">zur Wahl</span>` : "",
+      ].join("");
+      const rewards = rw.list.length > 1 || !mine ? `<div class="qrw">${rw.list.map((r) => `<span class="qri ${r.id === id ? "me" : ""}">${label(r.id)}
+          <span class="qp">${r.price ? money(r.price.min) : noPrice("Derzeit kein Angebot im AH")}${r.id === rw.best ? ' <span class="best" title="Wertvollste Wahlbelohnung im AH">★</span>' : ""}</span></span>`).join("")}</div>` : "";
+      return `<div class="qrow"><div class="qt"><a href="https://www.wowhead.com/forever/de/quest=${q.id}" target="_blank" rel="noopener" title="Quest bei Wowhead öffnen">${esc(q.title)} ↗</a>
+          <span class="muted small">${esc(q.zone || "")}</span>${tags}</div>${rewards}</div>`;
+    };
+    const questHtml = () => {
+      if (!quests.length) return "";
+      const shown = questsAll ? quests : quests.slice(0, 6);
+      return `<h3>Questbelohnung <span class="muted small">${quests.length} Quest${quests.length === 1 ? "" : "s"}</span></h3>
+        <div class="qlist">${shown.map(questRow).join("")}</div>
+        ${quests.length > shown.length ? `<button type="button" class="btn small mt" id="qall">Alle ${quests.length} Quests anzeigen</button>` : ""}`;
+    };
+    // ----- Sets: Teile mit Preisen, Boni, Summe im AH
+    const setHtml = () => !sets.length ? "" : `<h3>Teil eines Sets</h3><div class="rcards">${sets.map((s) => {
+      const c = RecipeCore.setCost(qidx, fk, s);
+      return `<div class="rcard"><div class="rcardh"><b>${esc(s.name)}</b><span class="muted small">${s.items.length} Teile</span></div>
+        <div class="tscroll"><table class="t rt"><tbody>${c.parts.map((x) => `<tr class="nohover ${x.id === id ? "me" : ""}"><td class="itemcell">${label(x.id)}</td>
+          <td class="n">${x.price ? money(x.price.min) : noPrice("Derzeit kein Angebot im AH")}</td></tr>`).join("")}</tbody></table></div>
+        ${s.effects.length ? `<div class="sfx">${s.effects.map(([n, t]) => `<div><span class="muted">(${n})</span> ${esc(t)}</div>`).join("")}</div>` : ""}
+        <div class="rfoot"><span>Alle Teile im AH <b>${c.have ? money(c.total) : noPrice()}</b>${c.complete ? "" : ` <span class="miss">${c.have} von ${c.count} angeboten</span>`}</span></div></div>`;
+    }).join("")}</div>`;
+
     const draw = () => {
       const u = uses.filter((r) => !prof || r.prof === prof);
       const mk = made.filter((r) => !prof || r.prof === prof);
       const byProf = new Map();
       for (const r of u) (byProf.get(r.prof) || byProf.set(r.prof, []).get(r.prof)).push(r);
       el.innerHTML = `
-        <div class="rbar">
+        ${profs.length ? `<div class="rbar">
           <div class="rchips" id="rprof">${[["", "Alle Berufe", uses.length + made.length], ...profs.map((p) => [p.prof, p.prof, p.count])]
             .map(([k, l, n]) => `<button type="button" class="${k === prof ? "on" : ""}" data-p="${esc(k)}">${esc(l)} <span>${n}</span></button>`).join("")}</div>
           <label class="small" title="Zutaten, die sich günstiger selbst herstellen lassen, mit Herstellkosten statt AH-Preis rechnen"><input type="checkbox" id="rbest" ${best ? "checked" : ""}> günstigster Weg (selbst herstellen)</label>
-        </div>
-        <div class="muted small rnote"><span class="fac ${fac.fac}"></span>Preise: ${esc(fac.name)} gesamt · typischer Tiefstpreis · Spanne nach 5 % AH-Gebühr</div>
+        </div>` : ""}
+        <div class="muted small rnote"><span class="fac ${fac.fac}"></span>Preise: ${esc(fac.name)} gesamt · typischer Tiefstpreis${profs.length ? " · Spanne nach 5 % AH-Gebühr" : ""}</div>
         ${mk.length ? `<h3>Hergestellt aus</h3><div class="rcards">${mk.map(madeCard).join("")}</div>` : ""}
+        ${questHtml()}
+        ${setHtml()}
         ${u.length ? `<div class="rhead"><h3>Verwendet in · daraus wird …</h3><button type="button" class="btn small" id="rexp">Alles aufklappen</button></div>
           ${[...byProf.entries()].map(([pn, rs]) => `<div class="rprof"><h4>${esc(pn)} <span class="muted small">${rs.length} Rezept${rs.length === 1 ? "" : "e"}</span></h4>
             <div class="tscroll"><table class="t rt">${useHead}<tbody data-kind="use">${rs.map((r) => useRow(r, id, 0, [id])).join("")}</tbody></table></div></div>`).join("")}` : ""}
-        ${!u.length && !mk.length ? '<div class="empty">Keine Rezepte für diesen Beruf.</div>' : ""}`;
+        ${prof && !u.length && !mk.length ? '<div class="empty">Keine Rezepte für diesen Beruf.</div>' : ""}`;
     };
 
     // Auf-/Zuklappen einer Zeile: Kinder direkt darunter einfügen bzw. entfernen
@@ -662,6 +711,7 @@ function renderRecipes(el, id, fk) {
     el.onclick = (e) => {
       const pb = e.target.closest("#rprof button");
       if (pb) { prof = pb.dataset.p; store.set("rec.prof", prof); draw(); return; }
+      if (e.target.closest("#qall")) { questsAll = true; draw(); return; }
       if (e.target.closest("#rexp")) {
         // bis 3 Ebenen, höchstens ~400 Zeilen
         for (let level = 0; level < 3; level++) {
@@ -684,14 +734,14 @@ function renderRecipes(el, id, fk) {
   });
 }
 
-/** Kopfzeile „Herstellung & Verwendung“ füllen, sobald die Rezeptdaten da sind; ohne Daten ausblenden. */
+/** Kopfzeile „Herkunft & Verwendung“ füllen, sobald die Daten da sind; ganz ohne Daten ausblenden. */
 function setRecipeSummary(id) {
-  loadRecipes().then((idx) => {
+  loadGame().then(([idx, qidx]) => {
     const fs = $('details[data-fold="rec"] .fs');
     if (!fs) return;
-    if (!idx.recipes.length) { fs.closest("details").remove(); return; }
-    fs.textContent = recipeSummary(idx, id);
-  }).catch(() => $('details[data-fold="rec"]')?.remove());
+    if (!idx.recipes.length && !qidx.quests.length && !qidx.sets.length) { fs.closest("details").remove(); return; }
+    fs.textContent = recipeSummary(idx, id, qidx);
+  });
 }
 
 async function viewItem(r) {
@@ -707,7 +757,7 @@ async function viewItem(r) {
         <div style="min-width:0"><h1 class="q${it.quality ?? 1}">${esc(it.name)}</h1>
           <div class="en">${it.name_en && it.name_en !== it.name ? esc(it.name_en) + " · " : ""}ID ${id} · <a href="https://www.wowhead.com/forever/de/item=${id}" target="_blank" rel="noopener">Wowhead ↗</a></div></div></div></div>
       <div class="card"><div class="empty">Dieses Item wird derzeit in keinem Auktionshaus angeboten.</div></div>
-      <div class="folds">${fold("rec", "Herstellung & Verwendung", "Lade Rezepte …", true)}</div>`;
+      <div class="folds">${fold("rec", "Herkunft & Verwendung", "Lade Rezepte und Quests …", true)}</div>`;
     wireFolds({ rec: (el) => renderRecipes(el, id, fk0) });
     setRecipeSummary(id);
     return;
@@ -810,7 +860,7 @@ async function viewItem(r) {
       <div class="muted small" id="pcnote" style="margin-top:6px"></div>
     </div>
     <div class="folds">
-      ${fold("rec", "Herstellung & Verwendung", "Lade Rezepte …", true)}
+      ${fold("rec", "Herkunft & Verwendung", "Lade Rezepte und Quests …", true)}
       ${fold("kpi", "Kennzahlen", house.avg7_min ? `Ø 7 T ${money(house.avg7_min)} · 7 T ${pct(house.chg7d_min)}` : "")}
       ${fold("qty", "Angebotsmenge", house.last_qty != null ? `${num(house.last_qty)} Stück aktuell` : "")}
       ${fold("season", "Tageszeit & Wochentag", "Wann ist es am günstigsten?")}
@@ -819,7 +869,7 @@ async function viewItem(r) {
       ${fold("snaps", "Einzelne Snapshots", "")}
       ${fold("info", "Item-Details", it.details?.lines?.length ? "Tooltip wie im Spiel" : "")}
     </div>` : `<div class="card"><div class="empty">Bei der ${esc(fac.name)} derzeit nicht angeboten.</div></div>
-    <div class="folds">${fold("rec", "Herstellung & Verwendung", "Lade Rezepte …", true)}${fold("all", "Alle Auktionshäuser im Vergleich", "")}${fold("info", "Item-Details", "")}</div>`}`;
+    <div class="folds">${fold("rec", "Herkunft & Verwendung", "Lade Rezepte und Quests …", true)}${fold("all", "Alle Auktionshäuser im Vergleich", "")}${fold("info", "Item-Details", "")}</div>`}`;
   setRecipeSummary(id);
   const recFold = (el) => renderRecipes(el, id, fk);
 
