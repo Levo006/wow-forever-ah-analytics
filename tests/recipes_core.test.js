@@ -180,4 +180,42 @@ test("Sets: Zugehörigkeit und Kosten", () => {
   assert.deepEqual(RC.buildQuestIndex({}).quests, []);
 });
 
+// ------------------------------------------------------------ Herkunft (QuestieDB)
+const src = {
+  items: {
+    750: { d: [[299, 80], [69, null]], dn: 5, q: [[33, 1], [179, 1]] },
+    2770: { o: [[1731, null], [2055, null], [3763, null]], on: 3, c: [9363] },
+    9363: { k: [774, 2770] },
+    4306: { v: [5, 6], vn: 3, q: [[7, 3]] },
+  },
+  npcs: { 299: ["Young Wolf", 1, 1, 0, "Wald von Elwynn", null, null], 69: ["Timber Wolf", 2, 3, 3, null, null, null],
+    5: ["Händler", 10, 10, 0, "Sturmwind", "Allianz", "Stoffhändler"] },
+  objects: { 1731: ["Copper Vein", "Durotar"], 2055: ["Copper Vein", "Rotkammgebirge"], 3763: ["Battered Chest", null] },
+  quests: { 33: ["Wölfe an der Grenze", 2, 1, "Nordhaintal", "Allianz"], 7: ["Startquest", 10, 8, null, null] },
+  names: { 9363: ["Kasten", 1, null, 0] },
+};
+
+test("Herkunft: Beute, Fundorte, Händler, Quests", () => {
+  const v = RC.sourceView(src, 750);
+  assert.equal(v.drops[0].name, "Young Wolf");
+  assert.equal(v.drops[0].chance, 80);
+  assert.equal(v.drops[1].level, "2–3");
+  assert.equal(v.drops[1].rank, "Boss");
+  assert.equal(v.dropsTotal, 5);
+  assert.ok(v.hasChance);
+  assert.deepEqual(v.quests.map((q) => [q.title, q.kindLabel]), [["Wölfe an der Grenze", "Questziel"], ["Quest #179", "Questziel"]]);
+  const o = RC.sourceView(src, 2770);
+  assert.deepEqual(o.objects.map((x) => [x.name, x.zones.length, x.ids.length]), [["Copper Vein", 2, 2], ["Battered Chest", 0, 1]]);
+  assert.deepEqual(o.containers, [9363]);
+  assert.deepEqual(RC.sourceView(src, 9363).contents, [774, 2770]);
+  const h = RC.sourceView(src, 4306);
+  assert.equal(h.vendors[0].sub, "Stoffhändler");
+  assert.equal(h.vendors[1].name, "NPC #6");
+  assert.equal(h.vendorsTotal, 3);
+  assert.deepEqual([h.quests.length, h.starts[0].title], [0, "Startquest"]);
+  assert.equal(RC.sourceView(src, 1), null);
+  assert.equal(RC.sourceView(null, 750), null);
+  assert.equal(RC.sourceView({ items: {} }, 750), null);
+});
+
 console.log(`recipes-core: ${n} Tests OK`);

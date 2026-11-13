@@ -60,10 +60,13 @@ def main(argv=None):
     cp.add_argument("--vacuum", action="store_true", help="Datei danach verkleinern (nur wenn etwas gelöscht wurde)")
 
     for name, hlp in (("recipes", "Berufe und Rezepte von Battle.net laden (nur wenn veraltet)"),
-                      ("gamedata", "Rezepte, Quests und Sets von Battle.net laden (nur wenn veraltet)")):
+                      ("gamedata", "Rezepte, Quests, Sets (Battle.net) und Herkunft (QuestieDB) laden (nur wenn veraltet)"),
+                      ("questie", "Herkunft (Beute, Händler, Behälter, Questziele) aus der QuestieDB laden")):
         rc = sub.add_parser(name, help=hlp)
         rc.add_argument("--force", action="store_true", help="auch laden, wenn der Bestand aktuell ist")
         rc.add_argument("--max-age-days", type=int, default=7)
+        if name == "questie":
+            rc.add_argument("--path", help="lokale QuestieDB-Zip oder Addon-Ordner statt Download")
 
     sub.add_parser("refresh", help="Zusammenfassungen neu berechnen")
     sub.add_parser("info", help="Datenbank-Statistik anzeigen")
@@ -170,17 +173,21 @@ def main(argv=None):
         if args.vacuum and (st["days"] or st["deleted"]):
             con.execute("VACUUM")
             con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-    elif args.cmd in ("recipes", "gamedata"):
-        from . import gamedata, recipes
+    elif args.cmd in ("recipes", "gamedata", "questie"):
+        from . import gamedata, origins, recipes
         from .sources import battlenet
         bn = cfg["battlenet"]
         # kurzes Timeout: eine hängende Verbindung soll nicht minutenlang einen Thread blockieren
         client = battlenet.BattleNetClient(bn["client_id"], bn["client_secret"], timeout=20,
                                            region=(bn.get("regions") or ["eu"])[0], locale=bn.get("locale", "de_DE"))
         failed = False
-        for mod in ((recipes, gamedata) if args.cmd == "gamedata" else (recipes,)):
+        mods = {"recipes": (recipes,), "gamedata": (recipes, origins, gamedata), "questie": (origins,)}[args.cmd]
+        for mod in mods:
             try:
-                mod.update(con, client, force=args.force, max_age_days=args.max_age_days)
+                if mod is origins:
+                    mod.update(con, client, force=args.force, path=getattr(args, "path", None))
+                else:
+                    mod.update(con, client, force=args.force, max_age_days=args.max_age_days)
             except Exception as exc:  # noqa: BLE001 – ein Teil darf den anderen nicht verhindern
                 print(f"Fehler beim Laden ({mod.__name__}): {exc}")
                 failed = True

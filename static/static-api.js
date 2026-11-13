@@ -325,6 +325,12 @@ const StaticAPI = (() => {
   }
   const recipes = () => load("data/recipes.json");
   const quests = () => load("data/quests.json");
+  /** Herkunft (QuestieDB) eines Items: eine von meta.counts.source_shards Dateien. */
+  async function sources(id) {
+    const n = (await meta()).counts?.source_shards || 0;
+    if (!n) return { items: {}, npcs: {}, objects: {}, quests: {}, names: {} };
+    return load(`data/sources/${id % n}.json`);
+  }
   async function item(id) {
     // Item ohne AH-Daten, aber aus Rezepten/Quests/Sets bekannt → Seite nur mit Herkunft/Verwendung
     const [r, q] = await Promise.all([recipes().catch(() => null), quests().catch(() => null)]);
@@ -438,6 +444,7 @@ const StaticAPI = (() => {
     [/^deals$/, (m, p) => deals(p)],
     [/^recipes$/, () => recipes()],
     [/^quests$/, () => quests()],
+    [/^sources\/(\d+)$/, (m) => sources(+m[1])],
     [/^import\/log$/, async () => ({ log: (await meta()).import_log || [] })],
   ];
 

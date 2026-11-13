@@ -16,6 +16,7 @@ Layout::
       data/item/<id>.json                 Metadaten, Historie und Analysen je Haus
       data/recipes.json                   Berufe, Rezepte, Rezept-Items + aktuelle Fraktionspreise
       data/quests.json                    Quests mit Item-Belohnung, Item-Sets (+ Preise)
+      data/sources/<id % 64>.json         Herkunft je Item aus der QuestieDB (Beute, Händler, Behälter, Questziele)
 
 Lokale Pfade (z. B. der WoW-Account-Ordner) werden NICHT exportiert.
 """
@@ -26,7 +27,7 @@ import os
 import shutil
 import time
 
-from . import api, db, gamedata, recipes
+from . import api, db, gamedata, origins, recipes
 
 STATIC_SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
 
@@ -224,6 +225,7 @@ def export_site(con, out_dir: str, history_days: int = 180, snapshot_files: int 
     stats["sets"] = len(qdata["sets"]["rows"])
     if stats["quests"] or stats["sets"]:
         _write(os.path.join(data_dir, "quests.json"), qdata)
+    stats["sources"] = origins.export_shards(con, data_dir, log=log)
 
     meta = {
         "generated_at": int(time.time()),
@@ -234,7 +236,8 @@ def export_site(con, out_dir: str, history_days: int = 180, snapshot_files: int 
         "default": api._default_house(con),
         "counts": {"houses": len(houses), "items": len(item_ids),
                    "snapshots": sum(h["snapshots"] for h in houses), "recipes": stats["recipes"],
-                   "quests": stats["quests"], "sets": stats["sets"]},
+                   "quests": stats["quests"], "sets": stats["sets"], "sources": stats["sources"],
+                   "source_shards": origins.SHARDS if stats["sources"] else 0},
         "import_log": [dict(r) for r in con.execute(
             "SELECT ts, source, status, message FROM import_log ORDER BY id DESC LIMIT 20")],
     }

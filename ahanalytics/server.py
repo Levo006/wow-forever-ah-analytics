@@ -127,6 +127,7 @@ def make_handler(cfg, pool: db.ConnectionPool, cache: ResponseCache, collector: 
         ("GET", r"/api/import/log", lambda c, p, m: api.import_log(c, p)),
         ("GET", r"/api/recipes", lambda c, p, m: api.recipes(c, p)),
         ("GET", r"/api/quests", lambda c, p, m: api.quests(c, p)),
+        ("GET", r"/api/sources/(\d+)", lambda c, p, m: api.sources(c, m.group(1))),
     ]
     compiled = [(meth, re.compile(pat + r"/?$"), fn) for meth, pat, fn in routes]
 

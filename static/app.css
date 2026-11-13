@@ -383,3 +383,7 @@ a.tag:hover { text-decoration: none; border-color: var(--link); color: var(--tex
 .qri .qp { font-size: 12.5px; }
 .rt tr.me { background: color-mix(in srgb, var(--link) 14%, transparent); }
 .sfx { margin-top: 8px; font-size: 12.5px; color: var(--cg, #1eff00); display: flex; flex-direction: column; gap: 2px; }
+.olist { display: flex; flex-direction: column; gap: 4px; }
+.orow { padding: 4px 0; border-bottom: 1px solid var(--border); }
+.orow:last-child { border-bottom: 0; }
+.srcnote { margin-top: 18px; padding-top: 10px; border-top: 1px solid var(--border); }

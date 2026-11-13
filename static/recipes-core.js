@@ -192,6 +192,46 @@
     return { parts, total, have, count: set.items.length, complete: have === set.items.length };
   }
 
+  // ------------------------------------------------------------ Herkunft (QuestieDB)
+  const RANKS = ["", "Elite", "Seltene Elite", "Boss", "Selten"];
+  const QKIND = { 1: "Questziel", 2: "wird benötigt", 3: "startet Quest" };
+
+  /**
+   * Herkunft eines Items aus einer data/sources/<n>.json (bzw. /api/sources/<id>) aufbereiten.
+   * null, wenn nichts bekannt ist. Objekte gleichen Namens (z. B. „Copper Vein“ in mehreren Gebieten) werden zusammengefasst.
+   */
+  function sourceView(src, id) {
+    const e = src?.items?.[String(id)];
+    if (!e) return null;
+    const npc = (nid, chance = null) => {
+      const n = src.npcs?.[String(nid)] || [];
+      const lv = n[1] == null ? "" : n[2] != null && n[2] !== n[1] ? `${n[1]}–${n[2]}` : String(n[1]);
+      return { id: nid, name: n[0] || `NPC #${nid}`, level: lv, minl: n[1] ?? null, rank: RANKS[n[3] || 0] || "", zone: n[4] || "",
+        faction: n[5] || "", sub: n[6] || "", chance: chance == null ? null : chance };
+    };
+    const quests = (e.q || []).filter((x) => Array.isArray(x)).map(([qid, kind]) => {
+      const q = src.quests?.[String(qid)] || [];
+      return { id: qid, title: q[0] || `Quest #${qid}`, level: q[1] ?? null, minl: q[2] ?? null, zone: q[3] || "", faction: q[4] || "", kind, kindLabel: QKIND[kind] || "" };
+    });
+    const objects = new Map();
+    for (const [oid] of e.o || []) {
+      const x = src.objects?.[String(oid)] || [];
+      const name = x[0] || `Objekt #${oid}`;
+      const g = objects.get(name) || objects.set(name, { name, ids: [], zones: [] }).get(name);
+      g.ids.push(oid);
+      if (x[1] && !g.zones.includes(x[1])) g.zones.push(x[1]);
+    }
+    const drops = (e.d || []).map(([n, c]) => npc(n, c));
+    return {
+      drops, dropsTotal: Math.max(e.dn || 0, drops.length), hasChance: drops.some((d) => d.chance != null),
+      objects: [...objects.values()], objectsTotal: Math.max(e.on || 0, (e.o || []).length),
+      vendors: (e.v || []).map((n) => npc(n)), vendorsTotal: Math.max(e.vn || 0, (e.v || []).length),
+      containers: e.c || [], contents: e.k || [],
+      quests: quests.filter((q) => q.kind !== 3), starts: quests.filter((q) => q.kind === 3),
+      names: src.names || {},
+    };
+  }
+
   return { AH_FEE, buildIndex, itemInfo, price, usedIn, madeBy, professionsFor, usesTree, madeFromTree, unitCost, materialCost, margin, countTree,
-    buildQuestIndex, rewardedBy, questRewards, setsOf, setCost };
+    buildQuestIndex, rewardedBy, questRewards, setsOf, setCost, sourceView };
 });

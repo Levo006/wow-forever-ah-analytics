@@ -100,7 +100,8 @@ jobs:
       # Rezepte/Quests/Sets ändern sich nur mit neuen Spielversionen: wöchentlich bzw. bei neuem Build neu laden,
       # sonst nur eine Anfrage. Fehler hier dürfen den Lauf nicht aufhalten (alter Bestand bleibt).
       # Der Quest-Abruf hat ein eigenes Zeitbudget (6 Min.) und setzt im nächsten Lauf fort.
-      - name: Rezepte, Quests und Sets prüfen (wöchentlich)
+      # Herkunft (Beute, Händler, Behälter, Questziele) aus der QuestieDB: nur bei neuem Release (~16 MB).
+      - name: Rezepte, Quests, Sets und Herkunft prüfen (wöchentlich)
         continue-on-error: true
         timeout-minutes: 10
         run: python run.py gamedata

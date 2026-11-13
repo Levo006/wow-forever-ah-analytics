@@ -673,6 +673,11 @@ def quests(con, params):
     return gamedata.export_data(con, rc.group_houses(con))
 
 
+def sources(con, item_id):
+    from . import origins
+    return origins.item_sources(con, int(item_id))
+
+
 def import_log(con, params):
     rows = con.execute("SELECT * FROM import_log ORDER BY id DESC LIMIT 50").fetchall()
     return {"log": [dict(r) for r in rows]}

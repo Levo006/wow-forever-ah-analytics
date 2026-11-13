@@ -530,14 +530,26 @@ function loadQuests() {
 function loadGame() {
   return Promise.all([loadRecipes().catch(() => RecipeCore.buildIndex({})), loadQuests().catch(() => RecipeCore.buildQuestIndex({}))]);
 }
+/** Herkunft (QuestieDB) eines Items; ohne Daten null. */
+function loadSources(id) {
+  return api(`sources/${id}`).then((d) => RecipeCore.sourceView(d, id)).catch(() => null);
+}
 const RC_MAX_DEPTH = 8;
 
 /** Kurzbeschreibung für die Kopfzeile des Abschnitts. */
-function recipeSummary(idx, id, qidx = null) {
+function recipeSummary(idx, id, qidx = null, sv = null) {
   const uses = RecipeCore.usedIn(idx, id), made = RecipeCore.madeBy(idx, id);
   const quests = qidx ? qidx.byReward.get(id) || [] : [], sets = qidx ? RecipeCore.setsOf(qidx, id) : [];
-  if (!uses.length && !made.length && !quests.length && !sets.length) return "keine Rezepte, Quests oder Sets bekannt";
+  if (!uses.length && !made.length && !quests.length && !sets.length && !sv) return "keine Herkunft oder Verwendung bekannt";
   const parts = [];
+  const pl = (n, one, many) => `${num(n)} ${n === 1 ? one : many}`;
+  if (sv?.dropsTotal) parts.push(`Beute von ${pl(sv.dropsTotal, "Gegner", "Gegnern")}`);
+  if (sv?.objects.length) parts.push(`Fundort: ${sv.objects.slice(0, 2).map((o) => o.name).join(", ")}${sv.objects.length > 2 ? " …" : ""}`);
+  if (sv?.vendorsTotal) parts.push(pl(sv.vendorsTotal, "Händler", "Händler"));
+  if (sv?.containers.length) parts.push(`in ${pl(sv.containers.length, "Behälter", "Behältern")}`);
+  if (sv?.contents.length) parts.push(`enthält ${pl(sv.contents.length, "Item", "Items")}`);
+  if (sv?.starts.length) parts.push("startet eine Quest");
+  if (sv?.quests.length) parts.push(`für ${pl(sv.quests.length, "Quest", "Quests")} benötigt`);
   if (quests.length) parts.push(`Belohnung aus ${num(quests.length)} Quest${quests.length === 1 ? "" : "s"}`);
   if (sets.length) parts.push(`Set: ${sets.map((s) => s.name).join(", ")}`);
   if (made.length) parts.push(`herstellbar · ${[...new Set(made.map((r) => r.prof))].join(", ")}`);
@@ -551,25 +563,28 @@ function recipeSummary(idx, id, qidx = null) {
 }
 
 function renderRecipes(el, id, fk) {
-  return loadGame().then(([idx, qidx]) => {
+  return Promise.all([loadGame(), loadSources(id)]).then(([[idx, qidx], sv]) => {
     const fac = FACTIONS.find((f) => f.k === fk) || FACTIONS[0];
     const hid = groupId(fk);
     const uses = RecipeCore.usedIn(idx, id), made = RecipeCore.madeBy(idx, id);
     const quests = RecipeCore.rewardedBy(qidx, id, fk), sets = RecipeCore.setsOf(qidx, id);
-    if (!uses.length && !made.length && !quests.length && !sets.length) {
-      el.innerHTML = '<div class="empty">Für dieses Item sind keine Rezepte, Quest-Belohnungen oder Sets bekannt.</div>';
+    if (!uses.length && !made.length && !quests.length && !sets.length && !sv) {
+      el.innerHTML = '<div class="empty">Für dieses Item sind keine Herkunft (Beute, Händler, Quests, Rezepte) und keine Verwendung bekannt.</div>';
       return;
     }
-    let questsAll = false;
+    let questsAll = false, dropsAll = false, needAll = false;
     const profs = RecipeCore.professionsFor(idx, id);
     let prof = store.get("rec.prof", "");
     if (prof && !profs.some((p) => p.prof === prof)) prof = "";
     let best = store.get("rec.best", false);
     const opts = () => ({ mode: best ? "best" : "ah" });
 
-    const info = (iid) => (idx.items[String(iid)] ? RecipeCore.itemInfo(idx, iid) : RecipeCore.itemInfo(qidx, iid));
+    const info = (iid) => (idx.items[String(iid)] ? RecipeCore.itemInfo(idx, iid)
+      : qidx.items[String(iid)] ? RecipeCore.itemInfo(qidx, iid) : RecipeCore.itemInfo({ items: sv?.names || {} }, iid));
     const label = (iid) => {
       const it = info(iid);
+      const noPage = sv?.names?.[String(iid)]?.[4] === 0 && !idx.items[String(iid)] && !qidx.items[String(iid)];
+      if (noPage) return `<a class="item" href="https://www.wowhead.com/forever/de/item=${iid}" target="_blank" rel="noopener" title="Hier ohne eigene Seite – bei Wowhead öffnen">${itemLabel({ id: iid, name: it.name, quality: it.quality, icon: it.icon }, false).replace(/^<span class="item">|<\/span>$/g, "")} ↗</a>`;
       return itemLabel({ id: iid, name: it.name, quality: it.quality, icon: it.icon, house_id: hid });
     };
     const resultCell = (r) => r.item ? label(r.item) : `<span class="item"><span class="ico bq1">✦</span><span title="${esc(r.name)}">${esc(r.name)}</span></span>`;
@@ -665,6 +680,48 @@ function renderRecipes(el, id, fk) {
         <div class="rfoot"><span>Alle Teile im AH <b>${c.have ? money(c.total) : noPrice()}</b>${c.complete ? "" : ` <span class="miss">${c.have} von ${c.count} angeboten</span>`}</span></div></div>`;
     }).join("")}</div>`;
 
+    // ----- Herkunft aus der QuestieDB: Beute, Fundorte, Händler, Behälter, Quests
+    const facName = { allianz: "Allianz", horde: "Horde" }[fk] || "";
+    const wh = (kind, xid, text, title = "Bei Wowhead öffnen") =>
+      `<a href="https://www.wowhead.com/forever/de/${kind}=${xid}" target="_blank" rel="noopener" title="${esc(title)}">${esc(text)} ↗</a>`;
+    const facPill = (f) => f ? `<span class="pill"><span class="fac ${esc(f)}"></span>${esc(f)}</span>` : "";
+    const otherLast = (a, b) => ((a.faction && facName && a.faction !== facName) ? 1 : 0) - ((b.faction && facName && b.faction !== facName) ? 1 : 0);
+    const dropHtml = () => {
+      if (!sv?.drops.length) return "";
+      const shown = dropsAll ? sv.drops : sv.drops.slice(0, 10);
+      const more = sv.dropsTotal - sv.drops.length;
+      return `<h3>Beute von <span class="muted small">${num(sv.dropsTotal)} Gegner${sv.dropsTotal === 1 ? "" : "n"}${sv.hasChance ? "" : " · Dropchance nicht bekannt"}</span></h3>
+        <div class="tscroll"><table class="t rt"><thead><tr><th>Gegner</th><th class="n">Stufe</th><th>Gebiet</th>${sv.hasChance ? '<th class="n">Chance</th>' : ""}</tr></thead><tbody>
+        ${shown.map((n) => `<tr class="nohover"><td>${wh("npc", n.id, n.name)}${n.rank ? ` <span class="pill">${esc(n.rank)}</span>` : ""}</td>
+          <td class="n">${esc(n.level)}</td><td>${esc(n.zone)}</td>${sv.hasChance ? `<td class="n">${n.chance == null ? "" : num(n.chance, n.chance < 10 ? 1 : 0) + " %"}</td>` : ""}</tr>`).join("")}</tbody></table></div>
+        ${sv.drops.length > shown.length ? `<button type="button" class="btn small mt" id="dall">Alle ${sv.drops.length} anzeigen</button>` : ""}
+        ${more > 0 && shown.length === sv.drops.length ? `<div class="muted small mt">… und ${num(more)} weitere – vollständige Liste bei ${wh("item", id, "Wowhead")}</div>` : ""}`;
+    };
+    const objHtml = () => !sv?.objects.length ? "" : `<h3>Fundort <span class="muted small">Abbau, Sammeln, Truhen</span></h3>
+      <div class="olist">${sv.objects.map((o) => `<div class="orow">${wh("object", o.ids[0], o.name)}${o.zones.length
+        ? ` <span class="muted small">${esc(o.zones.slice(0, 8).join(", "))}${o.zones.length > 8 ? ` +${o.zones.length - 8}` : ""}</span>` : ""}</div>`).join("")}</div>`;
+    const vendorHtml = () => !sv?.vendors.length ? "" : `<h3>Verkauft von <span class="muted small">${num(sv.vendorsTotal)} Händler</span></h3>
+      <div class="tscroll"><table class="t rt"><thead><tr><th>Händler</th><th>Gebiet</th><th>Fraktion</th></tr></thead><tbody>
+      ${sv.vendors.slice().sort(otherLast).map((n) => `<tr class="nohover"><td>${wh("npc", n.id, n.name)}${n.sub ? ` <span class="muted small">&lt;${esc(n.sub)}&gt;</span>` : ""}</td>
+        <td>${esc(n.zone)}</td><td>${facPill(n.faction)}</td></tr>`).join("")}</tbody></table></div>
+      ${sv.vendorsTotal > sv.vendors.length ? `<div class="muted small mt">… und ${num(sv.vendorsTotal - sv.vendors.length)} weitere bei ${wh("item", id, "Wowhead")}</div>` : ""}`;
+    const anyPrice = (iid) => RecipeCore.price(idx, fk, iid) || RecipeCore.price(qidx, fk, iid);
+    const itemList = (ids) => `<div class="qrw">${ids.map((x) => { const p = anyPrice(x); return `<span class="qri">${label(x)}${p ? ` <span class="qp">${money(p.min)}</span>` : ""}</span>`; }).join("")}</div>`;
+    const boxHtml = (which) => which === "in"
+      ? (sv?.containers.length ? `<h3>Enthalten in <span class="muted small">Behälter, Taschen, Kisten</span></h3>${itemList(sv.containers)}` : "")
+      : (sv?.contents.length ? `<h3>Inhalt <span class="muted small">${num(sv.contents.length)} mögliche Items</span></h3>${itemList(sv.contents)}` : "");
+    const needHtml = () => {
+      const list = [...(sv?.starts || []), ...(sv?.quests || []).slice().sort(otherLast)];
+      if (!list.length) return "";
+      const shown = needAll ? list : list.slice(0, 8);
+      return `<h3>Für Quests <span class="muted small">Questziel oder benötigter Gegenstand</span></h3>
+        <div class="qlist">${shown.map((q) => `<div class="qrow"><div class="qt">${wh("quest", q.id, q.title, "Quest bei Wowhead öffnen")}
+          <span class="muted small">${esc(q.zone)}${q.level ? ` · Stufe ${q.level}` : ""}</span>${facPill(q.faction)}<span class="pill">${esc(q.kindLabel)}</span></div></div>`).join("")}</div>
+        ${list.length > shown.length ? `<button type="button" class="btn small mt" id="nall">Alle ${list.length} Quests anzeigen</button>` : ""}`;
+    };
+    const srcNote = () => sv ? `<div class="muted small srcnote">Beute, Fundorte, Händler, Behälter und Questziele aus der
+      <a href="https://github.com/Questie/QuestieDB" target="_blank" rel="noopener">QuestieDB</a> (Community-Daten, nicht vollständig; NPC- und Objektnamen englisch).</div>` : "";
+
     const draw = () => {
       const u = uses.filter((r) => !prof || r.prof === prof);
       const mk = made.filter((r) => !prof || r.prof === prof);
@@ -677,13 +734,14 @@ function renderRecipes(el, id, fk) {
           <label class="small" title="Zutaten, die sich günstiger selbst herstellen lassen, mit Herstellkosten statt AH-Preis rechnen"><input type="checkbox" id="rbest" ${best ? "checked" : ""}> günstigster Weg (selbst herstellen)</label>
         </div>` : ""}
         <div class="muted small rnote"><span class="fac ${fac.fac}"></span>Preise: ${esc(fac.name)} gesamt · typischer Tiefstpreis${profs.length ? " · Spanne nach 5 % AH-Gebühr" : ""}</div>
+        ${dropHtml()}${objHtml()}${vendorHtml()}${boxHtml("in")}${questHtml()}
         ${mk.length ? `<h3>Hergestellt aus</h3><div class="rcards">${mk.map(madeCard).join("")}</div>` : ""}
-        ${questHtml()}
-        ${setHtml()}
+        ${needHtml()}${setHtml()}${boxHtml("out")}
         ${u.length ? `<div class="rhead"><h3>Verwendet in · daraus wird …</h3><button type="button" class="btn small" id="rexp">Alles aufklappen</button></div>
           ${[...byProf.entries()].map(([pn, rs]) => `<div class="rprof"><h4>${esc(pn)} <span class="muted small">${rs.length} Rezept${rs.length === 1 ? "" : "e"}</span></h4>
             <div class="tscroll"><table class="t rt">${useHead}<tbody data-kind="use">${rs.map((r) => useRow(r, id, 0, [id])).join("")}</tbody></table></div></div>`).join("")}` : ""}
-        ${prof && !u.length && !mk.length ? '<div class="empty">Keine Rezepte für diesen Beruf.</div>' : ""}`;
+        ${prof && !u.length && !mk.length ? '<div class="empty">Keine Rezepte für diesen Beruf.</div>' : ""}
+        ${srcNote()}`;
     };
 
     // Auf-/Zuklappen einer Zeile: Kinder direkt darunter einfügen bzw. entfernen
@@ -712,6 +770,8 @@ function renderRecipes(el, id, fk) {
       const pb = e.target.closest("#rprof button");
       if (pb) { prof = pb.dataset.p; store.set("rec.prof", prof); draw(); return; }
       if (e.target.closest("#qall")) { questsAll = true; draw(); return; }
+      if (e.target.closest("#dall")) { dropsAll = true; draw(); return; }
+      if (e.target.closest("#nall")) { needAll = true; draw(); return; }
       if (e.target.closest("#rexp")) {
         // bis 3 Ebenen, höchstens ~400 Zeilen
         for (let level = 0; level < 3; level++) {
@@ -736,11 +796,11 @@ function renderRecipes(el, id, fk) {
 
 /** Kopfzeile „Herkunft & Verwendung“ füllen, sobald die Daten da sind; ganz ohne Daten ausblenden. */
 function setRecipeSummary(id) {
-  loadGame().then(([idx, qidx]) => {
+  Promise.all([loadGame(), loadSources(id)]).then(([[idx, qidx], sv]) => {
     const fs = $('details[data-fold="rec"] .fs');
     if (!fs) return;
-    if (!idx.recipes.length && !qidx.quests.length && !qidx.sets.length) { fs.closest("details").remove(); return; }
-    fs.textContent = recipeSummary(idx, id, qidx);
+    if (!idx.recipes.length && !qidx.quests.length && !qidx.sets.length && !sv) { fs.closest("details").remove(); return; }
+    fs.textContent = recipeSummary(idx, id, qidx, sv);
   });
 }
 
