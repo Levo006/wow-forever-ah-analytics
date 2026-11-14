@@ -230,6 +230,10 @@ class ImportTest(unittest.TestCase):
             db.set_meta(self.con, "questie_checked", 0)
             self.assertFalse(origins.update(self.con, opener=opener, log=QUIET))   # gleiches Release: nur API
             self.assertEqual(len(calls), 3)
+            db.set_meta(self.con, "questie_checked", 2_000_000_000)
+            db.set_meta(self.con, "questie_format", 1)                             # altes Import-Format
+            self.assertTrue(origins.update(self.con, opener=opener, log=QUIET))    # → sofort neu, trotz Prüfung
+            self.assertEqual(db.get_meta(self.con, "questie_format"), str(origins.FORMAT))
             self.assertTrue(origins.update(self.con, path=self.zip, log=QUIET))    # lokale Datei
         self.assertEqual(db.get_meta(self.con, "questie_tag"), "lokal:QuestieDB-1.0-Forever.zip")
 

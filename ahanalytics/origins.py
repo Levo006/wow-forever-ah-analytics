@@ -25,6 +25,7 @@ from .sources import questie as qreader
 RELEASE_API = "https://api.github.com/repos/Questie/QuestieDB/releases/latest"
 ASSET = re.compile(r"^QuestieDB-.+-Forever\.zip$")
 USER_AGENT = "wow-ah-analytics (Daten-Import)"
+FORMAT = 2             # erhöhen, wenn sich der Import ändert → beim nächsten Lauf neu einlesen
 CHECK_DAYS = 1         # eine Anfrage an die GitHub-API pro Tag
 SHARDS = 64            # data/sources/<id % 64>.json
 MAX_NPCS = 40          # je Item exportierte Gegner (Rest nur gezählt)
@@ -187,6 +188,7 @@ def store(con, data: dict, tag: str, log=print) -> bool:
         db.set_meta(con, "questie_tag", tag)
         db.set_meta(con, "questie_version", data.get("version", ""))
         db.set_meta(con, "questie_fetched", int(time.time()))
+        db.set_meta(con, "questie_format", FORMAT)
     log(f"QuestieDB {tag} gespeichert: {len(data['npcs'])} NPCs, {len(data['objects'])} Objekte, "
         f"{n} Herkünfte, {len(data['quest_items'])} Quest-Bezüge")
     return True
@@ -233,6 +235,9 @@ def update(con, client=None, force=False, path=None, log=print, opener=None) -> 
         data = parse(qreader.QuestieDB.from_file(path))
         return store(con, data, tag, log=log)
     checked = int(db.get_meta(con, "questie_checked", "0") or 0)
+    if have and db.get_meta(con, "questie_format", "") != str(FORMAT):
+        log("QuestieDB: Import-Format geändert – lese neu ein.")
+        force = True
     if have and not force and time.time() - checked < CHECK_DAYS * 86400:
         log(f"QuestieDB: zuletzt vor weniger als {CHECK_DAYS} Tag(en) geprüft – kein Abruf nötig.")
         return False
