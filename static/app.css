@@ -400,3 +400,71 @@ a.tag:hover { text-decoration: none; border-color: var(--link); color: var(--tex
 .newver { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 50; display: flex; gap: 12px; align-items: center;
   background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; box-shadow: 0 6px 24px rgba(0,0,0,.35);
   max-width: calc(100vw - 32px); }
+
+/* ============================================================ WoW-Theme (dezent)
+   Edle, subtile Anlehnung an das Auktionshaus-UI von WoW:
+   tiefes Nachtblau, warme Pergament-Toene, Gold-Akzente,
+   Serifen-Headlines und ein gepraegter Gold-Button.
+   Reine Farb- und Detailarbeit - kein Layout geaendert. */
+
+:root {
+  --bg: #0b0f17;
+  --surface-1: #121826;
+  --surface-2: #1a2133;
+  --surface-3: #232c42;
+  --border: #2c3750;
+  --text-primary: #f1e9d6;
+  --text-secondary: #c9bfa9;
+  --text-muted: #8f8976;
+  --accent: #eec04b;
+  --accent-ink: #2a1e00;
+  --link: #84b6f4;
+  --grid: rgba(240,220,160,.07);
+}
+:root[data-theme="light"] {
+  --bg: #f2eee1;
+  --surface-1: #fbf8ef;
+  --surface-2: #f0ebdb;
+  --surface-3: #e6dec9;
+  --border: #d6cdb4;
+  --text-primary: #251d0d;
+  --text-secondary: #5c5340;
+  --text-muted: #857a62;
+  --accent: #a97e0b;
+  --grid: rgba(90,70,20,.08);
+}
+
+/* Auswahl & Fokus in Gold */
+::selection { background: color-mix(in srgb, var(--accent) 32%, transparent); }
+input:focus, select:focus, button:focus-visible { outline-color: var(--accent); }
+
+/* Serifen-Headlines wie im Spielclient */
+h1, .brand { font-family: Georgia, "Times New Roman", serif; letter-spacing: .01em; }
+.brand { font-size: 16.5px; }
+h1 { font-weight: 700; }
+
+/* Topbar mit feiner Gold-Kante */
+.topbar { border-bottom-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--accent) 14%, transparent); }
+.nav a.active { color: var(--accent); }
+
+/* Gepraegte Gold-Muenze im Logo */
+.coin { background: radial-gradient(circle at 35% 30%, #ffe9a3, var(--accent) 55%, #9a7207);
+  box-shadow: inset 0 -2px 3px rgba(0,0,0,.35), inset 0 1px 1px rgba(255,255,255,.55), 0 1px 2px rgba(0,0,0,.4); }
+
+/* Karten: warmer Gold-Schleier im Rand, dezente Oberkante */
+.card, .kpi, .cat, .fold, .mcard, .hcard, .rcard, .qrow {
+  border-color: color-mix(in srgb, var(--border) 84%, var(--accent));
+}
+.card { box-shadow: inset 0 1px 0 rgba(255,255,255,.04); }
+
+/* Primaer-Button wie eine AH-Schaltflaeche */
+.btn.primary { background: linear-gradient(180deg, #f6d576, #d9a41c);
+  border: 1px solid #8f6d14; color: #2a1e00; font-weight: 650;
+  text-shadow: 0 1px 0 rgba(255,255,255,.35);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 1px 2px rgba(0,0,0,.3); }
+.btn.primary:hover { background: linear-gradient(180deg, #ffe08a, #e3ae24); }
+.btn.primary:active { background: linear-gradient(180deg, #d9a41c, #c3930f); box-shadow: inset 0 2px 3px rgba(0,0,0,.25); }
+
+/* Hero-Suche mit leichtem Gold-Schimmer */
+.hero { background: linear-gradient(160deg, var(--surface-1), color-mix(in srgb, var(--surface-2) 88%, var(--accent) 12%)); }
