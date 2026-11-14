@@ -148,6 +148,11 @@ class PriceTruthTest(unittest.TestCase):
         for t,p in [(ts,10),(ts+3600,100),(ts+10*86400,20)]:db.write_snapshot(c,h,t,'t',{1:{'min':p,'quantity':1}})
         db.compact(c,log=QUIET)
         row=c.execute('SELECT sample_n,reference_low,reference_high FROM prices WHERE ts%86400=?',(db.DAILY_OFFSET,)).fetchone()
+        self.assertEqual(tuple(row),(2,10,100))
+        # A later compaction must not erase provenance of a day whose raw rows are gone.
+        db.write_snapshot(c,h,ts+86400,'t',{2:{'min':7,'quantity':1}})
+        db.compact(c,log=QUIET)
+        row=c.execute('SELECT sample_n,reference_low,reference_high FROM prices WHERE item_id=1 AND ts%86400=?',(db.DAILY_OFFSET,)).fetchone()
         self.assertEqual(tuple(row),(2,10,100));c.close()
 
 if __name__=='__main__':unittest.main()
