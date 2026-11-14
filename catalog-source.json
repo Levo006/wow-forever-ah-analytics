@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "product": "wowf",
+  "build": "1.60.1.70938",
+  "build_created_at": "2026-11-13 01:36:09",
+  "build_config": "3627b099867bfde3e37a17cf44f69cdc",
+  "builds_url": "https://wago.tools/api/builds",
+  "rights": "Game data, names and artwork \u00a9 Blizzard Entertainment, Inc. Non-commercial fan reference; not an open-data sublicense. Export service: wago.tools. No third-party compiled database copied.",
+  "policy_url": "https://www.blizzard.com/en-us/legal/c1ae32ac-7ff9-4ac3-a03b-fc04b8697010/blizzard-legal-faq",
+  "sources": [
+    {
+      "table": "Item",
+      "locale": "enUS",
+      "url": "https://wago.tools/db2/Item/csv?build=1.60.1.70938&locale=enUS",
+      "sha256": "32ee11866ddee06477a4830105b084f68e972644fd6b067d77c859168cbf9df3",
+      "rows": 32008
+    },
+    {
+      "table": "ItemSparse",
+      "locale": "deDE",
+      "url": "https://wago.tools/db2/ItemSparse/csv?build=1.60.1.70938&locale=deDE",
+      "sha256": "da132598045deee6f24509bb951eb027a8aba41986829733ebc3e39d5013f49c",
+      "rows": 19325
+    },
+    {
+      "table": "ItemSparse",
+      "locale": "enUS",
+      "url": "https://wago.tools/db2/ItemSparse/csv?build=1.60.1.70938&locale=enUS",
+      "sha256": "fdc65396e8a1103ea5f552ea59aaebc0e73ba572612a3412c50e636b54c90b41",
+      "rows": 19325
+    }
+  ]
+}

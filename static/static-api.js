@@ -336,7 +336,7 @@ const StaticAPI = (() => {
   async function catalog() {
     if (!(await meta()).counts?.catalog && !(await meta()).search_items) return [];
     const c = await load("data/catalog.json");
-    if (!c._rows) c._rows = toRows(c).map((r) => ({ ...r, house_id: null, no_ah: true, is_current: false, availability: "no_local_data" }));
+    if (!c._rows) c._rows = toRows(c).map((r) => ({ ...r, house_id: null, no_ah: true, last_min: null, last_median: null, last_qty: null, current_quantity: null, is_current: false, availability: "no_local_data" }));
     return c._rows;
   }
   const recipes = () => load("data/recipes.json");
@@ -352,10 +352,8 @@ const StaticAPI = (() => {
     const [r, q] = await Promise.all([recipes().catch(() => null), quests().catch(() => null)]);
     let m = r?.items?.[String(id)] || q?.items?.[String(id)];
     const onlyRecipe = () => ({ item: { id, name: m[0], quality: m[1], icon: m[2], ...(m[4] || {}) }, houses: [] });
-    if (!m) {
-      const c = (await catalog().catch(() => [])).find((x) => x.item_id === id);
-      if (c) m = [c.name, c.quality, c.icon, c.has_history ? 1 : 0, { aliases: c.aliases, translation_missing: c.translation_missing, name_en: c.name_en, class_name: c.class_name, subclass_name: c.subclass_name, item_level: c.item_level }];
-    }
+    const c = (await catalog().catch(() => [])).find((x) => x.item_id === id);
+    if (c) m = [c.name, c.quality, c.icon, c.has_history ? 1 : 0, { ...(m?.[4] || {}), ...c, id }];
     if (m && !m[3]) return onlyRecipe();
     let f;
     try { f = await itemFile(id); } catch (e) {
@@ -444,7 +442,7 @@ const StaticAPI = (() => {
   }
   async function status() {
     const m = await meta();
-    return { static: true, generated_at: m.generated_at, counts: m.counts, repo_url: m.repo_url, history_days: m.history_days,
+    return { static: true, catalog_coverage: m.catalog_coverage, generated_at: m.generated_at, counts: m.counts, repo_url: m.repo_url, history_days: m.history_days,
       battlenet_configured: false, auctionator_paths: [], collector: null };
   }
 

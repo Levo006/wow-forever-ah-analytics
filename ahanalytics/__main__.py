@@ -68,6 +68,8 @@ def main(argv=None):
         if name == "questie":
             rc.add_argument("--path", help="lokale QuestieDB-Zip oder Addon-Ordner statt Download")
 
+    ca = sub.add_parser("catalog", help="Buildfixierten Forever-Itemstamm prüfen und importieren")
+    ca.add_argument("--refresh", action="store_true", help="Quellbytes erneut prüfen")
     sub.add_parser("refresh", help="Zusammenfassungen neu berechnen")
     sub.add_parser("info", help="Datenbank-Statistik anzeigen")
 
@@ -193,6 +195,9 @@ def main(argv=None):
                 failed = True
         if failed:
             return 1
+    elif args.cmd == "catalog":
+        from . import catalog
+        print(catalog.update(con, refresh=args.refresh))
     elif args.cmd == "refresh":
         with db.transaction(con):
             db.refresh_summary(con)

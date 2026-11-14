@@ -254,3 +254,40 @@ Die Suche umfasst alle lokal bekannten Item-IDs unabhängig vom ausgewählten Ma
 `is_current` bedeutet: im letzten Snapshot dieses Markts beobachtet, nicht Echtzeitverfügbarkeit im Spiel. Historische Preise bleiben erhalten, werden aber nicht als angebotene Menge oder aktuelle Deals ausgegeben. Bei unbekannter Abrufvollständigkeit wird aus Abwesenheit kein gesichertes „nicht angeboten“. Deals und kaufnahe Hinweise sind nach drei Stunden ohne frische Beobachtung gesperrt.
 
 Der automatische Restore bricht bei fehlgeschlagenem Download oder ungültiger Datenbank ab. Es gibt keinen automatischen Rückfall auf den Seed. Vor jeder Mutation wird ein geprüftes Release-Backup `ah-safety-<run_id>` angelegt (letzte zwölf Stände). Für eine Wiederherstellung den gewünschten Backup-Stand prüfen und ausdrücklich als `datenbank` freigeben; ein neuer Erststart mit Seed ist ein separater bewusster Vorgang.
+
+
+## Buildgebundener Itemstamm (Phase 2)
+
+`python run.py catalog` importiert die **lesbar benannten** Datensätze des Forever-Livebuilds
+in `catalog-source.json`. Quelle sind die Tabellen Item und ItemSparse (deDE/enUS) des
+Blizzard-Clients über wago.tools, nicht eine kopierte Fan-Datenbank. Der Import prüft
+Liveprodukt `wowf`, exakten Build und Build-Konfigurationshash, SHA-256 jedes Downloads,
+Schema, eindeutige positive IDs, Zeilenzahl und die Beziehung zwischen beiden Tabellen.
+Erst danach wird die komplette Katalogschicht in einer Transaktion aktiviert. Bei einem
+Fehler bleiben Katalog und Preisbestand unverändert. Der Veröffentlichungsworkflow bricht
+ab, wenn eine neu gepinnte Quelle nicht validiert werden kann. Ein bereits importiertes
+identisches Manifest verursacht keine weiteren Downloads. `--refresh` überprüft es erneut.
+
+Neue Builds werden **nicht automatisch** übernommen. Zum Update Liveprodukt/Version in
+https://wago.tools/api/builds prüfen, alle drei CSVs laden und Schema, Locale, Anzahl,
+Referenzitems und Rechte erneut prüfen; erst dann Quellenmanifest samt Prüfsummen ändern.
+Ein fremder/teilweiser Download oder geänderte Bytes desselben Builds verlangen Prüfung.
+Server-Hotfixes können dem Clientstand voraus sein. Bestehende API-Namen und Marktmetadaten
+werden nicht blind überschrieben; Clientnamen füllen fehlende/englisch geklammerte Fallbacks.
+Der Import setzt keinen pauschalen Metadatenstatus auf fertig und verändert keine Preise,
+Snapshots, Staffeln oder Herkunftsdaten. Feldherkunft und Build werden separat gespeichert.
+
+`Daten` zeigt den Nenner: importierte/lesbar benannte Items, sämtliche Basis-IDs,
+nicht lesbare Namensdatensätze, DE-/EN-Namensfelder, Test-/Alt-Hinweise und Marktitems ohne
+lesbaren Clientdatensatz. ID-only-Clienteinträge werden gezählt, nicht mit erfundenem Namen
+in die normale Suche aufgenommen. Bestehende Items ohne Client-Namenssatz bleiben suchbar.
+Alle lesbar benannten Items einschließlich erkennbarer Test-/Alt-Einträge sind auffindbar;
+Test-/Alt-Hinweise sind keine sichere Erhältlichkeitsentscheidung. Bindung aus dem Client ist
+keine Garantie der AH-Handelbarkeit. Die Spielregeln und aktuelle Verfügbarkeit bleiben separat.
+
+Spieldaten, Namen und Bilder © Blizzard Entertainment, Inc. Nichtkommerzielles Fanprojekt,
+nicht von Blizzard unterstützt. wago.tools ist der Exportdienst. Diese Daten werden nicht
+als eigene oder frei unterlizenzierte Daten ausgegeben. Blizzard-Fanrichtlinien:
+https://www.blizzard.com/en-us/legal/c1ae32ac-7ff9-4ac3-a03b-fc04b8697010/blizzard-legal-faq
+Keine Lizenz eines fremden Fanprojekts wird als Lizenz der Blizzard-Daten ausgegeben.
+Für kommerzielle Nutzung müssen die Rechte gesondert geprüft werden.

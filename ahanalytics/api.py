@@ -131,6 +131,7 @@ SUMMARY_COLS = """
   s.low30_min, s.high30_min,
   i.name, i.name_en, i.quality, i.class_id, i.class_name, i.subclass_id, i.subclass_name, i.icon,
   i.item_level, i.is_commodity, i.meta_status,
+  i.catalog_build, i.catalog_state, i.catalog_test, i.binding, i.catalog_aliases,
   h.name AS house_name, h.region, h.faction, h.granularity,
   (SELECT MAX(ts) FROM snapshots z WHERE z.house_id=s.house_id) AS market_ts,
   COALESCE((SELECT value FROM meta WHERE key='complete:' || s.house_id), '0') = '1' AS market_complete,
@@ -151,6 +152,7 @@ def status(con, params, cfg=None, collector=None):
     cfg = cfg or {}
     bn = cfg.get("battlenet", {})
     from .sources import auctionator
+    from . import catalog
     av = cfg.get("auctionator", {})
     paths = [av["path"]] if av.get("path") else auctionator.find_savedvariables(
         av.get("wow_root") or r"G:\World of Warcraft\_forever_")
@@ -168,6 +170,7 @@ def status(con, params, cfg=None, collector=None):
                       (SELECT COUNT(*) FROM snapshots) snapshots,
                       (SELECT COUNT(*) FROM item_summary) series""").fetchone()),
         "collector": collector.state() if collector else None,
+        "catalog_coverage": catalog.coverage(con),
     }
 
 

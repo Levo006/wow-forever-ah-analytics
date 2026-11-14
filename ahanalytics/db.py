@@ -167,6 +167,10 @@ def fold(text):
 def _migrate(con):
     """Ergänzt Spalten älterer Datenbanken."""
     cols = {r[1] for r in con.execute("PRAGMA table_info(items)")}
+    for col, typ in (("catalog_build", "TEXT"), ("catalog_state", "TEXT"),
+                     ("catalog_test", "INTEGER"), ("binding", "INTEGER"), ("catalog_aliases", "TEXT")):
+        if col not in cols:
+            con.execute(f"ALTER TABLE items ADD COLUMN {col} {typ}")
     if "name_en" not in cols:
         con.execute("ALTER TABLE items ADD COLUMN name_en TEXT")
     if "en_checked" not in cols:

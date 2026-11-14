@@ -105,7 +105,7 @@ function icon(it, size = "") {
 function itemLabel(it, link = true) {
   const id = it.item_id ?? it.id;
   const name = `<span class="q${it.quality ?? 1}">${esc(it.name || "Item #" + id)}${it.translation_missing ? `<span class="muted small listing-status">${it.aliases?.length ? esc(it.aliases.join(", ")) + " (Suchalias) · " : ""}DE-Name unbestätigt</span>` : ""}</span>`;
-  const inner = `${icon(it)}${name}`;
+  const inner = `${icon(it)}${name}${it.catalog_test ? '<span class="pill small">Client-Testhinweis</span>' : ""}`;
   return link ? `<a class="item" href="#/item/${id}${it.house_id ? "?house=" + it.house_id : ""}">${inner}</a>` : `<span class="item">${inner}</span>`;
 }
 function sparkline(vals, w = 90, h = 24) {
@@ -839,6 +839,13 @@ function setRecipeSummary(id) {
   });
 }
 
+function catalogNote(it) {
+  if (!it.catalog_build) return "";
+  const status = it.catalog_state === "readable" ? "Im Client lesbar benannt" : it.catalog_state === "unreadable" ? "Basis-ID im Client vorhanden; Namens-/Detaildatensatz nicht lesbar" : "Nicht in der gepinnten Client-Basistabelle; bisherige Metadaten bleiben erhalten";
+  const binding = ({0: "nicht gebunden laut Client", 1: "beim Aufheben gebunden", 2: "beim Anlegen gebunden", 3: "bei Benutzung gebunden", 4: "Questbindung"})[it.binding];
+  return `<div class="note mt">Forever-Client ${esc(it.catalog_build)} · ${esc(status)}${it.catalog_test ? " · Test-/Alteintrag-Hinweis im Namen" : ""}${binding ? " · " + esc(binding) : ""}. Ein Clientdatensatz bestätigt weder Erhältlichkeit noch aktuelle AH-Handelbarkeit.</div>`;
+}
+
 async function viewItem(r) {
   const id = +r.parts[1];
   const p = { range: "7d", ...r.params };
@@ -853,6 +860,7 @@ async function viewItem(r) {
           <div class="en">${it.name_en && it.name_en !== it.name ? esc(it.name_en) + " · " : ""}ID ${id} · <a href="https://www.wowhead.com/forever/de/item=${id}" target="_blank" rel="noopener">Wowhead ↗</a></div>
           ${it.class_name || it.item_level ? `<div class="chips mt">${it.class_name ? `<span class="pill">${esc([...new Set([it.class_name, it.subclass_name].filter(Boolean))].join(" › "))}</span>` : ""}${it.item_level ? `<span class="pill">Stufe ${it.item_level}</span>` : ""}</div>` : ""}</div></div></div>
       <div class="card"><div class="empty">Für dieses Item liegt seit Beginn unserer Erfassung keine Preisbeobachtung vor. Daraus lässt sich keine sichere Aussage zur Handelbarkeit ableiten.</div></div>
+      ${catalogNote(it)}
       <div class="folds">${fold("rec", "Herkunft & Verwendung", "Lade Rezepte und Quests …", true)}</div>`;
     wireFolds({ rec: (el) => renderRecipes(el, id, fk0) });
     setRecipeSummary(id);
@@ -938,6 +946,7 @@ async function viewItem(r) {
         <button class="btn" id="cmpBtn">${inCmp ? "✓ Im Vergleich" : "+ Vergleich"}</button>
         <a class="btn" href="#/compare?items=${[...new Set([...state.compare, id])].join(",")}${hid ? "&house=" + hid : ""}">Vergleichen ›</a>
       </div></div>
+    ${catalogNote(it)}
     <div class="ftabs" role="tablist" id="ftabs">${tabs}</div>
     <div class="hcards" id="hcards">${cards}</div>
     ${hints.map((h) => `<div class="hint">${h}</div>`).join("")}
@@ -1320,6 +1329,23 @@ async function viewDeals(r) {
 
 // ================================================================== Daten
 
+function catalogCoverageCard(c) {
+  if (!c) return `<div class="card mt"><h2>Itemstamm</h2><p class="note">Noch kein geprüfter Clientkatalog importiert.</p></div>`;
+  return `<div class="card mt"><h2>Itemstamm & Abdeckung</h2>
+    <p>Forever-Livebuild <b>${esc(c.build)}</b> · importiert ${dt(c.imported_at)}</p>
+    <div class="grid g3">
+      <div><b>${num(c.imported_named)} / ${num(c.readable_named)}</b><br>lesbar benannte Clientitems importiert</div>
+      <div><b>${num(c.search_items)}</b><br>Items im gesamten Suchindex</div>
+      <div><b>${num(c.unreadable)} / ${num(c.base_ids)}</b><br>Basis-IDs ohne lesbaren Namensdatensatz</div>
+    </div>
+    <p class="small muted">DE-Namensfelder: ${num(c.de_names)} · EN-Namensfelder: ${num(c.en_names)}. Vorhandene Felder sind keine Garantie einer vollständigen Übersetzung. ${num(c.missing_de_total)} Items im Gesamtindex ohne bestätigten DE-Namen.</p>
+    <p class="small">${num(c.test_hints)} benannte Clienteinträge tragen einen Test-/Alteintrag-Hinweis. ${num(c.observed_without_readable_client)} marktbeobachtete Items haben keinen lesbaren Datensatz in dieser Clientquelle; ihre bisherigen Daten bleiben erhalten. Unlesbare IDs werden gezählt, nicht als entfernte Items ausgegeben. Eine spätere Spielversion wird erst nach Prüfung freigegeben.</p>
+    <p class="note">Vollständig bezogen auf die lesbar benannten Datensätze dieses Builds, nicht auf alle jemals erhältlichen oder handelbaren Items. Client-Existenz ist kein Drop- oder Handelsnachweis. Marktpreise kommen weiter ausschließlich aus Marktbeobachtungen.</p>
+    <details><summary>Quellen & Prüfsummen</summary><ul>${(c.sources || []).map((x) => `<li><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.table)} ${esc(x.locale)}</a> · ${num(x.rows)} Zeilen<br><code style="overflow-wrap:anywhere">SHA-256 ${esc(x.sha256)}</code></li>`).join("")}</ul></details>
+    <p class="small muted">Spieldaten, Namen und Bilder © Blizzard Entertainment, Inc. Exportdienst: <a href="https://wago.tools/" target="_blank" rel="noopener">wago.tools</a>. Unabhängiges, nichtkommerzielles Fanprojekt, nicht von Blizzard unterstützt. Keine Übertragung von Rechten an Spieldaten. <a href="${esc(c.policy_url)}" target="_blank" rel="noopener">Blizzard-Fanrichtlinien</a>.</p>
+  </div>`;
+}
+
 function dataFlowCard() {
   return `<div class="card mt"><h2>Woher kommen die Preise?</h2>
     <ol class="flow">
@@ -1345,6 +1371,7 @@ async function viewData() {
       <p>Preisanalyse für das Auktionshaus von WoW: Forever (EU). Die Daten werden stündlich automatisch aktualisiert; Suche, Filter und Analysen laufen direkt im Browser. Historie: ${num(st.history_days)} Tage.</p>
     </div>
     ${dataFlowCard()}
+    ${catalogCoverageCard(st.catalog_coverage)}
     <div class="card flush mt"><h2>Auktionshäuser</h2>${housesTable()}</div>
     <div class="card flush mt"><h2>Import-Protokoll</h2>${table([
       { label: "Zeit", fmt: (x) => dt(x.ts) }, { label: "Quelle", fmt: (x) => esc(x.source) },
@@ -1370,6 +1397,7 @@ async function viewData() {
       </div>
     </div>
     ${dataFlowCard()}
+    ${catalogCoverageCard(st.catalog_coverage)}
     <div class="card flush mt"><h2>Auktionshäuser</h2>${table([
       { label: "Bezeichnung", fmt: (h) => `<span class="fac ${esc(h.faction)}"></span>${esc(hname(h))}` }, { label: "Blizzard-Name", fmt: (h) => `<span class="muted">${esc(h.kind === "haus" ? h.name : "–")}</span>` },
       { label: "Region", fmt: (h) => esc(h.region) }, { label: "Fraktion", fmt: (h) => esc(h.faction || "–") },

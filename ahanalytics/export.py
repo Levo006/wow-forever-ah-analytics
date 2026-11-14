@@ -30,7 +30,7 @@ import re
 import shutil
 import time
 
-from . import api, db, gamedata, origins, recipes
+from . import api, catalog, db, gamedata, origins, recipes
 
 ASSETS = ("app.css", "static-api.js", "recipes-core.js", "app.js")
 
@@ -70,7 +70,7 @@ SUMMARY_FIELDS = [
     "avg7_median", "avg30_median", "avg7_qty", "cv7_min", "low30_min", "high30_min",
     "name", "name_en", "quality", "class_id", "class_name", "subclass_id", "subclass_name", "icon",
     "item_level", "is_commodity", "chg24_min", "chg7d_min", "chg24_median", "chg7d_median",
-    "market_value", "spark", "market_ts", "market_complete", "is_current", "current_quantity", "availability", "aliases", "translation_missing",
+    "market_value", "spark", "market_ts", "market_complete", "is_current", "current_quantity", "availability", "aliases", "translation_missing", "catalog_build", "catalog_state", "catalog_test", "binding",
 ]
 ITEM_HOUSE_FIELDS = [
     "house_id", "first_ts", "last_ts", "points", "last_min", "last_median", "last_qty", "last_auctions",
@@ -79,7 +79,7 @@ ITEM_HOUSE_FIELDS = [
     "market_ts", "market_complete", "is_current", "current_quantity", "availability",
 ]
 CATALOG_FIELDS = ["item_id", "name", "name_en", "quality", "class_id", "class_name", "subclass_id", "subclass_name",
-                  "icon", "item_level", "is_commodity", "aliases", "translation_missing", "has_history"]
+                  "icon", "item_level", "is_commodity", "aliases", "translation_missing", "catalog_build", "catalog_state", "catalog_test", "binding", "has_history", "required_level", "slot"]
 PRICE_FIELDS = ["ts", "min", "p10", "median", "mean", "max", "quantity", "auctions", "n"]
 SNAP_FIELDS = ["item_id", "min", "p10", "median", "mean", "max", "quantity", "auctions", "prev_min"]
 
@@ -267,7 +267,8 @@ def export_site(con, out_dir: str, history_days: int = 180, snapshot_files: int 
     # Items, die (noch) nie im AH waren – aus Rezepten, Quests, Sets, QuestieDB: suchbar mit eigener Seite
     cat = [api._item_row(r) for r in con.execute(
         """SELECT id AS item_id, name, name_en, quality, class_id, class_name,
-                  subclass_id, subclass_name, icon, item_level, is_commodity
+                  subclass_id, subclass_name, icon, item_level, is_commodity,
+                  catalog_build, catalog_state, catalog_test, binding, required_level, slot, catalog_aliases
            FROM items ORDER BY id""")]
     for r in cat:
         r["has_history"] = r["item_id"] in item_ids
@@ -277,7 +278,8 @@ def export_site(con, out_dir: str, history_days: int = 180, snapshot_files: int 
 
     meta = {
         "generated_at": int(time.time()),
-        "catalog_version": 2,
+        "catalog_version": 3,
+        "catalog_coverage": catalog.coverage(con),
         "search_items": len(cat),
         "app_version": app_version,
         "tz_offset_min": int(time.localtime().tm_gmtoff // 60),
