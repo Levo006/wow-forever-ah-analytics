@@ -338,11 +338,30 @@ function updateCompareBadge() {
 }
 
 // ============================================================= Übersicht
+/** Große Suche oben auf der Startseite (sofort sichtbar, Übersicht lädt darunter). */
+function homeSearch(house) {
+  const ex = ["Kupfererz", "Seidenstoff", "Rezept: Elixier", "Muster: Leinen", "Zähes Wolfsfleisch"];
+  return `<form class="card hero" id="heroForm" role="search">
+      <h1>Item suchen</h1>
+      <p class="muted">Preise, Verlauf, Herkunft (Beute, Händler, Quests) und Verwendung (Berufe, Rezepte, was daraus wird) – für jedes Item, auch ohne AH-Angebot.</p>
+      <div class="herobox"><input id="heroInput" type="search" name="q" autocomplete="off" placeholder="Item-Name (DE/EN) oder ID" aria-label="Item suchen">
+        <button class="btn primary">Suchen</button><div id="heroResults" class="ac hero-ac" hidden></div></div>
+      <div class="heroex muted small">Beispiele: ${ex.map((q) => `<a href="#/search?q=${encodeURIComponent(q)}${house ? "&house=" + house : ""}">${esc(q)}</a>`).join(" · ")}</div>
+    </form>
+    <div id="dash"><div class="loading">Lade Marktübersicht …</div></div>`;
+}
+
 async function viewDashboard(r) {
-  const d = await api("overview", { house: curHouse(r.params) });
+  const house = curHouse(r.params);
+  main.innerHTML = homeSearch(house);
+  const input = $("#heroInput");
+  attachAutocomplete(input, $("#heroResults"), house, (it) => (location.hash = `/item/${it.item_id}${it.house_id ? "?house=" + it.house_id : ""}`));
+  $("#heroForm").onsubmit = (e) => { e.preventDefault(); const q = input.value.trim(); if (q) { $("#heroResults").hidden = true; go("/search", { q, house }); } };
+  if (!matchMedia("(pointer: coarse)").matches) input.focus();   // am Handy keine Tastatur aufklappen
+  const d = await api("overview", { house });
   const k = d.kpis, h = d.house;
   const hh = houseById(h.id) || h;
-  main.innerHTML = `
+  $("#dash").innerHTML = `
     <div class="pagehead"><h1>${esc(hname(hh))}</h1>
       <span class="sub">${esc(scopeText(hh))} · Stand ${dt(d.last_ts)} (${ago(d.last_ts)})</span></div>
     <div class="kpis">

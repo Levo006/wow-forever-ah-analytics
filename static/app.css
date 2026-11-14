@@ -388,3 +388,12 @@ a.tag:hover { text-decoration: none; border-color: var(--link); color: var(--tex
 .orow:last-child { border-bottom: 0; }
 .srcnote { margin-top: 18px; padding-top: 10px; border-top: 1px solid var(--border); }
 .rbook { margin: -2px 0 8px; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+.hero { padding: 22px 24px; margin-bottom: 18px; }
+.hero h1 { margin: 0 0 4px; font-size: 22px; }
+.hero p { margin: 0 0 14px; }
+.herobox { position: relative; display: flex; gap: 8px; }
+.herobox input { flex: 1; min-width: 0; font-size: 16px; padding: 11px 14px; }
+.herobox .btn { flex: none; }
+.hero-ac { left: 0; right: auto; width: 100%; max-width: 100%; }
+.heroex { margin-top: 10px; }
+@media (max-width: 600px) { .hero { padding: 16px; } .hero h1 { font-size: 19px; } }
