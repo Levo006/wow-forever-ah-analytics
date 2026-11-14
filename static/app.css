@@ -397,3 +397,6 @@ a.tag:hover { text-decoration: none; border-color: var(--link); color: var(--tex
 .hero-ac { left: 0; right: auto; width: 100%; max-width: 100%; }
 .heroex { margin-top: 10px; }
 @media (max-width: 600px) { .hero { padding: 16px; } .hero h1 { font-size: 19px; } }
+.newver { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 50; display: flex; gap: 12px; align-items: center;
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; box-shadow: 0 6px 24px rgba(0,0,0,.35);
+  max-width: calc(100vw - 32px); }

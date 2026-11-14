@@ -23,12 +23,44 @@ Lokale Pfade (z. B. der WoW-Account-Ordner) werden NICHT exportiert.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import re
 import shutil
 import time
 
 from . import api, db, gamedata, origins, recipes
+
+ASSETS = ("app.css", "static-api.js", "recipes-core.js", "app.js")
+
+
+def frontend_version(src_dir=None) -> str:
+    """Kurzer Hash über die Frontend-Dateien – ändert sich mit jedem Update des Codes."""
+    h = hashlib.sha1()
+    for name in ASSETS:
+        p = os.path.join(src_dir or STATIC_SRC, name)
+        if os.path.exists(p):
+            with open(p, "rb") as fh:
+                h.update(fh.read())
+    return h.hexdigest()[:10]
+
+
+def _stamp_index(out_dir, version):
+    """index.html: Skripte/Styles mit ?v=<Version> laden (Browser-Cache greift nach Updates nicht mehr)
+    und die Version als <meta name="app-version"> hinterlegen (Hinweis „neue Version“ in offenen Tabs)."""
+    p = os.path.join(out_dir, "index.html")
+    if not os.path.exists(p):
+        return
+    with open(p, encoding="utf-8") as fh:
+        s = fh.read()
+    for name in ASSETS:
+        s = re.sub(r'((?:src|href)=")' + re.escape(name) + r'(?:\?v=[^"]*)?"', r"\g<1>" + name + "?v=" + version + '"', s)
+    s = re.sub(r'\s*<meta name="app-version"[^>]*>', "", s)
+    s = s.replace("<head>", f'<head>\n  <meta name="app-version" content="{version}">', 1)
+    with open(p, "w", encoding="utf-8") as fh:
+        fh.write(s)
+
 
 STATIC_SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
 
@@ -140,6 +172,8 @@ def export_site(con, out_dir: str, history_days: int = 180, snapshot_files: int 
             shutil.copytree(src, dst, dirs_exist_ok=True)
         else:
             shutil.copy2(src, dst)
+    app_version = frontend_version()
+    _stamp_index(out_dir, app_version)
     open(os.path.join(out_dir, ".nojekyll"), "w").close()
 
     houses = [h for h in api.houses(con, {})["houses"] if h["snapshots"]]
@@ -240,6 +274,7 @@ def export_site(con, out_dir: str, history_days: int = 180, snapshot_files: int 
 
     meta = {
         "generated_at": int(time.time()),
+        "app_version": app_version,
         "tz_offset_min": int(time.localtime().tm_gmtoff // 60),
         "history_days": history_days,
         "repo_url": repo_url,

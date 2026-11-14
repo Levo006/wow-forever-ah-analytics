@@ -193,6 +193,15 @@ class ExportTest(unittest.TestCase):
             with open(os.path.join(out, "data", "meta.json"), encoding="utf-8") as fh:
                 self.assertEqual(json.load(fh)["counts"]["recipes"], 4)
             self.assertTrue(os.path.exists(os.path.join(out, "recipes-core.js")))
+            # Cache-Busting: Skripte/Styles mit Version, dieselbe Version in meta.json
+            v = export.frontend_version()
+            with open(os.path.join(out, "index.html"), encoding="utf-8") as fh:
+                html = fh.read()
+            for name in export.ASSETS:
+                self.assertIn(f'{name}?v={v}"', html)
+            self.assertIn(f'<meta name="app-version" content="{v}">', html)
+            with open(os.path.join(out, "data", "meta.json"), encoding="utf-8") as fh:
+                self.assertEqual(json.load(fh)["app_version"], v)
         finally:
             shutil.rmtree(out, ignore_errors=True)
 

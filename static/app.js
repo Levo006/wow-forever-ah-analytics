@@ -1525,4 +1525,26 @@ function initTheme() {
   $("#quickSearch").onsubmit = (e) => { e.preventDefault(); const q = $("#quickInput").value.trim(); if (q) { $("#quickResults").hidden = true; go("/search", { q, house: state.house }); } };
   window.addEventListener("hashchange", route);
   route();
+  if (STATIC) watchVersion();
 })();
+
+/** Offene Tabs: nach einem Update der Website einen Hinweis zum Neuladen zeigen. */
+function watchVersion() {
+  const mine = document.querySelector('meta[name="app-version"]')?.content;
+  if (!mine) return;
+  let shown = false, last = 0;
+  const check = async () => {
+    if (shown || Date.now() - last < 5 * 60 * 1000) return;
+    last = Date.now();
+    try {
+      const m = await fetch(`data/meta.json?t=${Date.now()}`, { cache: "no-store" }).then((r) => r.json());
+      if (m.app_version && m.app_version !== mine) {
+        shown = true;
+        document.body.insertAdjacentHTML("beforeend", `<div class="newver" role="status">Neue Version der Website verfügbar.
+          <button type="button" class="btn primary small" onclick="location.reload()">Neu laden</button></div>`);
+      }
+    } catch { /* offline – später erneut */ }
+  };
+  setInterval(check, 5 * 60 * 1000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) check(); });
+}
