@@ -104,7 +104,7 @@ function icon(it, size = "") {
 }
 function itemLabel(it, link = true) {
   const id = it.item_id ?? it.id;
-  const name = `<span class="q${it.quality ?? 1}">${esc(it.name || "Item #" + id)}</span>`;
+  const name = `<span class="q${it.quality ?? 1}">${esc(it.name || "Item #" + id)}${it.translation_missing ? `<span class="muted small listing-status">${it.aliases?.length ? esc(it.aliases.join(", ")) + " (Suchalias) · " : ""}DE-Name unbestätigt</span>` : ""}</span>`;
   const inner = `${icon(it)}${name}`;
   return link ? `<a class="item" href="#/item/${id}${it.house_id ? "?house=" + it.house_id : ""}">${inner}</a>` : `<span class="item">${inner}</span>`;
 }
@@ -296,17 +296,25 @@ function pager(total, page, size, onPage) {
     <button class="btn small" data-p="${page + 1}" ${page >= pages ? "disabled" : ""}>Weiter ›</button></div>`;
 }
 
+function listingNote(r) {
+  if (r.no_ah) return r.has_history ? "Keine Preisdaten im gewählten Markt" : "Noch keine Preisbeobachtung";
+  if (r.is_current === false) return r.availability === "not_observed" ? "Im letzten Snapshot keine Preisbeobachtung" : "Historischer Preis · Angebot unbestätigt";
+  return `Im letzten Snapshot beobachtet · ${dt(r.last_ts)}`;
+}
+function listingPrice(r) {
+  return `${money(r.last_min)}${r.is_current === false || r.no_ah ? `<span class="muted small listing-status">${esc(listingNote(r))}${r.last_ts ? " · zuletzt " + dt(r.last_ts) : ""}</span>` : ""}`;
+}
 const COL = {
   item: { label: "Item", sort: "name", cls: "itemcell", fmt: (r) => itemLabel(r) },
   house: { label: "Markt", fmt: (r) => `<span class="pill">${esc(houseById(r.house_id)?.short || r.house_name)}</span>` },
-  price: { label: "Preis (min)", num: true, sort: "price", fmt: (r) => money(r.last_min) },
+  price: { label: "Preis (min)", num: true, sort: "price", fmt: (r) => listingPrice(r) },
   median: { label: "Median", num: true, sort: "median", fmt: (r) => money(r.last_median) },
   avg7: { label: "Ø 7 T (min)", num: true, fmt: (r) => money(r.avg7_min) },
   avg30: { label: "Ø 30 T (min)", num: true, sort: "avg30", fmt: (r) => money(r.avg30_min) },
-  qty: { label: "Menge", num: true, sort: "qty", fmt: (r) => num(r.last_qty) },
+  qty: { label: "Menge", num: true, sort: "qty", fmt: (r) => r.is_current === false ? "–" : num(r.last_qty) },
   avgqty: { label: "Ø Menge 7 T", num: true, sort: "avg_qty", fmt: (r) => num(r.avg7_qty) },
-  chg24: { label: "Δ 24 h", num: true, sort: "chg24", fmt: (r) => pct(r.chg24_min) },
-  chg7d: { label: "Δ 7 T", num: true, sort: "chg7d", fmt: (r) => pct(r.chg7d_min) },
+  chg24: { label: "Δ 24 h", num: true, sort: "chg24", fmt: (r) => r.is_current === false ? "–" : pct(r.chg24_min) },
+  chg7d: { label: "Δ 7 T", num: true, sort: "chg7d", fmt: (r) => r.is_current === false ? "–" : pct(r.chg7d_min) },
   vol: { label: "Volatilität", num: true, sort: "vol", title: "Variationskoeffizient des Mindestpreises (7 Tage)", fmt: (r) => r.cv7_min == null ? "–" : num(r.cv7_min * 100, 1) + " %" },
   value: { label: "Marktwert", num: true, sort: "value", title: "Mindestpreis × angebotene Menge", fmt: (r) => money(r.market_value, { short: true }) },
   spark: { label: "14 Tage", fmt: (r) => sparkline(r.spark) },
@@ -844,7 +852,7 @@ async function viewItem(r) {
         <div style="min-width:0"><h1 class="q${it.quality ?? 1}">${esc(it.name)}</h1>
           <div class="en">${it.name_en && it.name_en !== it.name ? esc(it.name_en) + " · " : ""}ID ${id} · <a href="https://www.wowhead.com/forever/de/item=${id}" target="_blank" rel="noopener">Wowhead ↗</a></div>
           ${it.class_name || it.item_level ? `<div class="chips mt">${it.class_name ? `<span class="pill">${esc([...new Set([it.class_name, it.subclass_name].filter(Boolean))].join(" › "))}</span>` : ""}${it.item_level ? `<span class="pill">Stufe ${it.item_level}</span>` : ""}</div>` : ""}</div></div></div>
-      <div class="card"><div class="empty">Dieses Item wurde bisher in keinem Auktionshaus angeboten (z. B. seelengebunden, Quest-Gegenstand oder nur selbst herstellbar).</div></div>
+      <div class="card"><div class="empty">Für dieses Item liegt seit Beginn unserer Erfassung keine Preisbeobachtung vor. Daraus lässt sich keine sichere Aussage zur Handelbarkeit ableiten.</div></div>
       <div class="folds">${fold("rec", "Herkunft & Verwendung", "Lade Rezepte und Quests …", true)}</div>`;
     wireFolds({ rec: (el) => renderRecipes(el, id, fk0) });
     setRecipeSummary(id);
@@ -861,10 +869,10 @@ async function viewItem(r) {
   const fac = FACTIONS.find((f) => f.k === fk);
   const groupRow = (k) => info.houses.find((h) => h.kind === k);
   const total = groupRow(fk);
-  // Häuser der Fraktion, auch ohne Angebot (dann „nicht angeboten“)
+  // Häuser der Fraktion, auch ohne Angebot (dann „keine Preisbeobachtung“)
   const allSingles = state.houses.filter((h) => h.kind === "haus" && h.group === fk).sort((a, b) => (a.verbund || "").localeCompare(b.verbund || ""));
   const rowOf = (hid) => info.houses.find((h) => h.house_id === hid);
-  const listed = allSingles.map((h) => rowOf(h.id)).filter((x) => x && x.last_min);
+  const listed = allSingles.map((h) => rowOf(h.id)).filter((x) => x?.is_current && x.last_min);
   const cheapest = listed.reduce((m, h) => (!m || h.last_min < m.last_min ? h : m), null);
   const hid = house?.house_id;
   const inCmp = state.compare.includes(id);
@@ -885,29 +893,31 @@ async function viewItem(r) {
     const g = groupRow(f.k);
     return `<button type="button" class="ftab ${f.k} ${f.k === fk ? "on" : ""}" data-k="${f.k}" role="tab" aria-selected="${f.k === fk}">
       <span class="fn"><span><span class="fac ${f.fac}"></span>${f.name}</span><small>${f.sub}</small></span>
-      <span class="fp">${g ? money(g.last_min) : '<span class="muted">nicht angeboten</span>'}</span>
-      ${g ? `<span class="fd">${pct(g.chg24_min)}</span>` : ""}</button>`;
+      <span class="fp">${g ? listingPrice(g) : '<span class="muted">keine Preisbeobachtung</span>'}</span>
+      ${g ? `<span class="fd">${g.is_current ? pct(g.chg24_min) : "historisch"}</span>` : ""}</button>`;
   }).join("");
 
   // Karten: Gesamt + Verbünde
   const card = (row, title, sub, opts = {}) => {
     const hidC = row ? row.house_id : opts.hid;
     const on = hidC && hidC === hid;
-    if (!row || !row.last_min) return `<div class="hcard off ${opts.total ? "total" : ""}"><div class="ht"><b>${title}</b><span>${sub}</span></div><div class="hp muted">nicht angeboten</div></div>`;
+    if (!row || !row.last_min) return `<div class="hcard off ${opts.total ? "total" : ""}"><div class="ht"><b>${title}</b><span>${sub}</span></div><div class="hp muted">keine Preisbeobachtung</div></div>`;
     return `<button type="button" class="hcard ${opts.total ? "total" : ""} ${on ? "on" : ""}" data-h="${hidC}">
       <div class="ht"><b>${title}</b><span>${sub}</span></div>
-      <div class="hp">${money(row.last_min)}</div>
-      <div class="hm"><span>Median ${money(row.last_median)}</span><span>${compact(row.last_qty)} Stück</span></div>
-      <div class="hm"><span>24 h ${pct(row.chg24_min)}</span>${cheapest && row.house_id === cheapest.house_id && listed.length > 1 ? '<span class="best">★ günstigstes</span>' : ""}</div></button>`;
+      <div class="hp">${listingPrice(row)}</div>
+      <div class="hm"><span>Median ${money(row.last_median)}</span><span>${row.is_current ? compact(row.last_qty) + " Stück" : "historisch"}</span></div>
+      <div class="hm"><span>${row.is_current ? "24 h " + pct(row.chg24_min) : "zuletzt " + dt(row.last_ts)}</span>${cheapest && row.house_id === cheapest.house_id && listed.length > 1 ? '<span class="best">★ günstigstes</span>' : ""}</div></button>`;
   };
   const cards = card(total, `${fac.name} gesamt`, "typischer Tiefstpreis", { total: true, hid: groupId(fk) }) +
     allSingles.map((h) => card(rowOf(h.id), `Verbund ${h.verbund || "?"}`, `#${String(h.ext_id).split("-").pop()}`, { hid: h.id })).join("");
 
   // Hinweise
   const hints = [];
-  if (house && it.vendor_sell && house.last_min && house.last_min < it.vendor_sell)
+  if (house && !house.is_current) hints.push(`${listingNote(house)}. Letzte Preisbeobachtung: ${dt(house.last_ts)}. Die Historie bleibt sichtbar.`);
+  if (it.translation_missing) hints.push(`Deutscher Forever-Name noch nicht bestätigt.${it.aliases?.length ? " Suchalias: " + it.aliases.join(", ") + "." : " Anzeige mit englischem Fallback."}`);
+  if (house?.is_current && house.last_ts >= Date.now() / 1000 - 3 * 3600 && it.vendor_sell && house.last_min && house.last_min < it.vendor_sell)
     hints.push(`💰 Günstiger als der Händlerpreis (${money(it.vendor_sell)}) – kaufen und beim Händler verkaufen lohnt sich.`);
-  if (house && house.avg7_min && house.last_min && house.last_min < house.avg7_min * 0.85)
+  if (house?.is_current && house.last_ts >= Date.now() / 1000 - 3 * 3600 && house.avg7_min && house.last_min && house.last_min < house.avg7_min * 0.85)
     hints.push(`▼ Gerade ${num((1 - house.last_min / house.avg7_min) * 100, 0)} % unter dem 7-Tage-Schnitt.`);
 
   const selName = !house ? fac.name : GROUP_KINDS.includes(house.kind) ? `${fac.name} gesamt` : `${fac.name} · Verbund ${house.verbund || "?"}`;
@@ -950,13 +960,13 @@ async function viewItem(r) {
     <div class="folds">
       ${fold("rec", "Herkunft & Verwendung", "Lade Rezepte und Quests …", true)}
       ${fold("kpi", "Kennzahlen", house.avg7_min ? `Ø 7 T ${money(house.avg7_min)} · 7 T ${pct(house.chg7d_min)}` : "")}
-      ${fold("qty", "Angebotsmenge", house.last_qty != null ? `${num(house.last_qty)} Stück aktuell` : "")}
+      ${fold("qty", "Angebotsmenge", house.is_current && house.last_qty != null ? `${num(house.last_qty)} Stück im letzten Snapshot` : "Historischer Verlauf")}
       ${fold("season", "Tageszeit & Wochentag", "Wann ist es am günstigsten?")}
       ${fold("all", "Alle Auktionshäuser im Vergleich", `${info.houses.filter((h) => h.kind === "haus").length} Häuser`)}
       ${fold("out", "Ausreißer", "")}
       ${fold("snaps", "Einzelne Snapshots", "")}
       ${fold("info", "Item-Details", it.details?.lines?.length ? "Tooltip wie im Spiel" : "")}
-    </div>` : `<div class="card"><div class="empty">Bei der ${esc(fac.name)} derzeit nicht angeboten.</div></div>
+    </div>` : `<div class="card"><div class="empty">Keine Preisbeobachtung im gewählten Markt.</div></div>
     <div class="folds">${fold("rec", "Herkunft & Verwendung", "Lade Rezepte und Quests …", true)}${fold("all", "Alle Auktionshäuser im Vergleich", "")}${fold("info", "Item-Details", "")}</div>`}`;
   setRecipeSummary(id);
   const recFold = (el) => renderRecipes(el, id, fk);
@@ -972,10 +982,10 @@ async function viewItem(r) {
     const ref = (h) => groupRow(h.group || h.kind);
     el.innerHTML = table([
       { label: "Auktionshaus", fmt: (h) => GROUP_KINDS.includes(h.kind) ? `<b><span class="fac ${esc(h.faction)}"></span>${esc(h.faction)} gesamt</b>` : `<span class="fac ${esc(h.faction)}"></span>${esc(h.faction)} · Verbund ${esc(h.verbund || "?")}` },
-      { label: "Min", num: true, fmt: (h) => money(h.last_min) },
+      { label: "Min", num: true, fmt: (h) => listingPrice(h) },
       { label: "Median", num: true, fmt: (h) => money(h.last_median) },
       { label: "Ø 7 T", num: true, fmt: (h) => money(h.avg7_min) },
-      { label: "Stück", num: true, fmt: (h) => num(h.last_qty) },
+      { label: "Stück", num: true, fmt: (h) => h.is_current ? num(h.last_qty) : "–" },
       { label: "Δ 24 h", num: true, fmt: (h) => pct(h.chg24_min) },
       { label: "vs. Fraktion", num: true, title: "Mindestpreis im Vergleich zum Fraktions-Gesamtpreis", fmt: (h) => GROUP_KINDS.includes(h.kind) || !ref(h)?.last_min ? '<span class="muted">—</span>' : pct((h.last_min / ref(h).last_min - 1) * 100, 0) },
     ], rows, { rowHref: (h) => `/item/${id}?house=${h.house_id}&range=${p.range}` });
@@ -1254,7 +1264,7 @@ async function viewMovers(r) {
     <div class="card filters">
       <div class="f"><span>Zeitfenster</span><div class="seg" id="win">${["24h", "7d"].map((x) => `<button data-w="${x}" class="${p.window === x ? "on" : ""}">${x === "24h" ? "24 Stunden" : "7 Tage"}</button>`).join("")}</div></div>
       <div class="f"><span>Kennzahl</span><div class="seg" id="met">${[["min", "Mindestpreis"], ["median", "Median"]].map(([k, l]) => `<button data-m="${k}" class="${p.metric === k ? "on" : ""}">${l}</button>`).join("")}</div></div>
-      <label class="f"><span>Ø Menge ≥ (Liquidität)</span><input type="number" min="0" id="mq" value="${esc(p.min_qty)}"></label>
+      <label class="f"><span>Ø Angebotsmenge ≥</span><input type="number" min="0" id="mq" value="${esc(p.min_qty)}"></label>
       <label class="f"><span>Klasse</span><select id="cl"><option value="">Alle</option>${classes.map((c) => `<option value="${c.class_id}" ${String(p.class) === String(c.class_id) ? "selected" : ""}>${esc(c.class_name)}</option>`).join("")}</select></label>
     </div>
     <div class="grid g2"><div class="card flush" id="g"><div class="loading">…</div></div><div class="card flush" id="l"><div class="loading">…</div></div></div>`;
@@ -1419,8 +1429,8 @@ function attachAutocomplete(input, box, house, onPick, opts = {}) {
       return `<a href="#/item/${it.item_id}${it.house_id ? "?house=" + it.house_id : ""}" data-i="${i}" class="acrow ${i === sel ? "sel" : ""}">
         ${icon(it, "md")}
         <span class="acmain"><span class="acname q${it.quality ?? 1}">${hl(it.name, lastQ)}</span>
-          <span class="acsub">${en}${cat || "Kategorie unbekannt"} · ID ${it.item_id}</span></span>
-        <span class="acprice">${it.no_ah ? '<span class="acsub">nicht im AH</span>' : `${money(it.last_min)}<span class="acsub">${it.last_qty != null ? num(it.last_qty) + " Stk." : ""}</span>`}</span></a>`;
+          <span class="acsub">${en}${(it.aliases || []).length ? esc(it.aliases.join(", ")) + " (Suchalias) · " : ""}${it.translation_missing ? "DE-Name fehlt · " : ""}${cat || "Kategorie unbekannt"} · ID ${it.item_id}</span></span>
+        <span class="acprice">${it.no_ah ? `<span class="acsub">${esc(listingNote(it))}</span>` : `${money(it.last_min)}<span class="acsub">${it.is_current ? "letzter Snapshot" : "historisch"}</span>`}</span></a>`;
     }).join("") + (opts.showAll !== false && total > items.length
       ? `<a href="#" data-all class="acall ${sel === items.length ? "sel" : ""}">Alle ${num(total)} Treffer anzeigen ›</a>` : "");
   };

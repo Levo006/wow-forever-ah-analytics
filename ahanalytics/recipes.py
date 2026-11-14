@@ -342,8 +342,8 @@ def price_table(con, group_houses, item_ids) -> dict:
         p = {}
         latest = con.execute("SELECT MAX(ts) FROM snapshots WHERE house_id=?", (hid,)).fetchone()[0] or 0
         for r in con.execute("""SELECT item_id, last_min, last_median, last_qty FROM item_summary
-                                WHERE house_id=? AND last_min IS NOT NULL AND last_ts >= ?""",
-                             (hid, latest - PRICE_MAX_AGE)):
+                                WHERE house_id=? AND last_min IS NOT NULL AND last_ts >= ? AND last_ts=(SELECT MAX(ts) FROM snapshots WHERE house_id=?)""",
+                             (hid, latest - PRICE_MAX_AGE, hid)):
             if r[0] in item_ids:
                 p[str(r[0])] = [r[1], r[2], r[3]]
         prices[key] = {"house_id": hid, "items": p}

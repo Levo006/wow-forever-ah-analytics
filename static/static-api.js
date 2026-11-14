@@ -51,8 +51,14 @@ const StaticAPI = (() => {
     const h = await house(hid);
     const s = await load(`data/house/${h.id}/summary.json`);
     if (!s._rows) {
-      s._rows = toRows(s).map((r) => ({ ...r, name: r.name ?? `Item #${r.item_id}`, house_id: h.id, house_name: h.name,
-        region: h.region, faction: h.faction, granularity: h.granularity }));
+      s._rows = toRows(s).map((r) => {
+        const current = r.last_ts === h.last_ts;
+        return { ...r, name: r.name ?? r.name_en ?? `Item #${r.item_id}`, house_id: h.id, house_name: h.name,
+          region: h.region, faction: h.faction, granularity: h.granularity,
+          is_current: current, current_quantity: current ? r.last_qty : (r.market_complete ? 0 : null),
+          availability: current ? "observed" : r.market_complete ? "not_observed" : "unknown",
+          market_value: current ? r.market_value : 0 };
+      });
     }
     return s._rows;
   }
@@ -200,11 +206,11 @@ const StaticAPI = (() => {
       const cid = r.class_id ?? -1;
       if (!out.has(cid)) out.set(cid, { class_id: cid, class_name: r.class_name || CLASS_NAMES[cid] || "Ohne Metadaten", items: 0, market_value: 0, quantity: 0, subs: new Map(), w24: [0, 0], w7: [0, 0] });
       const c = out.get(cid);
-      c.items++; c.market_value += r.market_value || 0; c.quantity += r.last_qty || 0;
+      c.items++; c.market_value += r.market_value || 0; c.quantity += r.current_quantity || 0;
       const sk = r.subclass_id ?? "null";
       if (!c.subs.has(sk)) c.subs.set(sk, { subclass_id: r.subclass_id, subclass_name: r.subclass_name || (r.subclass_id === null ? "Unbekannt" : `Unterklasse ${r.subclass_id}`), items: 0, market_value: 0, quantity: 0, _c24: [], _c7: [] });
       const s = c.subs.get(sk);
-      s.items++; s.market_value += r.market_value || 0; s.quantity += r.last_qty || 0;
+      s.items++; s.market_value += r.market_value || 0; s.quantity += r.current_quantity || 0;
       if (r.chg24_min !== null) s._c24.push(r.chg24_min);
       if (r.chg7d_min !== null) s._c7.push(r.chg7d_min);
     }
@@ -232,13 +238,10 @@ const StaticAPI = (() => {
     else hs = hs.filter((id) => m.houses.some((h) => h.id === id && (!params.region || h.region === params.region) && (!params.faction || h.faction === params.faction)));
     let rows = (await Promise.all(hs.map(summary))).flat();
     const q = fold((params.q || "").trim());
-    // Mit Suchbegriff auch Items ohne AH-Angebot finden (nicht bei Preis-/Mengenfiltern)
-    const priceFilter = ["min_price", "max_price", "min_qty", "max_qty", "min_avg_qty", "min_chg", "max_chg"].some((k) => params[k] !== undefined && params[k] !== "");
-    if (q && !priceFilter && params.commodity !== "1") {
-      const seen = new Set(rows.map((r) => r.item_id));
-      rows = rows.concat((await catalog().catch(() => [])).filter((r) => !seen.has(r.item_id)));
-    }
-    const keyOf = (r) => (r._k ??= fold(r.name) + "|" + fold(r.name_en));
+    // Vollständiger Itemindex; der Markt ist nur ein Preis-Overlay.
+    const seen = new Set(rows.map((r) => r.item_id));
+    rows = rows.concat((await catalog()).filter((r) => !seen.has(r.item_id)));
+    const keyOf = (r) => (r._k ??= fold(r.name) + "|" + fold(r.name_en) + "|" + (r.aliases || []).map(fold).join("|"));
     if (q) {
       // zweisprachig (deutscher + englischer Name) und umlaut-tolerant
       if (/^\d+$/.test(q)) rows = rows.filter((r) => r.item_id === Number(q) || keyOf(r).includes(q));
@@ -253,12 +256,12 @@ const StaticAPI = (() => {
       ["min_avg_qty", "avg7_qty", 1], ["min_chg", "chg24_min", 1], ["max_chg", "chg24_min", -1]];
     for (const [k, col, sgn] of flt) {
       const v = num(params[k]);
-      if (v !== null && !isNaN(v)) rows = rows.filter((r) => r[col] !== null && (sgn > 0 ? r[col] >= v : r[col] <= v));
+      if (v !== null && !isNaN(v)) rows = rows.filter((r) => r.is_current && r[col] !== null && r[col] !== undefined && (sgn > 0 ? r[col] >= v : r[col] <= v));
     }
     if (params.commodity === "0" || params.commodity === "1") rows = rows.filter((r) => (r.is_commodity || 0) === Number(params.commodity));
     if (params.sort === "relevance" && q) {
-      const rank = (r) => { const de = fold(r.name), en = fold(r.name_en);
-        return de.startsWith(q) || en.startsWith(q) ? 0 : de.includes(" " + q) || en.includes(" " + q) ? 1 : 2; };
+      const rank = (r) => { const de = fold(r.name), en = fold(r.name_en), als = (r.aliases || []).map(fold);
+        return de.startsWith(q) || en.startsWith(q) || als.some((x) => x.startsWith(q)) ? 0 : de.includes(" " + q) || en.includes(" " + q) ? 1 : 2; };
       rows.sort((a, b) => rank(a) - rank(b) || (b.market_value || 0) - (a.market_value || 0) || a.item_id - b.item_id);
     } else sortRows(rows, SORTS[params.sort] || "market_value", params.dir);
     const pg = page(rows, params);
@@ -269,7 +272,7 @@ const StaticAPI = (() => {
     const h = await house(params.house);
     const window = params.window || "24h", metric = params.metric || "min";
     const col = `chg${window === "24h" ? "24" : "7d"}_${metric}`;
-    let rows = (await summary(h.id)).filter((r) => r[col] !== null && r[col] !== undefined);
+    let rows = (await summary(h.id)).filter((r) => r.is_current && r[col] !== null && r[col] !== undefined);
     const mq = num(params.min_qty), mp = num(params.min_price);
     if (mq) rows = rows.filter((r) => (r.avg7_qty ?? r.last_qty ?? 0) >= mq);
     if (mp) rows = rows.filter((r) => (r.last_min ?? 0) >= mp);
@@ -285,7 +288,7 @@ const StaticAPI = (() => {
     const basis = params.basis || "avg7";
     const refKey = `${basis}_${params.ref === "median" ? "median" : "min"}`;
     const th = (num(params.threshold) ?? 20) / 100;
-    let rows = (await summary(h.id)).filter((r) => r[refKey] > 0 && r.last_min !== null && r.last_min <= r[refKey] * (1 - th) && r.points >= 3);
+    let rows = (await summary(h.id)).filter((r) => r.is_current && r.last_ts >= Date.now() / 1000 - 3 * 3600 && r[refKey] > 0 && r.last_min !== null && r.last_min <= r[refKey] * (1 - th) && r.points >= 3);
     const mq = num(params.min_qty);
     if (mq) rows = rows.filter((r) => (r.avg7_qty || 0) >= mq);
     if (params.class !== undefined && params.class !== "") rows = rows.filter((r) => r.class_id === Number(params.class));
@@ -296,7 +299,7 @@ const StaticAPI = (() => {
 
   async function overview(params) {
     const h = await house(params.house);
-    const rows = await summary(h.id);
+    const rows = (await summary(h.id)).filter((r) => r.is_current);
     const snaps = await snapshots(h.id);
     const avgOf = (k, a, b) => { const v = rows.filter((r) => r[b] > 0 && r[a] !== null).map((r) => r[a] / r[b] - 1); return v.length ? mean(v) * 100 : null; };
     const sum = (k) => rows.reduce((s, r) => s + (r[k] || 0), 0);
@@ -331,9 +334,9 @@ const StaticAPI = (() => {
   }
   /** Items ohne AH-Daten (Rezepte, Quests, Sets, QuestieDB) – für Suche und Item-Seite. */
   async function catalog() {
-    if (!(await meta()).counts?.catalog) return [];
+    if (!(await meta()).counts?.catalog && !(await meta()).search_items) return [];
     const c = await load("data/catalog.json");
-    if (!c._rows) c._rows = toRows(c).map((r) => ({ ...r, house_id: null, no_ah: true }));
+    if (!c._rows) c._rows = toRows(c).map((r) => ({ ...r, house_id: null, no_ah: true, is_current: false, availability: "no_local_data" }));
     return c._rows;
   }
   const recipes = () => load("data/recipes.json");
@@ -351,7 +354,7 @@ const StaticAPI = (() => {
     const onlyRecipe = () => ({ item: { id, name: m[0], quality: m[1], icon: m[2], ...(m[4] || {}) }, houses: [] });
     if (!m) {
       const c = (await catalog().catch(() => [])).find((x) => x.item_id === id);
-      if (c) m = [c.name, c.quality, c.icon, 0, { name_en: c.name_en, class_name: c.class_name, subclass_name: c.subclass_name, item_level: c.item_level }];
+      if (c) m = [c.name, c.quality, c.icon, c.has_history ? 1 : 0, { aliases: c.aliases, translation_missing: c.translation_missing, name_en: c.name_en, class_name: c.class_name, subclass_name: c.subclass_name, item_level: c.item_level }];
     }
     if (m && !m[3]) return onlyRecipe();
     let f;

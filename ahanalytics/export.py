@@ -70,15 +70,16 @@ SUMMARY_FIELDS = [
     "avg7_median", "avg30_median", "avg7_qty", "cv7_min", "low30_min", "high30_min",
     "name", "name_en", "quality", "class_id", "class_name", "subclass_id", "subclass_name", "icon",
     "item_level", "is_commodity", "chg24_min", "chg7d_min", "chg24_median", "chg7d_median",
-    "market_value", "spark",
+    "market_value", "spark", "market_ts", "market_complete", "is_current", "current_quantity", "availability", "aliases", "translation_missing",
 ]
 ITEM_HOUSE_FIELDS = [
     "house_id", "first_ts", "last_ts", "points", "last_min", "last_median", "last_qty", "last_auctions",
     "prev24_min", "prev7d_min", "avg7_min", "avg30_min", "avg7_qty", "cv7_min", "low30_min", "high30_min",
     "chg24_min", "chg7d_min", "chg24_median", "chg7d_median", "market_value",
+    "market_ts", "market_complete", "is_current", "current_quantity", "availability",
 ]
 CATALOG_FIELDS = ["item_id", "name", "name_en", "quality", "class_id", "class_name", "subclass_id", "subclass_name",
-                  "icon", "item_level"]
+                  "icon", "item_level", "is_commodity", "aliases", "translation_missing", "has_history"]
 PRICE_FIELDS = ["ts", "min", "p10", "median", "mean", "max", "quantity", "auctions", "n"]
 SNAP_FIELDS = ["item_id", "min", "p10", "median", "mean", "max", "quantity", "auctions", "prev_min"]
 
@@ -185,7 +186,7 @@ def export_site(con, out_dir: str, history_days: int = 180, snapshot_files: int 
         hdir = os.path.join(data_dir, "house", str(hid))
         latest = h["last_ts"]
         # Zusammenfassung inkl. 14-Tage-Sparkline
-        rows = [dict(r) for r in con.execute(
+        rows = [api._item_row(r) for r in con.execute(
             f"SELECT {api.SUMMARY_COLS} {api.SUMMARY_FROM} WHERE s.house_id=?", (hid,))]
         for i in range(0, len(rows), 500):
             api._attach_sparklines(con, rows[i:i + 500])
@@ -264,16 +265,20 @@ def export_site(con, out_dir: str, history_days: int = 180, snapshot_files: int 
         _write(os.path.join(data_dir, "quests.json"), qdata)
     stats["sources"] = origins.export_shards(con, data_dir, log=log)
     # Items, die (noch) nie im AH waren – aus Rezepten, Quests, Sets, QuestieDB: suchbar mit eigener Seite
-    cat = [dict(r) for r in con.execute(
-        """SELECT id AS item_id, COALESCE(name, name_en) AS name, name_en, quality, class_id, class_name,
-                  subclass_id, subclass_name, icon, item_level
-           FROM items WHERE COALESCE(name, name_en) IS NOT NULL ORDER BY id""") if r["item_id"] not in item_ids]
-    stats["catalog"] = len(cat)
+    cat = [api._item_row(r) for r in con.execute(
+        """SELECT id AS item_id, name, name_en, quality, class_id, class_name,
+                  subclass_id, subclass_name, icon, item_level, is_commodity
+           FROM items ORDER BY id""")]
+    for r in cat:
+        r["has_history"] = r["item_id"] in item_ids
+    stats["catalog"] = sum(not r["has_history"] for r in cat)
     if cat:
         _write(os.path.join(data_dir, "catalog.json"), _columnar(CATALOG_FIELDS, cat))
 
     meta = {
         "generated_at": int(time.time()),
+        "catalog_version": 2,
+        "search_items": len(cat),
         "app_version": app_version,
         "tz_offset_min": int(time.localtime().tm_gmtoff // 60),
         "history_days": history_days,

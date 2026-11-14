@@ -98,7 +98,7 @@ def fetch_item_metadata(con, limit=10000, pause=2.0, recheck_days=7, lang="de",
         cutoff = int(time.time()) - recheck_days * 86400
         ids = [r[0] for r in con.execute(
             """SELECT id FROM items WHERE meta_status='pending'
-                 OR (meta_status='missing' AND COALESCE(meta_checked,0) < ?)
+                 OR ((meta_status='missing' OR name LIKE '[%') AND COALESCE(meta_checked,0) < ?)
                ORDER BY id NOT IN (SELECT item_id FROM item_summary), id LIMIT ?""", (cutoff, limit))]  # AH-Items zuerst
         if not ids:
             return 0

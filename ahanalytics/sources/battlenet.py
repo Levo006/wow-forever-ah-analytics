@@ -190,6 +190,8 @@ def collect(con, client: BattleNetClient, ruleset=None, only_houses=None,
         wanted = {int(h) for h in only_houses}
         houses = [h for h in houses if int(h["id"]) in wanted]
     touched = []
+    complete = {k: True for k in db.GROUPS}
+    group_times = {k: [] for k in db.GROUPS}
     commodity_items: set[int] = set()
     # Sammelgruppen: alle Einzelauktionen gemeinsam auswerten (exakter Median usw.)
     db.drop_legacy_groups(con, log=log)
@@ -208,12 +210,20 @@ def collect(con, client: BattleNetClient, ruleset=None, only_houses=None,
             items_payload, hdr1 = client.get(base)
             comm_payload, hdr2 = client.get(base + "/commodities")
         except ApiError as exc:
+            complete[db.group_for_faction(faction)] = False
+            db.set_meta(con, f"complete:{house_id}", "0")
             if exc.status == 404:
                 res.messages.append(f"Haus {h['id']}: 404")
                 res.skipped += 1
                 continue
             raise
-        ts = max(_ts_from_headers(hdr1), _ts_from_headers(hdr2))
+        t1, t2 = _ts_from_headers(hdr1), _ts_from_headers(hdr2)
+        valid_payload = isinstance(items_payload, dict) and isinstance(items_payload.get("auctions"), list) and isinstance(comm_payload, dict) and isinstance(comm_payload.get("auctions"), list)
+        synced = abs(t1 - t2) <= 600
+        db.set_meta(con, f"complete:{house_id}", "1" if valid_payload and synced else "0")
+        complete[db.group_for_faction(faction)] &= valid_payload and synced
+        group_times[db.group_for_faction(faction)].extend((t1, t2))
+        ts = max(t1, t2)
         ts -= ts % 60
         listings = list(listings_from_payload(items_payload, False))
         comm = list(listings_from_payload(comm_payload, True))
@@ -246,9 +256,14 @@ def collect(con, client: BattleNetClient, ruleset=None, only_houses=None,
             f"{len(stats)} Items")
     for key, pool in pools.items():
         if not pool:
+            gid = db.upsert_group_house(con, SOURCE, client.region, key)
+            db.set_meta(con, f"complete:{gid}", "0")
             continue
         with db.transaction(con):
             gid = db.upsert_group_house(con, SOURCE, client.region, key)
+            times = group_times[key]
+            all_ok = complete[key] and bool(times) and max(times) - min(times) <= 600 and not only_houses
+            db.set_meta(con, f"complete:{gid}", "1" if all_ok else "0")
             if not db.snapshot_exists(con, gid, pool_ts[key]):
                 stats, ladders = aggregate_listings(pool)
                 db.apply_typical_min(stats, pool_mins[key])
@@ -368,7 +383,7 @@ def fetch_item_metadata(con, client: BattleNetClient, limit=4000, recheck_days=7
     cutoff = int(time.time()) - recheck_days * 86400
     rows = con.execute(
         """SELECT id, meta_status, icon FROM items
-           WHERE ((meta_status != 'ok' OR name_en IS NULL) AND COALESCE(bn_checked, 0) < ?)
+           WHERE ((meta_status != 'ok' OR name_en IS NULL OR name LIKE '[%') AND COALESCE(bn_checked, 0) < ?)
               OR COALESCE(details_v, 0) < 1
            ORDER BY id LIMIT ?""", (cutoff, limit)).fetchall()
     if not rows:
@@ -407,7 +422,7 @@ def fetch_item_metadata(con, client: BattleNetClient, limit=4000, recheck_days=7
             if status == "ok":
                 # nur ergänzen: englischer Name + leere Felder
                 cur = dict(con.execute("SELECT * FROM items WHERE id=?", (iid,)).fetchone())
-                fields = {k: v for k, v in fields.items() if v is not None and cur.get(k) in (None, "")}
+                fields = {k: v for k, v in fields.items() if v is not None and (cur.get(k) in (None, "") or (k == "name" and (cur.get(k) or "").startswith("[") and not str(v).startswith("[")))}
                 if fields:
                     sets = ", ".join(f"{k}=?" for k in fields)
                     con.execute(f"UPDATE items SET {sets} WHERE id=?", list(fields.values()) + [iid])

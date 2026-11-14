@@ -93,7 +93,8 @@ class ApiTest(unittest.TestCase):
         hs = api.houses(self.con, {})
         self.assertEqual(len(hs["houses"]), 2)
         ov = api.overview(self.con, {"house": str(self.house)})
-        self.assertEqual(ov["kpis"]["items"], len(demo.ITEMS))
+        self.assertEqual(ov["kpis"]["items"], self.con.execute(
+            "SELECT COUNT(*) FROM prices WHERE house_id=? AND ts=(SELECT MAX(ts) FROM snapshots WHERE house_id=?)", (self.house, self.house)).fetchone()[0])
         self.assertTrue(ov["categories"])
 
     def test_search_filters(self):

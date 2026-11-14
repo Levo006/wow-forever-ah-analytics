@@ -413,6 +413,9 @@ def write_snapshot(con, house_id: int, ts: int, source: str, stats: dict,
         (house_id, ts, source, len(stats), auction_count, total_value, int(time.time())))
     snap_id = con.execute("SELECT id FROM snapshots WHERE house_id=? AND ts=?",
                           (house_id, ts)).fetchone()[0]
+    if replace:
+        con.execute("DELETE FROM prices WHERE house_id=? AND ts=?", (house_id, ts))
+        con.execute("DELETE FROM ladders WHERE snapshot_id=?", (snap_id,))
     verb = "INSERT OR REPLACE" if replace else "INSERT OR IGNORE"
     con.executemany(
         f"""{verb} INTO prices(house_id, item_id, ts, min, p10, median, mean, max, quantity, auctions)

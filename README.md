@@ -246,3 +246,11 @@ seed/              Startdatenbank für den allerersten Workflow-Lauf
 * Item-Icons werden von `wow.zamimg.com` (Wowhead) bzw. `render.worldofwarcraft.com` geladen; ohne Internet erscheint ein Platzhalter.
 * Preise werden intern in Kupfer gespeichert (1 g = 100 s = 10 000 c).
 * Datenbank zurücksetzen: Server beenden und `data\ah.sqlite*` löschen.
+
+## Datenqualität und Suche
+
+Die Suche umfasst alle lokal bekannten Item-IDs unabhängig vom ausgewählten Markt. Preise gehören weiterhin nur zum gewählten Markt. Ein fehlendes lokales Angebot versteckt das Item nicht. Noch nicht bestätigte deutsche Namen bleiben als englischer Fallback markiert; belegte historische Namen können als Suchaliase hinterlegt sein (`ahanalytics/itemnames.py`). Das ist keine Garantie auf einen vollständigen Forever-Katalog oder eine vollständige Übersetzung.
+
+`is_current` bedeutet: im letzten Snapshot dieses Markts beobachtet, nicht Echtzeitverfügbarkeit im Spiel. Historische Preise bleiben erhalten, werden aber nicht als angebotene Menge oder aktuelle Deals ausgegeben. Bei unbekannter Abrufvollständigkeit wird aus Abwesenheit kein gesichertes „nicht angeboten“. Deals und kaufnahe Hinweise sind nach drei Stunden ohne frische Beobachtung gesperrt.
+
+Der automatische Restore bricht bei fehlgeschlagenem Download oder ungültiger Datenbank ab. Es gibt keinen automatischen Rückfall auf den Seed. Vor jeder Mutation wird ein geprüftes Release-Backup `ah-safety-<run_id>` angelegt (letzte zwölf Stände). Für eine Wiederherstellung den gewünschten Backup-Stand prüfen und ausdrücklich als `datenbank` freigeben; ein neuer Erststart mit Seed ist ein separater bewusster Vorgang.

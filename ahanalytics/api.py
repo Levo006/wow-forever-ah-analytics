@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import json
 import os
+import time
 
-from . import db, metrics
+from . import db, metrics, itemnames
 from .itemmeta import CLASS_NAMES, QUALITY_NAMES
 
 RANGES = {"24h": 86400, "7d": 7 * 86400, "30d": 30 * 86400, "90d": 90 * 86400, "all": None}
@@ -71,9 +72,13 @@ def _house_filter(params, alias="s"):
 
 
 def _item_row(r) -> dict:
-    d = dict(r)
-    if d.get("name") is None and "item_id" in d:
-        d["name"] = f"Item #{d['item_id']}"
+    d = itemnames.enrich(r)
+    if "market_ts" in d:
+        d["is_current"] = bool(d.get("last_ts") and d["last_ts"] == d["market_ts"])
+        d["current_quantity"] = d.get("last_qty") if d["is_current"] else (0 if d.get("market_complete") else None)
+        d["availability"] = "observed" if d["is_current"] else ("not_observed" if d.get("market_complete") else "unknown")
+        if not d["is_current"]:
+            d["market_value"] = 0
     return d
 
 
@@ -127,11 +132,13 @@ SUMMARY_COLS = """
   i.name, i.name_en, i.quality, i.class_id, i.class_name, i.subclass_id, i.subclass_name, i.icon,
   i.item_level, i.is_commodity, i.meta_status,
   h.name AS house_name, h.region, h.faction, h.granularity,
+  (SELECT MAX(ts) FROM snapshots z WHERE z.house_id=s.house_id) AS market_ts,
+  COALESCE((SELECT value FROM meta WHERE key='complete:' || s.house_id), '0') = '1' AS market_complete,
   CASE WHEN s.prev24_min > 0 THEN (1.0*s.last_min/s.prev24_min - 1)*100 END AS chg24_min,
   CASE WHEN s.prev7d_min > 0 THEN (1.0*s.last_min/s.prev7d_min - 1)*100 END AS chg7d_min,
   CASE WHEN s.prev24_median > 0 THEN (1.0*s.last_median/s.prev24_median - 1)*100 END AS chg24_median,
   CASE WHEN s.prev7d_median > 0 THEN (1.0*s.last_median/s.prev7d_median - 1)*100 END AS chg7d_median,
-  COALESCE(s.last_min, 0) * COALESCE(s.last_qty, 0) AS market_value
+  CASE WHEN s.last_ts=(SELECT MAX(ts) FROM snapshots WHERE house_id=s.house_id) THEN COALESCE(s.last_min, 0) * COALESCE(s.last_qty, 0) ELSE 0 END AS market_value
 """
 SUMMARY_FROM = """
   FROM item_summary s JOIN items i ON i.id = s.item_id JOIN houses h ON h.id = s.house_id
@@ -237,7 +244,7 @@ def overview(con, params):
                    SUM(last_qty) quantity, SUM(last_auctions) auctions,
                    AVG(CASE WHEN prev24_min>0 THEN 1.0*last_min/prev24_min-1 END)*100 avg_chg24,
                    AVG(CASE WHEN prev7d_min>0 THEN 1.0*last_min/prev7d_min-1 END)*100 avg_chg7d
-            FROM item_summary WHERE house_id=?""", (hid,)).fetchone()
+            FROM item_summary WHERE house_id=? AND last_ts=(SELECT MAX(ts) FROM snapshots WHERE house_id=?)""", (hid, hid)).fetchone()
     snaps = con.execute(
         """SELECT ts, item_count, auction_count, total_value FROM snapshots
            WHERE house_id=? ORDER BY ts DESC LIMIT 400""", (hid,)).fetchall()
@@ -255,7 +262,7 @@ def overview(con, params):
         "movers": movers(con, {**p, "window": "24h"}),
         "deals": deals(con, {**p, "threshold": "15"}),
         "most_volatile": [_item_row(r) for r in con.execute(
-            f"SELECT {SUMMARY_COLS} {SUMMARY_FROM} WHERE s.house_id=? AND s.avg7_qty >= 1 "
+            f"SELECT {SUMMARY_COLS} {SUMMARY_FROM} WHERE s.house_id=? AND s.avg7_qty >= 1 AND s.last_ts=(SELECT MAX(ts) FROM snapshots WHERE house_id=s.house_id) "
             f"ORDER BY s.cv7_min DESC LIMIT 6", (hid,))],
     }
 
@@ -265,8 +272,8 @@ def classes(con, params):
     rows = con.execute(
         """SELECT i.class_id, i.class_name, i.subclass_id, i.subclass_name,
                   COUNT(*) items,
-                  SUM(COALESCE(s.last_min,0)*COALESCE(s.last_qty,0)) market_value,
-                  SUM(s.last_qty) quantity,
+                  SUM(CASE WHEN s.last_ts=(SELECT MAX(ts) FROM snapshots WHERE house_id=s.house_id) THEN COALESCE(s.last_min,0)*COALESCE(s.last_qty,0) ELSE 0 END) market_value,
+                  SUM(CASE WHEN s.last_ts=(SELECT MAX(ts) FROM snapshots WHERE house_id=s.house_id) THEN s.last_qty ELSE 0 END) quantity,
                   AVG(CASE WHEN s.prev24_min>0 THEN 1.0*s.last_min/s.prev24_min-1 END)*100 chg24,
                   AVG(CASE WHEN s.prev7d_min>0 THEN 1.0*s.last_min/s.prev7d_min-1 END)*100 chg7d
            FROM item_summary s JOIN items i ON i.id = s.item_id
@@ -313,63 +320,66 @@ SEARCH_SORTS = {
 
 
 def search(con, params):
+    """Globaler Itemindex, ausgewählte Märkte liefern nur Preisbeobachtungen."""
     where, args = _house_filter(params)
-    q = (params.get("q") or "").strip()
-    fq = db.fold(q)
+    base = SUMMARY_FROM + (" WHERE " + " AND ".join(where) if where else "")
+    rows = [_item_row(r) for r in con.execute(f"SELECT {SUMMARY_COLS} {base}", args)]
+    seen = {r["item_id"] for r in rows}
+    global_ids = {r[0] for r in con.execute("SELECT DISTINCT item_id FROM item_summary")}
+    for raw in con.execute("SELECT id AS item_id, * FROM items"):
+        if raw["item_id"] in seen:
+            continue
+        r = _item_row(raw)
+        r.update({"house_id": None, "no_ah": True, "has_history": r["item_id"] in global_ids,
+                  "is_current": False, "availability": "no_local_data", "market_value": 0})
+        for key in ("last_min", "last_median", "last_qty", "avg7_qty", "avg30_min", "chg24_min", "chg7d_min", "cv7_min", "last_ts"):
+            r[key] = None
+        # Keep the selected scope on catalog rows without inventing market data.
+        for key in ("region", "faction", "source"):
+            r[key] = params.get(key)
+        rows.append(r)
+    q = db.fold((params.get("q") or "").strip()) or ""
     if q:
-        # zweisprachig (deutscher + englischer Name) und umlaut-tolerant
-        if q.isdigit():
-            where.append("(s.item_id = ? OR fold(i.name) LIKE ? OR fold(i.name_en) LIKE ?)")
-            args += [int(q), f"%{fq}%", f"%{fq}%"]
-        else:
-            for word in fq.split():
-                where.append("(fold(i.name) LIKE ? OR fold(i.name_en) LIKE ?)")
-                args += [f"%{word}%", f"%{word}%"]
-    for key, col in (("class", "i.class_id"), ("subclass", "i.subclass_id")):
-        v = params.get(key)
-        if v not in (None, ""):
-            if v == "-1":
-                where.append(f"{col} IS NULL")
-            else:
-                where.append(f"{col} = ?")
-                args.append(_int(params, key))
+        def matches(r):
+            text = db.fold(" ".join(str(r.get(k) or "") for k in ("name", "name_en")) + " " + " ".join(r.get("aliases", [])))
+            return (q.isdigit() and r["item_id"] == int(q)) or all(w in text for w in q.split())
+        rows = [r for r in rows if matches(r)]
+    for key, col in (("class", "class_id"), ("subclass", "subclass_id")):
+        if params.get(key) not in (None, ""):
+            v = _int(params, key)
+            rows = [r for r in rows if r.get(col) == (None if v == -1 else v)]
     quals = _ids(params, "quality")
     if quals:
-        where.append(f"i.quality IN ({','.join('?' * len(quals))})")
-        args += quals
-    for key, expr, op in (("min_price", "s.last_min", ">="), ("max_price", "s.last_min", "<="),
-                          ("min_qty", "s.last_qty", ">="), ("max_qty", "s.last_qty", "<="),
-                          ("min_avg_qty", "s.avg7_qty", ">="),
-                          ("min_chg", "chg24_min", ">="), ("max_chg", "chg24_min", "<=")):
+        rows = [r for r in rows if r.get("quality") in quals]
+    for key, col, lower in (("min_price", "last_min", True), ("max_price", "last_min", False),
+                             ("min_qty", "last_qty", True), ("max_qty", "last_qty", False),
+                             ("min_avg_qty", "avg7_qty", True), ("min_chg", "chg24_min", True), ("max_chg", "chg24_min", False)):
         v = _float(params, key)
         if v is not None:
-            where.append(f"{expr} {op} ?")
-            args.append(v)
+            rows = [r for r in rows if r.get("is_current") and r.get(col) is not None and (r[col] >= v if lower else r[col] <= v)]
     if params.get("commodity") in ("0", "1"):
-        where.append("COALESCE(i.is_commodity,0) = ?")
-        args.append(int(params["commodity"]))
-    sort = SEARCH_SORTS.get(params.get("sort") or "value", "market_value")
-    direction = "ASC" if params.get("dir") == "asc" else "DESC"
+        rows = [r for r in rows if (r.get("is_commodity") or 0) == int(params["commodity"])]
+    cols = {"name": "name", "price": "last_min", "median": "last_median", "qty": "last_qty", "avg_qty": "avg7_qty",
+            "chg24": "chg24_min", "chg7d": "chg7d_min", "vol": "cv7_min", "value": "market_value", "quality": "quality",
+            "id": "item_id", "updated": "last_ts", "avg30": "avg30_min"}
+    col = cols.get(params.get("sort"), "market_value")
+    rows.sort(key=lambda r: r["item_id"])
+    if params.get("sort") == "relevance" and q:
+        def rank(r):
+            names = [db.fold(r.get("name") or ""), db.fold(r.get("name_en") or ""), *[db.fold(x) for x in r.get("aliases", [])]]
+            return (0 if any(n.startswith(q) for n in names) else 1 if any(" " + q in n for n in names) else 2, -(r.get("market_value") or 0))
+        rows.sort(key=rank)
+    else:
+        values = [r for r in rows if r.get(col) is not None]
+        values.sort(key=lambda r: r[col].casefold() if isinstance(r[col], str) else r[col], reverse=params.get("dir") != "asc")
+        rows = values + [r for r in rows if r.get(col) is None]
+    total = len(rows)
     page = _int(params, "page", 1, lo=1)
     size = _int(params, "page_size", 50, lo=1, hi=500)
-    wsql = ("WHERE " + " AND ".join(where)) if where else ""
-    base = f"{SUMMARY_FROM} {wsql}"
-    total = con.execute(f"SELECT COUNT(*) {base}", args).fetchone()[0]
-    order = f"{sort} IS NULL, {sort} {direction}, s.item_id"
-    order_args: list = []
-    if params.get("sort") == "relevance" and q:
-        # Treffer am Namensanfang zuerst, dann Wortanfang, dann beliebig; innerhalb nach Marktwert
-        order = ("CASE WHEN fold(i.name) LIKE ? OR fold(i.name_en) LIKE ? THEN 0 "
-                 "WHEN fold(i.name) LIKE ? OR fold(i.name_en) LIKE ? THEN 1 ELSE 2 END, "
-                 "market_value DESC, s.item_id")
-        order_args = [f"{fq}%", f"{fq}%", f"% {fq}%", f"% {fq}%"]
-    rows = con.execute(
-        f"SELECT {SUMMARY_COLS} {base} ORDER BY {order} LIMIT ? OFFSET ?",
-        args + order_args + [size, (page - 1) * size]).fetchall()
-    items = [_item_row(r) for r in rows]
-    if params.get("spark") == "1" and items:
-        _attach_sparklines(con, items)
-    return {"total": total, "page": page, "page_size": size, "items": items}
+    rows = rows[(page - 1) * size:page * size]
+    if params.get("spark") == "1":
+        _attach_sparklines(con, [r for r in rows if r.get("house_id")])
+    return {"total": total, "page": page, "page_size": size, "items": rows}
 
 
 def _attach_sparklines(con, items, days=14):
@@ -398,8 +408,7 @@ def item(con, item_id, params):
         raise NotFound(f"Item {item_id} unbekannt")
     rows = con.execute(f"SELECT {SUMMARY_COLS} {SUMMARY_FROM} WHERE s.item_id=? "
                        f"ORDER BY h.region, h.faction, h.name", (item_id,)).fetchall()
-    meta = dict(meta)
-    meta["name"] = meta["name"] or f"Item #{item_id}"
+    meta = itemnames.enrich(meta)
     meta["quality_name"] = QUALITY_NAMES.get(meta["quality"])
     if meta.get("details"):
         try:
@@ -611,7 +620,7 @@ def movers(con, params):
     if window not in ("24h", "7d") or metric not in ("min", "median"):
         raise BadRequest("window ∈ {24h, 7d}, metric ∈ {min, median}")
     col = f"chg{'24' if window == '24h' else '7d'}_{metric}"
-    where = ["s.house_id = ?", f"{col} IS NOT NULL"]
+    where = ["s.house_id = ?", f"{col} IS NOT NULL", "s.last_ts=(SELECT MAX(ts) FROM snapshots WHERE house_id=s.house_id)"]
     args: list = [hid]
     min_qty = _float(params, "min_qty", 0)
     if min_qty:
@@ -642,8 +651,8 @@ def deals(con, params):
     ref = f"s.{basis}_median" if params.get("ref") == "median" else f"s.{basis}_min"
     threshold = _float(params, "threshold", 20.0) / 100
     where = ["s.house_id = ?", f"{ref} > 0", "s.last_min IS NOT NULL",
-             f"s.last_min <= {ref} * (1 - ?)", "s.points >= 3"]
-    args: list = [hid, threshold]
+             f"s.last_min <= {ref} * (1 - ?)", "s.points >= 3", "s.last_ts=(SELECT MAX(ts) FROM snapshots WHERE house_id=s.house_id)", "s.last_ts >= ?"]
+    args: list = [hid, threshold, int(time.time()) - 3 * 3600]
     min_qty = _float(params, "min_qty", 0)
     if min_qty:
         where.append("COALESCE(s.avg7_qty, 0) >= ?")

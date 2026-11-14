@@ -468,3 +468,13 @@ h1 { font-weight: 700; }
 
 /* Hero-Suche mit leichtem Gold-Schimmer */
 .hero { background: linear-gradient(160deg, var(--surface-1), color-mix(in srgb, var(--surface-2) 88%, var(--accent) 12%)); }
+
+/* Kleine Ansichten: Marktauswahl bleibt erreichbar, kein abgeschnittener Selektor. */
+@media (max-width: 760px) {
+  .topctl { min-width: 0; width: 100%; flex-wrap: wrap; }
+  .market { display: flex; flex-wrap: wrap; min-width: 0; max-width: 100%; }
+  .market select { min-width: 0; max-width: 100%; }
+}
+
+.listing-status { display: block; white-space: normal; font-size: 11px; line-height: 1.4; font-weight: 400; }
+.hcard .hp .listing-status, .ftab .fp .listing-status { white-space: normal; }
