@@ -99,7 +99,7 @@ def fetch_item_metadata(con, limit=10000, pause=2.0, recheck_days=7, lang="de",
         ids = [r[0] for r in con.execute(
             """SELECT id FROM items WHERE meta_status='pending'
                  OR (meta_status='missing' AND COALESCE(meta_checked,0) < ?)
-               ORDER BY id LIMIT ?""", (cutoff, limit))]
+               ORDER BY id NOT IN (SELECT item_id FROM item_summary), id LIMIT ?""", (cutoff, limit))]  # AH-Items zuerst
         if not ids:
             return 0
         log(f"Lade Item-Namen und Icons von Wowhead für {len(ids)} Items (ca. 1 alle 2 s) …")

@@ -170,6 +170,19 @@ class ExportTest(unittest.TestCase):
         self.assertNotIn("3576", p)                                # letzter Preis zu alt
         self.assertEqual(api.recipes(self.con, {}), d)             # lokaler Server liefert dasselbe
 
+    def test_teaching_items(self):
+        ins = "INSERT INTO items(id, name, class_id, subclass_name, meta_status) VALUES (?,?,9,?,'ok')"
+        self.con.execute(ins, (2881, "Pläne: Kupferner Kettengürtel", "Schmiedekunst"))
+        self.con.execute(ins, (6000, "Formel: Armschiene - Ausdauer", "Verzauberkunst"))
+        self.con.execute(ins, (6001, "Muster: Gibt es nicht", "Schneiderei"))
+        self.con.execute("INSERT INTO items(id, name, class_id, meta_status) VALUES (6002, 'Kupferner Kettengürtel', 4, 'ok')")
+        d = recipes.export_data(self.con, recipes.group_houses(self.con))
+        self.assertEqual(d["teaches"], {"2881": [2662], "6000": [4289]})
+        self.assertIn("2881", d["items"])                          # Rezept-Item mit Name/Icon/Preis dabei
+        # gleichnamige Rezepte: Beruf (Unterklasse) entscheidet
+        t = recipes.teaching_items(self.con, [(1, "Kupferner Kettengürtel", "Schmiedekunst"), (2, "Kupferner Kettengürtel", "Schneiderei")])
+        self.assertEqual(t[2881], [1])
+
     def test_site_export_writes_file(self):
         out = tempfile.mkdtemp()
         try:

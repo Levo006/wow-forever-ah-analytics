@@ -83,9 +83,10 @@ def entity(kind, ids, rows, chunk=None):
 
 NPCS = {i: {1: f"Mob {i}".encode(), 4: i % 60 + 1, 5: i % 60 + 2, 9: 12} for i in range(1, 31)}
 NPCS[1].update({1: b"Hogger", 6: 1})
+NPCS[31] = {1: b"TEST WOLF (ALPHA FIRST)", 4: 2}                       # Entwickler-NPC: wird verworfen
 NPCS[2].update({1: "Krämer".encode(), 13: b"A", 14: b"Stoffhandel"})
 ITEMS = {
-    750: {1: b"Tough Wolf Meat", 2: [1, 3, 4]},
+    750: {1: b"Tough Wolf Meat", 2: [1, 3, 4, 31, 999]},                 # 999: NPC ohne Eintrag
     2770: {1: b"Copper Ore", 2: list(range(1, 31)), 3: [1731, 1732], 4: [9363]},
     2589: {1: b"Linen Cloth", 14: [2]},
     9363: {1: b"Kiste", 5: 40},
@@ -174,7 +175,8 @@ class ImportTest(unittest.TestCase):
         self.con.execute("INSERT INTO zones VALUES (12, 'Wald von Elwynn')")
         d = origins.export_items(self.con, [750, 2770, 9363, 2589, 1])
         e = d["items"]
-        self.assertEqual(e["750"]["d"][:2], [[1, 80.0], [3, 12.5]])         # nach Chance sortiert
+        self.assertEqual(e["750"]["d"], [[1, 80.0], [3, 12.5], [4, None]])  # nach Chance sortiert, ohne Test-NPC/ohne Eintrag
+        self.assertEqual(e["750"]["dn"], 3)
         self.assertEqual(e["750"]["q"], [[33, 1]])
         self.assertEqual(e["2770"]["dn"], 30)
         self.assertEqual(len(e["2770"]["d"]), origins.MAX_NPCS if origins.MAX_NPCS < 30 else 30)
@@ -188,7 +190,7 @@ class ImportTest(unittest.TestCase):
         self.assertEqual(d["objects"]["1731"], ["Copper Vein", "Wald von Elwynn"])
         self.assertEqual(d["quests"]["33"][0], "Wolves")
         self.assertEqual(d["names"]["774"][0], "Malachite")                  # englischer Ersatzname
-        self.assertEqual(d["names"]["774"][4], 0)                            # keine eigene Seite
+        self.assertEqual(d["names"]["774"][4], 1)                            # jetzt mit eigener Seite (in items eingetragen)
         self.assertEqual(d["names"]["9363"][4], 1)
         # Battle.net-Titel hat Vorrang
         self.con.execute("CREATE TABLE IF NOT EXISTS quests (id INTEGER PRIMARY KEY, title TEXT, zone TEXT, faction TEXT)")
@@ -239,10 +241,19 @@ class ImportTest(unittest.TestCase):
             export.export_site(self.con, out, log=QUIET)
             meta = _json(os.path.join(out, "data", "meta.json"))
             self.assertEqual(meta["counts"]["source_shards"], origins.SHARDS)
-            self.assertEqual(meta["counts"]["sources"], 4)
+            self.assertEqual(meta["counts"]["sources"], 5)           # inkl. 774 (nur aus der QuestieDB bekannt)
             sh = _json(os.path.join(out, "data", "sources", f"{750 % origins.SHARDS}.json"))
             self.assertIn("750", sh["items"])
             self.assertEqual(sh["source"]["name"], "QuestieDB")
+            # Items mit Herkunft sind eingetragen (deutsche Namen holt der Metadaten-Abruf) und suchbar
+            row = self.con.execute("SELECT name, name_en, meta_status FROM items WHERE id=774").fetchone()
+            self.assertEqual(tuple(row), (None, "Malachite", "pending"))
+            self.assertEqual(self.con.execute("SELECT name_en FROM items WHERE id=750").fetchone()[0], "Tough Wolf Meat")
+            cat = _json(os.path.join(out, "data", "catalog.json"))
+            rows = {r[0]: dict(zip(cat["cols"], r)) for r in cat["rows"]}
+            self.assertEqual(rows[774]["name"], "Malachite")          # bis der deutsche Name da ist
+            self.assertEqual(rows[750]["name"], "Zähes Wolfsfleisch")
+            self.assertEqual(meta["counts"]["catalog"], len(rows))
         finally:
             shutil.rmtree(out, ignore_errors=True)
 

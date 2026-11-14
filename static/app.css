@@ -387,3 +387,4 @@ a.tag:hover { text-decoration: none; border-color: var(--link); color: var(--tex
 .orow { padding: 4px 0; border-bottom: 1px solid var(--border); }
 .orow:last-child { border-bottom: 0; }
 .srcnote { margin-top: 18px; padding-top: 10px; border-top: 1px solid var(--border); }
+.rbook { margin: -2px 0 8px; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }

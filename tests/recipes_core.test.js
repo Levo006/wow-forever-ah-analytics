@@ -133,6 +133,14 @@ test("fehlende Preise", () => {
   assert.equal(RC.margin(idx, "allianz", ench).profit, null);
 });
 
+test("Rezept-Items", () => {
+  const t = RC.buildIndex({ ...data, teaches: { 7000: [3], 7001: [424242], 7002: [3, 4] } });
+  assert.deepEqual(RC.teaches(t, 7000).map((r) => r.name), ["Bronzeaxt"]);
+  assert.deepEqual(RC.teaches(t, 7001), []);                      // unbekanntes Rezept ignoriert
+  assert.deepEqual(RC.taughtBy(t, RC.madeBy(t, 9001)[0]), [7000, 7002]);
+  assert.deepEqual(RC.teaches(idx, 7000), []);
+});
+
 test("leere bzw. kaputte Daten", () => {
   const e = RC.buildIndex({});
   assert.equal(e.recipes.length, 0);

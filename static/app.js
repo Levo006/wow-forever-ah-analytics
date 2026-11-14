@@ -423,7 +423,7 @@ async function viewSearch(r) {
   form.addEventListener("submit", (e) => { e.preventDefault(); submit(); });
   const qWrap = form.q.parentElement; qWrap.style.position = "relative";
   qWrap.insertAdjacentHTML("beforeend", '<div class="ac" id="qRes" hidden></div>');
-  attachAutocomplete(form.q, $("#qRes"), p.house || state.house, (it) => (location.hash = `/item/${it.item_id}?house=${it.house_id}`), { showAll: false });
+  attachAutocomplete(form.q, $("#qRes"), p.house || state.house, (it) => (location.hash = `/item/${it.item_id}${it.house_id ? "?house=" + it.house_id : ""}`), { showAll: false });
   form.class.addEventListener("change", () => { form.subclass.value = ""; submit(); });
   $$("select, input[type=checkbox]", form).forEach((el) => el.name !== "class" && el.addEventListener("change", submit));
   $("#reset").onclick = () => go("/search", {}, true);
@@ -431,7 +431,7 @@ async function viewSearch(r) {
   $("#sumline").textContent = `${num(res.total)} Treffer`;
   $("#res").innerHTML = table([COL.item, COL.price, COL.median, COL.avg30, COL.qty, COL.chg24, COL.chg7d, COL.vol, COL.value, COL.spark, COL.cmp], res.items, {
     sort: p.sort, dir: p.dir, onSort: (s, d) => setParams({ sort: s, dir: d, page: 1 }),
-    rowHref: (x) => `/item/${x.item_id}?house=${x.house_id}`, empty: "Keine Items passen zu den Filtern.",
+    rowHref: (x) => `/item/${x.item_id}${x.house_id ? "?house=" + x.house_id : ""}`, empty: "Keine Items passen zu den Filtern.",
   }) + pager(res.total, res.page, res.page_size, (pg) => setParams({ page: pg }));
 }
 
@@ -540,8 +540,10 @@ const RC_MAX_DEPTH = 8;
 function recipeSummary(idx, id, qidx = null, sv = null) {
   const uses = RecipeCore.usedIn(idx, id), made = RecipeCore.madeBy(idx, id);
   const quests = qidx ? qidx.byReward.get(id) || [] : [], sets = qidx ? RecipeCore.setsOf(qidx, id) : [];
-  if (!uses.length && !made.length && !quests.length && !sets.length && !sv) return "keine Herkunft oder Verwendung bekannt";
+  const teach = RecipeCore.teaches(idx, id);
+  if (!uses.length && !made.length && !quests.length && !sets.length && !sv && !teach.length) return "keine Herkunft oder Verwendung bekannt";
   const parts = [];
+  if (teach.length) parts.push(`lehrt ${teach.map((r) => `${r.prof}: ${r.name}`).join(", ")}`);
   const pl = (n, one, many) => `${num(n)} ${n === 1 ? one : many}`;
   if (sv?.dropsTotal) parts.push(`Beute von ${pl(sv.dropsTotal, "Gegner", "Gegnern")}`);
   if (sv?.objects.length) parts.push(`Fundort: ${sv.objects.slice(0, 2).map((o) => o.name).join(", ")}${sv.objects.length > 2 ? " …" : ""}`);
@@ -568,7 +570,8 @@ function renderRecipes(el, id, fk) {
     const hid = groupId(fk);
     const uses = RecipeCore.usedIn(idx, id), made = RecipeCore.madeBy(idx, id);
     const quests = RecipeCore.rewardedBy(qidx, id, fk), sets = RecipeCore.setsOf(qidx, id);
-    if (!uses.length && !made.length && !quests.length && !sets.length && !sv) {
+    const teach = RecipeCore.teaches(idx, id);
+    if (!uses.length && !made.length && !quests.length && !sets.length && !sv && !teach.length) {
       el.innerHTML = '<div class="empty">Für dieses Item sind keine Herkunft (Beute, Händler, Quests, Rezepte) und keine Verwendung bekannt.</div>';
       return;
     }
@@ -637,8 +640,12 @@ function renderRecipes(el, id, fk) {
       const m = RecipeCore.materialCost(idx, fk, r, opts());
       const g = RecipeCore.margin(idx, fk, r, opts());
       const sell = RecipeCore.price(idx, fk, r.item);
+      const books = RecipeCore.taughtBy(idx, r).filter((b) => b !== id);
+      const bookHtml = books.length ? `<div class="rbook muted small">Gelehrt durch ${books.map((b) => {
+        const p = RecipeCore.price(idx, fk, b);
+        return `${label(b)} <span>${p ? money(p.min) : noPrice("Derzeit kein Angebot im AH")}</span>`; }).join(" · ")}</div>` : "";
       return `<div class="rcard">
-        <div class="rcardh"><b>${esc(r.name)}</b><span class="muted small">${esc(r.prof)}${r.cat ? " · " + esc(r.cat) : ""} · ergibt ${yieldTxt(r)}</span></div>
+        <div class="rcardh"><b>${esc(r.name)}</b><span class="muted small">${esc(r.prof)}${r.cat ? " · " + esc(r.cat) : ""} · ergibt ${yieldTxt(r)}</span></div>${bookHtml}
         <div class="tscroll"><table class="t rt"><thead><tr><th>Zutat</th><th class="n">Menge</th><th class="n">Stückpreis</th><th class="n">Summe</th></tr></thead>
           <tbody data-kind="made">${madeRows(r, 0, [id])}</tbody></table></div>
         <div class="rfoot">
@@ -734,6 +741,7 @@ function renderRecipes(el, id, fk) {
           <label class="small" title="Zutaten, die sich günstiger selbst herstellen lassen, mit Herstellkosten statt AH-Preis rechnen"><input type="checkbox" id="rbest" ${best ? "checked" : ""}> günstigster Weg (selbst herstellen)</label>
         </div>` : ""}
         <div class="muted small rnote"><span class="fac ${fac.fac}"></span>Preise: ${esc(fac.name)} gesamt · typischer Tiefstpreis${profs.length ? " · Spanne nach 5 % AH-Gebühr" : ""}</div>
+        ${teach.length ? `<h3>Lehrt Rezept <span class="muted small">Materialkosten und Spanne beim Herstellen</span></h3><div class="rcards">${teach.map(madeCard).join("")}</div>` : ""}
         ${dropHtml()}${objHtml()}${vendorHtml()}${boxHtml("in")}${questHtml()}
         ${mk.length ? `<h3>Hergestellt aus</h3><div class="rcards">${mk.map(madeCard).join("")}</div>` : ""}
         ${needHtml()}${setHtml()}${boxHtml("out")}
@@ -815,8 +823,9 @@ async function viewItem(r) {
     const fk0 = (sh && (GROUP_KINDS.includes(sh.kind) ? sh.kind : sh.group)) || "allianz";
     main.innerHTML = `<div class="ihead"><div class="who">${icon(it, true)}
         <div style="min-width:0"><h1 class="q${it.quality ?? 1}">${esc(it.name)}</h1>
-          <div class="en">${it.name_en && it.name_en !== it.name ? esc(it.name_en) + " · " : ""}ID ${id} · <a href="https://www.wowhead.com/forever/de/item=${id}" target="_blank" rel="noopener">Wowhead ↗</a></div></div></div></div>
-      <div class="card"><div class="empty">Dieses Item wird derzeit in keinem Auktionshaus angeboten.</div></div>
+          <div class="en">${it.name_en && it.name_en !== it.name ? esc(it.name_en) + " · " : ""}ID ${id} · <a href="https://www.wowhead.com/forever/de/item=${id}" target="_blank" rel="noopener">Wowhead ↗</a></div>
+          ${it.class_name || it.item_level ? `<div class="chips mt">${it.class_name ? `<span class="pill">${esc([...new Set([it.class_name, it.subclass_name].filter(Boolean))].join(" › "))}</span>` : ""}${it.item_level ? `<span class="pill">Stufe ${it.item_level}</span>` : ""}</div>` : ""}</div></div></div>
+      <div class="card"><div class="empty">Dieses Item wurde bisher in keinem Auktionshaus angeboten (z. B. seelengebunden, Quest-Gegenstand oder nur selbst herstellbar).</div></div>
       <div class="folds">${fold("rec", "Herkunft & Verwendung", "Lade Rezepte und Quests …", true)}</div>`;
     wireFolds({ rec: (el) => renderRecipes(el, id, fk0) });
     setRecipeSummary(id);
@@ -1388,11 +1397,11 @@ function attachAutocomplete(input, box, house, onPick, opts = {}) {
     box.innerHTML = items.map((it, i) => {
       const cat = [it.class_name, it.subclass_name].filter(Boolean).map(esc).join(" › ");
       const en = it.name_en && it.name_en !== it.name ? `<span class="acen">${hl(it.name_en, lastQ)}</span> · ` : "";
-      return `<a href="#/item/${it.item_id}?house=${it.house_id}" data-i="${i}" class="acrow ${i === sel ? "sel" : ""}">
+      return `<a href="#/item/${it.item_id}${it.house_id ? "?house=" + it.house_id : ""}" data-i="${i}" class="acrow ${i === sel ? "sel" : ""}">
         ${icon(it, "md")}
         <span class="acmain"><span class="acname q${it.quality ?? 1}">${hl(it.name, lastQ)}</span>
           <span class="acsub">${en}${cat || "Kategorie unbekannt"} · ID ${it.item_id}</span></span>
-        <span class="acprice">${money(it.last_min)}<span class="acsub">${it.last_qty != null ? num(it.last_qty) + " Stk." : ""}</span></span></a>`;
+        <span class="acprice">${it.no_ah ? '<span class="acsub">nicht im AH</span>' : `${money(it.last_min)}<span class="acsub">${it.last_qty != null ? num(it.last_qty) + " Stk." : ""}</span>`}</span></a>`;
     }).join("") + (opts.showAll !== false && total > items.length
       ? `<a href="#" data-all class="acall ${sel === items.length ? "sel" : ""}">Alle ${num(total)} Treffer anzeigen ›</a>` : "");
   };
@@ -1493,7 +1502,7 @@ function initTheme() {
   try { await loadHouses(); } catch (e) { main.innerHTML = `<div class="error">Server nicht erreichbar: ${esc(e.message)}</div>`; return; }
   $("#houseSel").onchange = (e) => setHouse(e.target.value || groupId(houseById(state.house)?.group || "allianz") || groupId("allianz"));
   $("#market").addEventListener("click", (e) => { const b = e.target.closest("button[data-k]"); if (b) setHouse(groupId(b.dataset.k)); });
-  attachAutocomplete($("#quickInput"), $("#quickResults"), null, (it) => (location.hash = `/item/${it.item_id}?house=${it.house_id}`));
+  attachAutocomplete($("#quickInput"), $("#quickResults"), null, (it) => (location.hash = `/item/${it.item_id}${it.house_id ? "?house=" + it.house_id : ""}`));
   $("#quickSearch").onsubmit = (e) => { e.preventDefault(); const q = $("#quickInput").value.trim(); if (q) { $("#quickResults").hidden = true; go("/search", { q, house: state.house }); } };
   window.addEventListener("hashchange", route);
   route();

@@ -232,6 +232,12 @@ const StaticAPI = (() => {
     else hs = hs.filter((id) => m.houses.some((h) => h.id === id && (!params.region || h.region === params.region) && (!params.faction || h.faction === params.faction)));
     let rows = (await Promise.all(hs.map(summary))).flat();
     const q = fold((params.q || "").trim());
+    // Mit Suchbegriff auch Items ohne AH-Angebot finden (nicht bei Preis-/Mengenfiltern)
+    const priceFilter = ["min_price", "max_price", "min_qty", "max_qty", "min_avg_qty", "min_chg", "max_chg"].some((k) => params[k] !== undefined && params[k] !== "");
+    if (q && !priceFilter && params.commodity !== "1") {
+      const seen = new Set(rows.map((r) => r.item_id));
+      rows = rows.concat((await catalog().catch(() => [])).filter((r) => !seen.has(r.item_id)));
+    }
     const keyOf = (r) => (r._k ??= fold(r.name) + "|" + fold(r.name_en));
     if (q) {
       // zweisprachig (deutscher + englischer Name) und umlaut-tolerant
@@ -323,6 +329,13 @@ const StaticAPI = (() => {
     }
     return f._houses;
   }
+  /** Items ohne AH-Daten (Rezepte, Quests, Sets, QuestieDB) – für Suche und Item-Seite. */
+  async function catalog() {
+    if (!(await meta()).counts?.catalog) return [];
+    const c = await load("data/catalog.json");
+    if (!c._rows) c._rows = toRows(c).map((r) => ({ ...r, house_id: null, no_ah: true }));
+    return c._rows;
+  }
   const recipes = () => load("data/recipes.json");
   const quests = () => load("data/quests.json");
   /** Herkunft (QuestieDB) eines Items: eine von meta.counts.source_shards Dateien. */
@@ -334,8 +347,12 @@ const StaticAPI = (() => {
   async function item(id) {
     // Item ohne AH-Daten, aber aus Rezepten/Quests/Sets bekannt → Seite nur mit Herkunft/Verwendung
     const [r, q] = await Promise.all([recipes().catch(() => null), quests().catch(() => null)]);
-    const m = r?.items?.[String(id)] || q?.items?.[String(id)];
-    const onlyRecipe = () => ({ item: { id, name: m[0], quality: m[1], icon: m[2] }, houses: [] });
+    let m = r?.items?.[String(id)] || q?.items?.[String(id)];
+    const onlyRecipe = () => ({ item: { id, name: m[0], quality: m[1], icon: m[2], ...(m[4] || {}) }, houses: [] });
+    if (!m) {
+      const c = (await catalog().catch(() => [])).find((x) => x.item_id === id);
+      if (c) m = [c.name, c.quality, c.icon, 0, { name_en: c.name_en, class_name: c.class_name, subclass_name: c.subclass_name, item_level: c.item_level }];
+    }
     if (m && !m[3]) return onlyRecipe();
     let f;
     try { f = await itemFile(id); } catch (e) {

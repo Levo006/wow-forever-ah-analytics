@@ -2,7 +2,7 @@
 Händler, Behälter (Item in Item) und Quests, die ein Item verlangen.
 
 Quelle: GitHub-Release von https://github.com/Questie/QuestieDB (Datei ``QuestieDB-<v>-Forever.zip``).
-Geprüft wird höchstens wöchentlich (eine Anfrage an die GitHub-API); neu geladen nur bei einem
+Geprüft wird höchstens täglich (eine Anfrage an die GitHub-API); neu geladen nur bei einem
 neuen Release. Die Inhalte gelten laut LICENSE.md der QuestieDB „im Zweifel als all rights reserved“
 (Code: GPLv3) – eingebaut auf ausdrücklichen Wunsch, mit Quellenangabe auf der Website.
 
@@ -25,7 +25,7 @@ from .sources import questie as qreader
 RELEASE_API = "https://api.github.com/repos/Questie/QuestieDB/releases/latest"
 ASSET = re.compile(r"^QuestieDB-.+-Forever\.zip$")
 USER_AGENT = "wow-ah-analytics (Daten-Import)"
-CHECK_DAYS = 7
+CHECK_DAYS = 1         # eine Anfrage an die GitHub-API pro Tag
 SHARDS = 64            # data/sources/<id % 64>.json
 MAX_NPCS = 40          # je Item exportierte Gegner (Rest nur gezählt)
 MAX_OBJECTS = 30
@@ -59,9 +59,17 @@ CREATE TABLE IF NOT EXISTS qdb_quest_items (
     quest_id INTEGER NOT NULL, item_id INTEGER NOT NULL, kind INTEGER NOT NULL,
     PRIMARY KEY (item_id, quest_id, kind)
 ) WITHOUT ROWID;
-CREATE TABLE IF NOT EXISTS qdb_item_names (id INTEGER PRIMARY KEY, name TEXT);  -- englisch, nur Behälter/Inhalt
+CREATE TABLE IF NOT EXISTS qdb_item_names (id INTEGER PRIMARY KEY, name TEXT);  -- englisch, alle Items mit Herkunft/Quest-Bezug
 CREATE TABLE IF NOT EXISTS zones (id INTEGER PRIMARY KEY, name TEXT NOT NULL);
 """
+
+# Entwickler-/Platzhalter-Einträge der Spieldaten (z. B. „TEST WOLF (ALPHA FIRST)“, „[DND] …“, „[UNUSED] …“)
+_JUNK = re.compile(r"^(?:TEST\b|\[|zz)|\b(?:UNUSED|DEPRECATED|DND)\b|\(TEST\)", re.I)
+
+
+def _junk(name):
+    return not name or bool(_JUNK.search(name))
+
 
 ALLIANCE_RACES, HORDE_RACES = 1 | 4 | 8 | 64, 2 | 16 | 32 | 128
 
@@ -143,9 +151,15 @@ def parse(qdb: qreader.QuestieDB) -> dict:
         r = qdb.row("Object", oid, qreader.OBJECT)
         if r is not None:
             objects.append((oid, _s(r.get("name")), _i(r.get("zoneID"))))
+    # Test-/Platzhalter-NPCs und -Objekte sowie Verweise ohne Eintrag weglassen
+    npcs = [n for n in npcs if not _junk(n[1])]
+    objects = [o for o in objects if not _junk(o[1])]
+    good = {NPC_DROP: {n[0] for n in npcs}, VENDOR: {n[0] for n in npcs}, OBJECT: {o[0] for o in objects}}
+    sources = [x for x in sources if x[1] not in good or x[2] in good[x[1]]]
     return {"npcs": npcs, "objects": objects, "sources": sources, "quests": quests,
             "quest_items": sorted(quest_items), "version": qdb.version,
-            "item_names": sorted((i, names[i]) for i in boxed if names.get(i))}
+            "item_names": sorted((i, names[i]) for i in boxed | {s[0] for s in sources} | {q[1] for q in quest_items}
+                                 if names.get(i))}
 
 
 def store(con, data: dict, tag: str, log=print) -> bool:
@@ -163,6 +177,12 @@ def store(con, data: dict, tag: str, log=print) -> bool:
         con.executemany("INSERT OR IGNORE INTO qdb_sources VALUES (?,?,?,?)", data["sources"])
         con.executemany("INSERT INTO qdb_quests VALUES (?,?,?,?,?,?)", data["quests"])
         con.executemany("INSERT INTO qdb_item_names VALUES (?,?)", data.get("item_names", []))
+        # Alle Items mit Herkunft bekommen eine Seite und sind suchbar: deutsche Namen/Icons holt der
+        # normale Metadaten-Abruf (Battle.net) beim nächsten Sammeln nach.
+        con.execute("""INSERT OR IGNORE INTO items(id, name_en, meta_status)
+                       SELECT id, name, 'pending' FROM qdb_item_names""")
+        con.execute("""UPDATE items SET name_en=(SELECT name FROM qdb_item_names q WHERE q.id=items.id)
+                       WHERE name_en IS NULL AND id IN (SELECT id FROM qdb_item_names)""")
         con.executemany("INSERT OR IGNORE INTO qdb_quest_items(quest_id, item_id, kind) VALUES (?,?,?)", data["quest_items"])
         db.set_meta(con, "questie_tag", tag)
         db.set_meta(con, "questie_version", data.get("version", ""))
@@ -214,7 +234,7 @@ def update(con, client=None, force=False, path=None, log=print, opener=None) -> 
         return store(con, data, tag, log=log)
     checked = int(db.get_meta(con, "questie_checked", "0") or 0)
     if have and not force and time.time() - checked < CHECK_DAYS * 86400:
-        log("QuestieDB: zuletzt vor weniger als 7 Tagen geprüft – kein Abruf nötig.")
+        log(f"QuestieDB: zuletzt vor weniger als {CHECK_DAYS} Tag(en) geprüft – kein Abruf nötig.")
         return False
     rel = _http_json(RELEASE_API, opener)
     tag = rel.get("tag_name") or ""

@@ -17,6 +17,7 @@ Layout::
       data/recipes.json                   Berufe, Rezepte, Rezept-Items + aktuelle Fraktionspreise
       data/quests.json                    Quests mit Item-Belohnung, Item-Sets (+ Preise)
       data/sources/<id % 64>.json         Herkunft je Item aus der QuestieDB (Beute, Händler, Behälter, Questziele)
+      data/catalog.json                   Items ohne AH-Daten (für Suche und Item-Seite)
 
 Lokale Pfade (z. B. der WoW-Account-Ordner) werden NICHT exportiert.
 """
@@ -44,6 +45,8 @@ ITEM_HOUSE_FIELDS = [
     "prev24_min", "prev7d_min", "avg7_min", "avg30_min", "avg7_qty", "cv7_min", "low30_min", "high30_min",
     "chg24_min", "chg7d_min", "chg24_median", "chg7d_median", "market_value",
 ]
+CATALOG_FIELDS = ["item_id", "name", "name_en", "quality", "class_id", "class_name", "subclass_id", "subclass_name",
+                  "icon", "item_level"]
 PRICE_FIELDS = ["ts", "min", "p10", "median", "mean", "max", "quantity", "auctions", "n"]
 SNAP_FIELDS = ["item_id", "min", "p10", "median", "mean", "max", "quantity", "auctions", "prev_min"]
 
@@ -226,6 +229,14 @@ def export_site(con, out_dir: str, history_days: int = 180, snapshot_files: int 
     if stats["quests"] or stats["sets"]:
         _write(os.path.join(data_dir, "quests.json"), qdata)
     stats["sources"] = origins.export_shards(con, data_dir, log=log)
+    # Items, die (noch) nie im AH waren – aus Rezepten, Quests, Sets, QuestieDB: suchbar mit eigener Seite
+    cat = [dict(r) for r in con.execute(
+        """SELECT id AS item_id, COALESCE(name, name_en) AS name, name_en, quality, class_id, class_name,
+                  subclass_id, subclass_name, icon, item_level
+           FROM items WHERE COALESCE(name, name_en) IS NOT NULL ORDER BY id""") if r["item_id"] not in item_ids]
+    stats["catalog"] = len(cat)
+    if cat:
+        _write(os.path.join(data_dir, "catalog.json"), _columnar(CATALOG_FIELDS, cat))
 
     meta = {
         "generated_at": int(time.time()),
@@ -237,7 +248,7 @@ def export_site(con, out_dir: str, history_days: int = 180, snapshot_files: int 
         "counts": {"houses": len(houses), "items": len(item_ids),
                    "snapshots": sum(h["snapshots"] for h in houses), "recipes": stats["recipes"],
                    "quests": stats["quests"], "sets": stats["sets"], "sources": stats["sources"],
-                   "source_shards": origins.SHARDS if stats["sources"] else 0},
+                   "source_shards": origins.SHARDS if stats["sources"] else 0, "catalog": stats["catalog"]},
         "import_log": [dict(r) for r in con.execute(
             "SELECT ts, source, status, message FROM import_log ORDER BY id DESC LIMIT 20")],
     }

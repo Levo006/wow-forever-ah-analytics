@@ -31,7 +31,16 @@
       for (const x of reagents) push(byReagent, x.id, r);
       if (r.item) push(byProduct, r.item, r);
     }
-    return { recipes, byReagent, byProduct, items: data.items || {}, prices: data.prices || {}, professions: profs.map((p) => p.name || "Sonstiges") };
+    // Rezept-Items („Rezept: …“) ↔ Rezepte
+    const byId = new Map(recipes.map((r) => [r.id, r]));
+    const teaches = new Map(), taughtBy = new Map();
+    for (const [iid, rids] of Object.entries(data.teaches || {})) {
+      const rs = (rids || []).map((x) => byId.get(x)).filter(Boolean);
+      if (!rs.length) continue;
+      teaches.set(Number(iid), rs);
+      for (const r of rs) push(taughtBy, r.id, Number(iid));
+    }
+    return { recipes, byReagent, byProduct, teaches, taughtBy, items: data.items || {}, prices: data.prices || {}, professions: profs.map((p) => p.name || "Sonstiges") };
   }
   function push(map, k, v) {
     const a = map.get(k);
@@ -47,6 +56,10 @@
     const p = idx.prices?.[faction]?.items?.[String(id)];
     return p && p[0] > 0 ? { min: p[0], median: p[1], qty: p[2] } : null;
   }
+
+  /** Rezepte, die ein Rezept-Item lehrt, bzw. Rezept-Items, die ein Rezept lehren. */
+  const teaches = (idx, id) => idx.teaches?.get(id) || [];
+  const taughtBy = (idx, recipe) => idx.taughtBy?.get(recipe.id) || [];
 
   const usedIn = (idx, id, prof) => (idx.byReagent.get(id) || []).filter((r) => !prof || r.prof === prof);
   const madeBy = (idx, id) => idx.byProduct.get(id) || [];
@@ -232,6 +245,6 @@
     };
   }
 
-  return { AH_FEE, buildIndex, itemInfo, price, usedIn, madeBy, professionsFor, usesTree, madeFromTree, unitCost, materialCost, margin, countTree,
+  return { AH_FEE, teaches, taughtBy, buildIndex, itemInfo, price, usedIn, madeBy, professionsFor, usesTree, madeFromTree, unitCost, materialCost, margin, countTree,
     buildQuestIndex, rewardedBy, questRewards, setsOf, setCost, sourceView };
 });

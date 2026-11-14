@@ -238,12 +238,38 @@ def update(con, client, force=False, max_age_days=MAX_AGE_DAYS, log=print) -> bo
 
 # ------------------------------------------------------------------ Export
 
+_TEACH = re.compile(r"^(?:Rezept|Muster|Pläne|Bauplan|Formel|Handbuch|Schema|Anleitung|Recipe|Pattern|Plans|Schematic|Formula|Manual):\s*(.+)$")
+
+
+def teaching_items(con, recipes_rows) -> dict[int, list[int]]:
+    """Rezept-Items („Rezept: …“, „Muster: …“, „Pläne: …“ …) → Rezepte, die sie lehren.
+
+    Die API verknüpft beides nicht; zugeordnet wird über den Namen (Item-Name ohne Präfix =
+    Rezeptname). Bei mehreren gleichnamigen Rezepten entscheidet der Beruf (Unterklasse des Items).
+    """
+    by_name: dict[str, list[tuple[int, str]]] = {}
+    for rid, name, prof in recipes_rows:
+        if name:
+            by_name.setdefault(name.casefold(), []).append((rid, prof or ""))
+    out = {}
+    for iid, name, sub in con.execute("SELECT id, name, subclass_name FROM items WHERE class_id=9 AND name IS NOT NULL"):
+        m = _TEACH.match(name)
+        cand = by_name.get(m.group(1).strip().casefold(), []) if m else []
+        if len(cand) > 1 and sub:
+            same = [c for c in cand if c[1].casefold() == sub.casefold()]
+            cand = same or cand
+        if cand:
+            out[iid] = sorted({c[0] for c in cand})
+    return out
+
+
 def export_data(con, group_houses: dict[str, int] | None = None) -> dict:
     """Kompakte Struktur für die Website (identisch für Export und lokalen Server).
 
     recipes.rows: [id, Beruf-Index, Kategorie-Index, Name, Item-ID|null, Menge min, Menge max,
                    [[Reagenz-ID, Menge], …]]
     items: {id: [Name, Qualität, Icon, im AH (0/1)]}
+    teaches: {Rezept-Item-ID: [Rezept-ID, …]} (über den Namen zugeordnet)
     prices: {allianz|horde|neutral: {id: [Tiefstpreis, Median, Stück]}}
     """
     ensure_schema(con)
@@ -269,6 +295,12 @@ def export_data(con, group_houses: dict[str, int] | None = None) -> dict:
         if r["item_id"]:
             item_ids.add(r["item_id"])
         item_ids.update(x[0] for x in reag[r["id"]])
+    exported = {row[0] for row in out_rows}
+    pname = {p["id"]: p["name"] for p in profs}
+    teaches = {i: [x for x in rs if x in exported] for i, rs in teaching_items(
+        con, [(r["id"], r["name"], pname.get(r["profession_id"])) for r in rows]).items()}
+    teaches = {i: rs for i, rs in teaches.items() if rs}
+    item_ids.update(teaches)
     fallback = {}
     for r in rows:
         if r["item_id"] and r["item_name"]:
@@ -282,7 +314,7 @@ def export_data(con, group_houses: dict[str, int] | None = None) -> dict:
         "fetched": int(db.get_meta(con, "recipes_fetched", "0") or 0) or None,
         "professions": profs, "categories": cats,
         "recipes": {"cols": ["id", "prof", "cat", "name", "item", "qmin", "qmax", "reagents"], "rows": out_rows},
-        "items": items, "prices": prices,
+        "items": items, "prices": prices, "teaches": {str(i): rs for i, rs in sorted(teaches.items())},
     }
 
 
@@ -293,7 +325,7 @@ def item_table(con, item_ids, fallback=None) -> dict:
     meta, ids = {}, sorted(item_ids)
     for i in range(0, len(ids), 900):
         chunk = ids[i:i + 900]
-        for r in con.execute(f"SELECT id, name, quality, icon FROM items WHERE id IN ({','.join('?' * len(chunk))})", chunk):
+        for r in con.execute(f"SELECT id, COALESCE(name, name_en) AS name, quality, icon FROM items WHERE id IN ({','.join('?' * len(chunk))})", chunk):
             meta[r[0]] = r
     out = {}
     for iid in ids:
