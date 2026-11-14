@@ -562,7 +562,9 @@ def compact(con, hourly_days: int = 7, keep_days: int = 180, house_hourly_days: 
                               WHERE p.house_id=daily.house_id AND p.item_id=daily.item_id AND p.ts/86400=daily.ts/86400 AND p.ts%86400!={d}),
                     reference_low=(SELECT MIN(COALESCE(reference_low,min)) FROM prices p WHERE p.house_id=daily.house_id AND p.item_id=daily.item_id AND p.ts/86400=daily.ts/86400 AND p.ts%86400!={d}),
                     reference_high=(SELECT MAX(COALESCE(reference_high,min)) FROM prices p WHERE p.house_id=daily.house_id AND p.item_id=daily.item_id AND p.ts/86400=daily.ts/86400 AND p.ts%86400!={d})
-                    WHERE daily.house_id=? AND daily.ts<? AND daily.ts%86400={d}""", (hid,cut_day))
+                    WHERE daily.house_id=? AND daily.ts<? AND daily.ts%86400={d}
+                      AND EXISTS (SELECT 1 FROM prices p WHERE p.house_id=daily.house_id AND p.item_id=daily.item_id
+                                  AND p.ts/86400=daily.ts/86400 AND p.ts%86400!={d})""", (hid,cut_day))
                 con.execute(f"DELETE FROM prices WHERE house_id=? AND ts < ? AND ts % 86400 != {d}", (hid, cut_day))
                 con.execute(
                     f"""INSERT OR IGNORE INTO snapshots(house_id, ts, source, item_count, auction_count, total_value, imported_at)
