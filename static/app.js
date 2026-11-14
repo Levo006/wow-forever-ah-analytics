@@ -240,7 +240,16 @@ function timeLineChart(canvas, datasets, { yFmt = moneyText, span = 7 * 86400, o
 }
 function line(label, data, colorVar, extra = {}) {
   const c = css(colorVar);
-  return { label, data, borderColor: c, backgroundColor: c, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: 0.15, spanGaps: true, ...extra };
+  const gaps = [];
+  const steps = data.slice(1).map((p,i)=>p.x-data[i].x).filter(x=>x>0).sort((a,b)=>a-b);
+  const typical = steps.length ? steps[Math.floor(steps.length/2)] : 3600;
+  for (const p of data) {
+    const prev = gaps[gaps.length-1];
+    if (prev && p.x-prev.x > Math.max(3*3600,typical*2.5)) gaps.push({x:prev.x+1,y:null});
+    gaps.push(p);
+  }
+  data = gaps;
+  return { label, data, borderColor: c, backgroundColor: c, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: 0.15, spanGaps: false, ...extra };
 }
 function divergingBars(canvas, labels, values, title) {
   const pos = css("--div-pos"), neg = css("--div-neg");
@@ -307,16 +316,16 @@ function listingPrice(r) {
 const COL = {
   item: { label: "Item", sort: "name", cls: "itemcell", fmt: (r) => itemLabel(r) },
   house: { label: "Markt", fmt: (r) => `<span class="pill">${esc(houseById(r.house_id)?.short || r.house_name)}</span>` },
-  price: { label: "Preis (min)", num: true, sort: "price", fmt: (r) => listingPrice(r) },
+  price: { label: "Referenzpreis", num: true, sort: "price", fmt: (r) => listingPrice(r) },
   median: { label: "Median", num: true, sort: "median", fmt: (r) => money(r.last_median) },
-  avg7: { label: "Ø 7 T (min)", num: true, fmt: (r) => money(r.avg7_min) },
-  avg30: { label: "Ø 30 T (min)", num: true, sort: "avg30", fmt: (r) => money(r.avg30_min) },
+  avg7: { label: "Ø Referenz 7 T", num: true, fmt: (r) => money(r.avg7_min) },
+  avg30: { label: "Ø Referenz 30 T", num: true, sort: "avg30", fmt: (r) => money(r.avg30_min) },
   qty: { label: "Menge", num: true, sort: "qty", fmt: (r) => r.is_current === false ? "–" : num(r.last_qty) },
   avgqty: { label: "Ø Menge 7 T", num: true, sort: "avg_qty", fmt: (r) => num(r.avg7_qty) },
   chg24: { label: "Δ 24 h", num: true, sort: "chg24", fmt: (r) => r.is_current === false ? "–" : pct(r.chg24_min) },
   chg7d: { label: "Δ 7 T", num: true, sort: "chg7d", fmt: (r) => r.is_current === false ? "–" : pct(r.chg7d_min) },
-  vol: { label: "Volatilität", num: true, sort: "vol", title: "Variationskoeffizient des Mindestpreises (7 Tage)", fmt: (r) => r.cv7_min == null ? "–" : num(r.cv7_min * 100, 1) + " %" },
-  value: { label: "Marktwert", num: true, sort: "value", title: "Mindestpreis × angebotene Menge", fmt: (r) => money(r.market_value, { short: true }) },
+  vol: { label: "Volatilität", num: true, sort: "vol", title: "Variationskoeffizient des Referenzpreises (7 Tage)", fmt: (r) => r.cv7_min == null ? "–" : num(r.cv7_min * 100, 1) + " %" },
+  value: { label: "Marktwert", num: true, sort: "value", title: "Referenzpreis × angebotene Menge", fmt: (r) => money(r.market_value, { short: true }) },
   spark: { label: "14 Tage", fmt: (r) => sparkline(r.spark) },
   updated: { label: "Stand", sort: "updated", fmt: (r) => `<span class="muted small">${dt(r.last_ts)}</span>` },
   cmp: { label: "", fmt: (r) => `<button class="btn small" data-cmp="${r.item_id}" title="Zum Vergleich hinzufügen">${state.compare.includes(r.item_id) ? "✓" : "+"} Vgl.</button>` },
@@ -373,15 +382,17 @@ async function viewDashboard(r) {
     <div class="pagehead"><h1>${esc(hname(hh))}</h1>
       <span class="sub">${esc(scopeText(hh))} · Stand ${dt(d.last_ts)} (${ago(d.last_ts)})</span></div>
     <div class="kpis">
-      <div class="kpi"><div class="l">Gehandelte Items</div><div class="v">${num(k.items)}</div></div>
-      <div class="kpi"><div class="l">Marktwert (min × Menge)</div><div class="v">${money(k.market_value, { short: true })}</div></div>
+      <div class="kpi"><div class="l">Beobachtete Items</div><div class="v">${num(k.items)}</div></div>
+      <div class="kpi"><div class="l">Angebotswert (Referenz × Menge)</div><div class="v">${money(k.market_value, { short: true })}</div></div>
       <div class="kpi"><div class="l">Angebotene Stück</div><div class="v">${compact(k.quantity)}</div></div>
       <div class="kpi"><div class="l">Auktionen</div><div class="v">${k.auctions == null ? "–" : compact(k.auctions)}</div></div>
-      <div class="kpi"><div class="l">Ø Preisänderung 24 h</div><div class="v">${pct(k.avg_chg24)}</div></div>
-      <div class="kpi"><div class="l">Ø Preisänderung 7 T</div><div class="v">${pct(k.avg_chg7d)}</div></div>
+      <div class="kpi"><div class="l">Median Preisänderung 24 h</div><div class="v">${k.comparisons_reliable ? pct(k.median_chg24) : "–"}</div><div class="d">${num(k.comparable24)} vergleichbare Items${k.comparisons_reliable ? "" : " · Teilstand / veraltet"}</div></div>
+      <div class="kpi"><div class="l">Median Preisänderung 7 T</div><div class="v">${k.comparisons_reliable ? pct(k.median_chg7d) : "–"}</div><div class="d">${num(k.comparable7d)} vergleichbare Items${k.comparisons_reliable ? "" : " · Teilstand / veraltet"}</div></div>
     </div>
-    <div class="grid g32">
-      <div class="card"><div class="cardhead"><h2>Marktwert im Zeitverlauf</h2><span class="right muted small">Summe Mindestpreis × Menge je Snapshot</span></div>
+    <p class="note">${esc(marketQualityNote(d.quality))} <a href="#/data">Laufprotokoll & Quellen</a></p>
+    <details class="card"><summary>Methodik & Marktbreite</summary><p>Median der Preisänderungen vergleichbarer Items, kein fester Warenkorb und kein Umsatzindex. Jedes Item zählt einmal. Referenzfenster sind am Marktzeitpunkt verankert: 24 h maximal 3 Stunden älter, 7 T maximal 18 Stunden älter (Tagesmittel möglich). Fehlende Vergleichswerte werden nicht ersetzt.</p><p>24 h: ${num(k.up24)} gestiegen · ${num(k.down24)} gefallen · ${num(k.comparable24 - k.up24 - k.down24)} unverändert. Unvollständige oder veraltete Marktstände erhalten kein zusammenfassendes Änderungssignal.</p></details>
+    <div class="grid g32 mt">
+      <div class="card"><div class="cardhead"><h2>Beobachteter Angebotswert</h2><span class="right muted small">Summe Referenzpreis × Menge; kein Umsatz</span></div>
         <div class="chartbox md"><canvas id="mkt"></canvas></div></div>
       <div class="card flush"><h2>Kategorien</h2>${table([
         { label: "Kategorie", fmt: (c) => esc(c.class_name) },
@@ -393,7 +404,7 @@ async function viewDashboard(r) {
     <div class="grid g3 mt">
       <div class="card flush"><div class="cardhead" style="padding:14px 16px 0"><h2>Gewinner</h2><a class="right small" href="#/movers?house=${h.id}">alle ›</a></div>${moversMini(d.movers.gainers)}</div>
       <div class="card flush"><div class="cardhead" style="padding:14px 16px 0"><h2>Verlierer</h2><a class="right small" href="#/movers?house=${h.id}">alle ›</a></div>${moversMini(d.movers.losers)}</div>
-      <div class="card flush"><div class="cardhead" style="padding:14px 16px 0"><h2>Deals (≥ 15 % unter Ø 7 T)</h2><a class="right small" href="#/deals?house=${h.id}">alle ›</a></div>
+      <div class="card flush"><div class="cardhead" style="padding:14px 16px 0"><h2>Preisauffälligkeiten (≥ 15 % unter Ø 7 T)</h2><a class="right small" href="#/deals?house=${h.id}">alle ›</a></div>
         ${table([{ ...COL.item, sort: null }, { label: "Preis", num: true, fmt: (x) => money(x.last_min) }, { label: "Rabatt", num: true, fmt: (x) => `<span class="chg up">−${num(x.discount, 0)} %</span>` }],
           d.deals.deals, { rowHref: (x) => `/item/${x.item_id}?house=${x.house_id}`, empty: "Aktuell keine Deals." })}</div>
     </div>
@@ -767,7 +778,7 @@ function renderRecipes(el, id, fk) {
             .map(([k, l, n]) => `<button type="button" class="${k === prof ? "on" : ""}" data-p="${esc(k)}">${esc(l)} <span>${n}</span></button>`).join("")}</div>
           <label class="small" title="Zutaten, die sich günstiger selbst herstellen lassen, mit Herstellkosten statt AH-Preis rechnen"><input type="checkbox" id="rbest" ${best ? "checked" : ""}> günstigster Weg (selbst herstellen)</label>
         </div>` : ""}
-        <div class="muted small rnote"><span class="fac ${fac.fac}"></span>Preise: ${esc(fac.name)} gesamt · typischer Tiefstpreis${profs.length ? " · Spanne nach 5 % AH-Gebühr" : ""}</div>
+        <div class="muted small rnote"><span class="fac ${fac.fac}"></span>Preise: ${esc(fac.name)} gesamt · robuste Kaufreferenz${profs.length ? " · Spanne nach 5 % AH-Gebühr" : ""}</div>
         ${teach.length ? `<h3>Lehrt Rezept <span class="muted small">Materialkosten und Spanne beim Herstellen</span></h3><div class="rcards">${teach.map(madeCard).join("")}</div>` : ""}
         ${dropHtml()}${objHtml()}${vendorHtml()}${boxHtml("in")}${questHtml()}
         ${mk.length ? `<h3>Hergestellt aus</h3><div class="rcards">${mk.map(madeCard).join("")}</div>` : ""}
@@ -916,15 +927,16 @@ async function viewItem(r) {
       <div class="hm"><span>Median ${money(row.last_median)}</span><span>${row.is_current ? compact(row.last_qty) + " Stück" : "historisch"}</span></div>
       <div class="hm"><span>${row.is_current ? "24 h " + pct(row.chg24_min) : "zuletzt " + dt(row.last_ts)}</span>${cheapest && row.house_id === cheapest.house_id && listed.length > 1 ? '<span class="best">★ günstigstes</span>' : ""}</div></button>`;
   };
-  const cards = card(total, `${fac.name} gesamt`, "typischer Tiefstpreis", { total: true, hid: groupId(fk) }) +
+  const cards = card(total, `${fac.name} gesamt`, "robuste Kaufreferenz", { total: true, hid: groupId(fk) }) +
     allSingles.map((h) => card(rowOf(h.id), `Verbund ${h.verbund || "?"}`, `#${String(h.ext_id).split("-").pop()}`, { hid: h.id })).join("");
 
   // Hinweise
   const hints = [];
+  const priceMethod = house ? `${house.market_complete ? "Vollständiger Snapshot" : "Teilstand / Vollständigkeit nicht belegt"}. ${house.last_ts < Date.now()/1000-10800 ? "Quellstand älter als 3 Stunden. " : ""}Referenzpreis: ${house.price_basis==="robust_reference" ? "mengengewichteter Median der hausweisen P10-Preise, kein günstigstes Angebot" : "günstigstes beobachtetes Stückangebot"}. Günstigstes separat beobachtetes Angebot: ${house.last_lowest == null ? "für diesen historischen Stand nicht gesondert gespeichert" : moneyText(house.last_lowest)}. Sammelmarkt-Angebote sind nicht automatisch im eigenen Verbund kaufbar.` : "";
   if (house && !house.is_current) hints.push(`${listingNote(house)}. Letzte Preisbeobachtung: ${dt(house.last_ts)}. Die Historie bleibt sichtbar.`);
   if (it.translation_missing) hints.push(`Deutscher Forever-Name noch nicht bestätigt.${it.aliases?.length ? " Suchalias: " + it.aliases.join(", ") + "." : " Anzeige mit englischem Fallback."}`);
   if (house?.is_current && house.last_ts >= Date.now() / 1000 - 3 * 3600 && it.vendor_sell && house.last_min && house.last_min < it.vendor_sell)
-    hints.push(`💰 Günstiger als der Händlerpreis (${money(it.vendor_sell)}) – kaufen und beim Händler verkaufen lohnt sich.`);
+    hints.push(`💰 Günstiger als der Händlerpreis (${money(it.vendor_sell)}) – Abweichung prüfen: Markt, tatsächlicher Kaufpreis und Gebühren können abweichen.`);
   if (house?.is_current && house.last_ts >= Date.now() / 1000 - 3 * 3600 && house.avg7_min && house.last_min && house.last_min < house.avg7_min * 0.85)
     hints.push(`▼ Gerade ${num((1 - house.last_min / house.avg7_min) * 100, 0)} % unter dem 7-Tage-Schnitt.`);
 
@@ -949,6 +961,7 @@ async function viewItem(r) {
     ${catalogNote(it)}
     <div class="ftabs" role="tablist" id="ftabs">${tabs}</div>
     <div class="hcards" id="hcards">${cards}</div>
+    ${house ? `<div class="hint">${house.market_complete ? "Vollständiger Snapshot" : "Teilstand / Vollständigkeit nicht belegt"} · Günstigstes beobachtetes Angebot: ${house.last_lowest==null ? "nicht gesondert gespeichert" : money(house.last_lowest)}${house.last_ts < Date.now()/1000-10800 ? " · veraltet" : ""}</div><details class="card"><summary>Preisbegriffe & Datenqualität</summary><p>${priceMethod}</p><p>Ältere Reihenpunkte sind teils Mittelwerte. Ein Tief der Referenzreihe ist kein garantiertes Angebotstief. Angebotene Menge ist weder Absatz noch Liquidität.</p></details>` : ""}
     ${hints.map((h) => `<div class="hint">${h}</div>`).join("")}
     ${house ? `
     <div class="card">
@@ -957,10 +970,10 @@ async function viewItem(r) {
           <div class="seg" id="rng">${ranges.map((x) => `<button data-r="${x}" class="${x === p.range ? "on" : ""}">${x === "all" ? "Alles" : x.replace("d", " T").replace("h", " h")}</button>`).join("")}</div>
           <details class="pop"><summary class="btn small" title="Anzeige anpassen">Anzeige ▾</summary>
             <div class="popbody" id="tog">
-              ${[["min", "Min", "--s1"], ["p10", "10 %-Perzentil", "--s7"], ["median", "Median", "--s2"], ["mean", "Mittelwert", "--s3"], ["max", "Max", "--s4"]].map(([k, l, c]) =>
+              ${[["min", "Referenz", "--s1"], ["lowest", "Günstigstes Angebot", "--s6"], ["p10", "10 %-Perzentil", "--s7"], ["median", "Median", "--s2"], ["mean", "Mittelwert", "--s3"], ["max", "Max", "--s4"]].map(([k, l, c]) =>
                 `<label><input type="checkbox" value="${k}" ${shown.has(k) ? "checked" : ""}><span class="sw" style="background:var(${c})"></span>${l}</label>`).join("")}
               <label><input type="checkbox" value="out" ${p.out !== "0" ? "checked" : ""}>Ausreißer markieren</label>
-              <hr><label title="Mindestpreis aller Verbünde dieser Fraktion in einem Chart"><input type="checkbox" value="cmp" ${overlay ? "checked" : ""}>Verbünde vergleichen</label>
+              <hr><label title="Referenzpreis aller Verbünde dieser Fraktion in einem Chart"><input type="checkbox" value="cmp" ${overlay ? "checked" : ""}>Verbünde vergleichen</label>
             </div></details>
         </div></div>
       <div class="chartbox"><canvas id="pc"></canvas></div>
@@ -991,12 +1004,12 @@ async function viewItem(r) {
     const ref = (h) => groupRow(h.group || h.kind);
     el.innerHTML = table([
       { label: "Auktionshaus", fmt: (h) => GROUP_KINDS.includes(h.kind) ? `<b><span class="fac ${esc(h.faction)}"></span>${esc(h.faction)} gesamt</b>` : `<span class="fac ${esc(h.faction)}"></span>${esc(h.faction)} · Verbund ${esc(h.verbund || "?")}` },
-      { label: "Min", num: true, fmt: (h) => listingPrice(h) },
+      { label: "Referenz", num: true, fmt: (h) => listingPrice(h) },
       { label: "Median", num: true, fmt: (h) => money(h.last_median) },
       { label: "Ø 7 T", num: true, fmt: (h) => money(h.avg7_min) },
       { label: "Stück", num: true, fmt: (h) => h.is_current ? num(h.last_qty) : "–" },
       { label: "Δ 24 h", num: true, fmt: (h) => pct(h.chg24_min) },
-      { label: "vs. Fraktion", num: true, title: "Mindestpreis im Vergleich zum Fraktions-Gesamtpreis", fmt: (h) => GROUP_KINDS.includes(h.kind) || !ref(h)?.last_min ? '<span class="muted">—</span>' : pct((h.last_min / ref(h).last_min - 1) * 100, 0) },
+      { label: "vs. Fraktion", num: true, title: "Referenzpreis im Vergleich zum Fraktions-Gesamtpreis", fmt: (h) => GROUP_KINDS.includes(h.kind) || !ref(h)?.last_min ? '<span class="muted">—</span>' : pct((h.last_min / ref(h).last_min - 1) * 100, 0) },
     ], rows, { rowHref: (h) => `/item/${id}?house=${h.house_id}&range=${p.range}` });
   };
   const infoBox = (el) => {
@@ -1033,7 +1046,7 @@ async function viewItem(r) {
     members.forEach((m, i) => ds.push(line(GROUP_KINDS.includes(m.kind) ? `${fac.name} gesamt` : `Verbund ${m.verbund}`,
       series[i].points.map((x) => ({ x: x.ts, y: x.min, ts: x.ts })), SERIES[i], GROUP_KINDS.includes(m.kind) ? { borderWidth: 3 } : { borderWidth: 1.6 })));
   } else {
-    for (const [k, l, c] of [["min", "Min", "--s1"], ["p10", "10 %-Perzentil", "--s7"], ["median", "Median", "--s2"], ["mean", "Mittel", "--s3"], ["max", "Max", "--s4"]]) {
+    for (const [k, l, c] of [["min", "Referenz", "--s1"], ["lowest", "Günstigstes Angebot", "--s6"], ["p10", "10 %-Perzentil", "--s7"], ["median", "Median", "--s2"], ["mean", "Mittel", "--s3"], ["max", "Max", "--s4"]]) {
       if (!shown.has(k) || !pts.some((x) => x[k] != null)) continue;
       ds.push(line(l, pts.map((x) => ({ x: x.ts, y: x[k], ts: x.ts })), c, k === "max" ? { borderDash: [4, 3], borderWidth: 1.5 } : {}));
     }
@@ -1044,7 +1057,7 @@ async function viewItem(r) {
         backgroundColor: css("--s8"), borderColor: css("--surface-1"), borderWidth: 2, pointStyle: "triangle" });
     }
   }
-  $("#pcnote").textContent = overlay ? "Mindestpreis je Verbund · Klick auf einen Eintrag in der Legende blendet ihn aus" : `${hist.raw_points} Datenpunkte · Klick auf den Chart öffnet den Snapshot`;
+  $("#pcnote").textContent = overlay ? "Referenzpreis je Verbund · Klick auf einen Eintrag in der Legende blendet ihn aus" : `${hist.raw_points} Reihenpunkte · ältere Punkte teils gemittelt; Lücken werden nicht überbrückt · Klick öffnet den Snapshot`;
   if (pts.length < 2) $("#pc").parentElement.innerHTML = `<div class="empty">${pts.length ? "Erst ein Datenpunkt – der Verlauf füllt sich stündlich." : "Keine Preisdaten im Zeitraum."}</div>`;
   else if (!ds.length) $("#pc").parentElement.innerHTML = '<div class="empty">Keine Kennzahl ausgewählt – über „Anzeige ▾“ einblenden.</div>';
   else timeLineChart($("#pc"), ds, { span, onClick: overlay ? undefined : (pt) => (location.hash = `/snapshot/${hid}/${pt.ts}?item=${id}`) });
@@ -1057,7 +1070,7 @@ async function viewItem(r) {
     kpi: (el) => {
       el.innerHTML = `<div class="mini">
         <div class="kpi"><div class="l">Ø 7 Tage</div><div class="v">${money(house.avg7_min)}</div><div class="d">Ø 30 T ${money(house.avg30_min)}</div></div>
-        <div class="kpi"><div class="l">30-Tage-Spanne</div><div class="v">${money(house.low30_min)}</div><div class="d">bis ${money(house.high30_min)}</div></div>
+        <div class="kpi"><div class="l">Spanne der Referenzreihe (30 T)</div><div class="v">${money(house.low30_min)}</div><div class="d">bis ${money(house.high30_min)} · ältere Punkte teils Tagesmittel, kein garantiertes Angebotstief</div></div>
         <div class="kpi"><div class="l">Änderung 7 Tage</div><div class="v">${pct(house.chg7d_min)}</div><div class="d">24 h ${pct(house.chg24_min)}</div></div>
         <div class="kpi" title="Lineare Regression auf ln(Preis) über ${anaRange}"><div class="l">Trend</div><div class="v">${t.pct_per_day == null ? "–" : (t.pct_per_day > 0 ? "+" : "") + num(t.pct_per_day, 1) + " %/Tag"}</div><div class="d">${esc(t.direction || "ab 2 Tagen Daten")}</div></div>
         <div class="kpi" title="Tägliche Schwankung (Std.-Abw. der Log-Renditen)"><div class="l">Schwankung</div><div class="v">${v.daily == null ? "–" : num(v.daily * 100, 1) + " %/Tag"}</div><div class="d">${v.daily == null ? "ab 2 Tagen Daten" : v.daily < 0.03 ? "stabil" : v.daily < 0.1 ? "normal" : "stark"}</div></div>
@@ -1102,10 +1115,10 @@ async function viewItem(r) {
         el.innerHTML = table([
           { label: "Zeitpunkt", fmt: (x) => x.daily ? `${dt(x.ts, false)} <span class="pill" title="Mittel aus ${x.n} Snapshots">Tagesmittel</span>`
               : x.merged ? `${dt(x.ts)} <span class="pill" title="Mittel aus ${x.n} stündlichen Snapshots">Ø ${x.n} Std.</span>` : dt(x.ts) },
-          { label: "Min", num: true, fmt: (x) => money(x.min) },
+          { label: "Referenz", num: true, fmt: (x) => money(x.min) },
           { label: "Median", num: true, fmt: (x) => money(x.median) },
           { label: "Menge", num: true, fmt: (x) => num(x.quantity) },
-          { label: "Δ Min", num: true, fmt: (x) => pct(x.chg_min) },
+          { label: "Δ Referenz", num: true, fmt: (x) => pct(x.chg_min) },
         ], s.rows, { rowHref: (x) => (x.daily || x.merged ? null : `/snapshot/${hid}/${x.ts}?item=${id}`) }) + pager(s.total, s.page, s.page_size, load);
       };
       return load(1);
@@ -1143,7 +1156,7 @@ async function viewSnapshot(r) {
         ${f.ladder ? `<div class="chartbox md"><canvas id="lc"></canvas></div><p class="muted small">Angebotene Menge je Preisstufe (günstigste ${f.ladder.length} Stufen). Tooltip zeigt kumulierte Menge und Gesamtkosten bis zu dieser Stufe.</p>` :
           `<div class="note">Für diesen Snapshot ist keine Preisstaffel gespeichert (nur für die jüngsten Snapshots der Live-Quelle bzw. nicht bei Auctionator-Tageswerten).</div>`}</div>
       <div class="card"><h2>Kennzahlen</h2>${f.stats ? `<table class="t"><tbody>
-        ${[["Min", f.stats.min], ["10 %-Perzentil", f.stats.p10], ["Median", f.stats.median], ["Mittel", f.stats.mean], ["Max", f.stats.max]].map(([l, v]) => `<tr class="nohover"><td>${l}</td><td class="n">${money(v)}</td></tr>`).join("")}
+        ${[["Referenz", f.stats.min], ["10 %-Perzentil", f.stats.p10], ["Median", f.stats.median], ["Mittel", f.stats.mean], ["Max", f.stats.max]].map(([l, v]) => `<tr class="nohover"><td>${l}</td><td class="n">${money(v)}</td></tr>`).join("")}
         <tr class="nohover"><td>Menge</td><td class="n">${num(f.stats.quantity)}</td></tr>
         <tr class="nohover"><td>Auktionen</td><td class="n">${num(f.stats.auctions)}</td></tr>
         ${f.ladder ? `<tr class="nohover"><td>Kosten für 20 Stück</td><td class="n">${money(buyCost(f.ladder, 20))}</td></tr><tr class="nohover"><td>Kosten für 100 Stück</td><td class="n">${money(buyCost(f.ladder, 100))}</td></tr>` : ""}
@@ -1154,7 +1167,7 @@ async function viewSnapshot(r) {
         <form class="right" id="sf"><input type="search" name="q" value="${esc(p.q || "")}" placeholder="Filtern …"></form></div>
       ${table([
         { label: "Item", sort: "name", cls: "itemcell", fmt: (x) => itemLabel({ ...x, house_id: hid }, false) },
-        { label: "Min", num: true, sort: "price", fmt: (x) => money(x.min) },
+        { label: "Referenz", num: true, sort: "price", fmt: (x) => money(x.min) },
         { label: "Median", num: true, fmt: (x) => money(x.median) },
         { label: "Menge", num: true, sort: "qty", fmt: (x) => num(x.quantity) },
         { label: "Auktionen", num: true, sort: "auctions", fmt: (x) => num(x.auctions) },
@@ -1200,7 +1213,7 @@ async function viewCompare(r) {
       </div>
       <div class="cardhead">
         <div class="seg" id="rng">${["24h", "7d", "30d", "all"].map((x) => `<button data-r="${x}" class="${x === p.range ? "on" : ""}">${x === "all" ? "Alles" : x.replace("d", " T").replace("h", " h")}</button>`).join("")}</div>
-        <div class="seg" id="met">${[["min", "Min"], ["p10", "10 %"], ["median", "Median"], ["mean", "Mittel"], ["quantity", "Menge"]].map(([k, l]) => `<button data-m="${k}" class="${k === p.metric ? "on" : ""}">${l}</button>`).join("")}</div>
+        <div class="seg" id="met">${[["min", "Referenz"], ["p10", "10 %"], ["median", "Median"], ["mean", "Mittel"], ["quantity", "Menge"]].map(([k, l]) => `<button data-m="${k}" class="${k === p.metric ? "on" : ""}">${l}</button>`).join("")}</div>
         <div class="seg" id="mode"><button data-o="idx" class="${p.mode === "idx" ? "on" : ""}" title="Alle Reihen auf 100 = erster Wert">Index (100)</button><button data-o="abs" class="${p.mode === "abs" ? "on" : ""}">Absolut</button></div>
         <select id="hs" class="right">${houseOptions(house)}</select>
       </div>
@@ -1241,7 +1254,7 @@ async function viewCompare(r) {
   $("#ctab").innerHTML = `<h2>Kennzahlen</h2>` + table([
     { label: "", fmt: (s) => `<span class="sw" style="background:var(${SERIES[d.series.indexOf(s)]});width:18px"></span>` },
     { label: "Item", cls: "itemcell", fmt: (s) => itemLabel({ ...s, house_id: house }) },
-    { label: "Preis (min)", num: true, fmt: (s) => money(m(s).last_min) },
+    { label: "Referenzpreis", num: true, fmt: (s) => money(m(s).last_min) },
     { label: "Median", num: true, fmt: (s) => money(m(s).last_median) },
     { label: "Ø 7 T", num: true, fmt: (s) => money(m(s).avg7_min) },
     { label: "Δ 24 h", num: true, fmt: (s) => pct(m(s).chg24_min) },
@@ -1272,7 +1285,7 @@ async function viewMovers(r) {
     <div class="pagehead"><h1>Top-Movers</h1><span class="sub">Größte Preisänderungen · ${esc(hname(h))}</span></div>
     <div class="card filters">
       <div class="f"><span>Zeitfenster</span><div class="seg" id="win">${["24h", "7d"].map((x) => `<button data-w="${x}" class="${p.window === x ? "on" : ""}">${x === "24h" ? "24 Stunden" : "7 Tage"}</button>`).join("")}</div></div>
-      <div class="f"><span>Kennzahl</span><div class="seg" id="met">${[["min", "Mindestpreis"], ["median", "Median"]].map(([k, l]) => `<button data-m="${k}" class="${p.metric === k ? "on" : ""}">${l}</button>`).join("")}</div></div>
+      <div class="f"><span>Kennzahl</span><div class="seg" id="met">${[["min", "Referenzpreis"], ["median", "Median"]].map(([k, l]) => `<button data-m="${k}" class="${p.metric === k ? "on" : ""}">${l}</button>`).join("")}</div></div>
       <label class="f"><span>Ø Angebotsmenge ≥</span><input type="number" min="0" id="mq" value="${esc(p.min_qty)}"></label>
       <label class="f"><span>Klasse</span><select id="cl"><option value="">Alle</option>${classes.map((c) => `<option value="${c.class_id}" ${String(p.class) === String(c.class_id) ? "selected" : ""}>${esc(c.class_name)}</option>`).join("")}</select></label>
     </div>
@@ -1300,11 +1313,11 @@ async function viewDeals(r) {
   const p = { threshold: "20", basis: "avg7", ref: "min", min_qty: "", ...r.params };
   const classes = await getClasses(house);
   main.innerHTML = `
-    <div class="pagehead"><h1>Deals</h1><span class="sub">Aktueller Mindestpreis deutlich unter dem Durchschnitt</span></div>
+    <div class="pagehead"><h1>Preisauffälligkeiten</h1><span class="sub">Beobachtete Referenz unter dem historischen Mittel, kein Gewinnversprechen</span></div>
     <div class="card filters">
       <label class="f"><span>Mindestens … % unter Ø</span><input type="number" min="1" max="95" id="th" value="${esc(p.threshold)}"></label>
       <div class="f"><span>Vergleichsbasis</span><div class="seg" id="ba">${[["avg7", "Ø 7 Tage"], ["avg30", "Ø 30 Tage"]].map(([k, l]) => `<button data-b="${k}" class="${p.basis === k ? "on" : ""}">${l}</button>`).join("")}</div></div>
-      <div class="f"><span>Referenzpreis</span><div class="seg" id="rf">${[["min", "Ø Mindestpreis"], ["median", "Ø Median"]].map(([k, l]) => `<button data-x="${k}" class="${p.ref === k ? "on" : ""}">${l}</button>`).join("")}</div></div>
+      <div class="f"><span>Referenzpreis</span><div class="seg" id="rf">${[["min", "Ø Referenzpreis"], ["median", "Ø Median"]].map(([k, l]) => `<button data-x="${k}" class="${p.ref === k ? "on" : ""}">${l}</button>`).join("")}</div></div>
       <label class="f"><span>Ø Menge ≥</span><input type="number" min="0" id="mq" value="${esc(p.min_qty)}"></label>
       <label class="f"><span>Klasse</span><select id="cl"><option value="">Alle</option>${classes.map((c) => `<option value="${c.class_id}" ${String(p.class) === String(c.class_id) ? "selected" : ""}>${esc(c.class_name)}</option>`).join("")}</select></label>
     </div>
@@ -1322,7 +1335,7 @@ async function viewDeals(r) {
     { label: "Ersparnis/Stück", num: true, fmt: (x) => money(x.saving) },
     { label: "Menge", num: true, fmt: (x) => num(x.last_qty) },
     { label: "Ø Menge 7 T", num: true, fmt: (x) => num(x.avg7_qty) },
-    { label: "30-T-Tief", num: true, fmt: (x) => money(x.low30_min) },
+    { label: "Reihen-Tief 30 T", num: true, fmt: (x) => money(x.low30_min) },
     { label: "Stand", fmt: (x) => `<span class="muted small">${dt(x.last_ts)}</span>` }, COL.cmp],
     d.deals, { rowHref: (x) => `/item/${x.item_id}?house=${x.house_id}`, empty: "Keine Deals mit diesen Kriterien." });
 }
@@ -1346,12 +1359,37 @@ function catalogCoverageCard(c) {
   </div>`;
 }
 
+function marketRunCard(runs) {
+  const run = runs?.[0];
+  if (!run) return `<div class="card mt"><h2>Markt-Laufprotokoll</h2><p class="note">Noch kein Lauf mit neuem Prüfmanifest. Ältere Snapshots haben keinen nachträglichen Vollständigkeitsnachweis.</p></div>`;
+  const states = {complete:"vollständig geprüft",partial:"teilweise geprüft",rejected:"nicht freigegeben",running:"läuft"};
+  return `<div class="card mt"><h2>Markt-Laufprotokoll</h2>
+    <p><b>Lauf ${num(run.id)}: ${esc(states[run.status] || run.status)}</b> · ${dt(run.started_at)} · Region ${esc(run.region)} · Ruleset ${esc(run.ruleset)}</p>
+    <p class="note">Erfasst wird nur dieses Ruleset. Gleiche Märkte in anderen Rulesets sind nicht nachgewiesen. Fehlende Antworten gelten nicht als leere Märkte. Teilstände beweisen keine Angebotsabwesenheit.</p>
+    <p>${num(run.endpoints?.filter(e=>["ok","empty"].includes(e.status)).length)} / ${num(run.endpoints?.length)} Endpunkte geprüft. Quellstände mit Angeboten dürfen höchstens 3 Stunden alt sein und innerhalb eines Hauses oder Sammelmarkts höchstens 10 Minuten auseinanderliegen.</p>
+    ${(run.errors || []).map(e=>`<p class="note">${esc(e)}</p>`).join("")}
+    <details><summary>Häuser, Endpunkte & Prüfsummen</summary>${table([
+      {label:"Haus / Endpunkt",fmt:e=>`${num(e.house)} · ${esc(e.endpoint)}`},
+      {label:"Ergebnis",fmt:e=>esc(e.error || (e.status==="empty" ? "bestätigt leer" : e.status==="ok" ? "geprüft" : "Fehler"))},
+      {label:"Quellstand",fmt:e=>dt(e.source_ts)},
+      {label:"Auktionen",num:true,fmt:e=>e.auction_count==null ? "–" : num(e.auction_count)},
+      {label:"SHA-256",fmt:e=>`<code title="${esc(e.sha256 || "")}">${esc((e.sha256 || "–").slice(0,12))}</code>`}
+    ],run.endpoints || [])}<p class="small muted">Jeder erfolgreiche Abruf speichert Inhaltshash, Last-Modified, ETag (falls geliefert), Quellzeit und Zählungen. Gleiche Quellzeit erzeugt keinen doppelten Snapshot. Fehlerhafte Hauspaare werden nicht übernommen; alle Marktschreibvorgänge eines Laufs sind atomar.</p></details>
+  </div>`;
+}
+
+function marketQualityNote(q) {
+  if (!q?.ts) return "Kein geprüfter Marktstand vorhanden.";
+  const age = Date.now()/1000-q.ts;
+  return `${q.complete ? "Vollständiger Snapshot" : "Teilstand / Vollständigkeit nicht belegt"}${age>10800 ? " · älter als 3 Stunden" : ""}. Letzter Gesamtlauf: ${q.latest_run_status || "ohne Manifest"}. Mengen und Werte beschreiben nur beobachtete Angebote, keinen Umsatz. Sammelmärkte sind Referenzen über mehrere Verbünde, kein einzelnes kaufbares Auktionshaus.`;
+}
+
 function dataFlowCard() {
   return `<div class="card mt"><h2>Woher kommen die Preise?</h2>
     <ol class="flow">
-      <li><b>Blizzard</b> veröffentlicht etwa stündlich alle Auktionen aller Auktionshäuser (Battle.net API).</li>
+      <li><b>Blizzard</b> liefert die abgefragten Auktionshaus-Endpunkte des ausgewählten Rulesets (Battle.net API).</li>
       <li><b>Zusammenfassen:</b> Je Fraktion (Allianz, Horde, Neutral) werden die Auktionshäuser aller Server-Verbünde gebündelt; jedes einzelne Haus bleibt zusätzlich sichtbar.</li>
-      <li><b>Veröffentlichen:</b> Die Seite wird danach automatisch neu gebaut. Eine neue Auktion erscheint so nach etwa 1–2 Stunden.</li>
+      <li><b>Veröffentlichen:</b> Die Seite wird danach automatisch neu gebaut. Quellzeit und Veröffentlichung werden getrennt ausgewiesen; die Laufzeit ist keine Frischegarantie.</li>
     </ol>
   </div>`;
 }
@@ -1371,6 +1409,7 @@ async function viewData() {
       <p>Preisanalyse für das Auktionshaus von WoW: Forever (EU). Die Daten werden stündlich automatisch aktualisiert; Suche, Filter und Analysen laufen direkt im Browser. Historie: ${num(st.history_days)} Tage.</p>
     </div>
     ${dataFlowCard()}
+    ${marketRunCard(st.market_runs)}
     ${catalogCoverageCard(st.catalog_coverage)}
     <div class="card flush mt"><h2>Auktionshäuser</h2>${housesTable()}</div>
     <div class="card flush mt"><h2>Import-Protokoll</h2>${table([
@@ -1382,7 +1421,7 @@ async function viewData() {
     <div class="pagehead"><h1>Datenquellen</h1><span class="sub">${num(st.counts.houses)} Häuser · ${num(st.counts.items)} Items · ${num(st.counts.snapshots)} Snapshots${st.db_size ? ` · DB ${num(st.db_size / 1048576, 1)} MB` : ""}</span></div>
     <div class="grid g2">
       <div class="card"><h2>Auctionator (Spielclient)</h2>
-        <p class="muted">Liest die Preisdatenbank aus <code>WTF\\Account\\…\\SavedVariables\\Auctionator.lua</code> (Tageswerte: niedrigster/höchster Mindestpreis, Menge). Vorher im Spiel einen Scan im Auktionshaus durchführen und <b>/reload</b> oder ausloggen, damit WoW die Datei schreibt.</p>
+        <p class="muted">Liest die Preisdatenbank aus <code>WTF\\Account\\…\\SavedVariables\\Auctionator.lua</code> (Tageswerte: niedrigster/höchster Referenzpreis, Menge). Vorher im Spiel einen Scan im Auktionshaus durchführen und <b>/reload</b> oder ausloggen, damit WoW die Datei schreibt.</p>
         ${st.auctionator_paths.length ? `<ul>${st.auctionator_paths.map((x) => `<li><code>${esc(x.path)}</code> ${x.exists ? `<span class="muted small">(geändert ${dt(x.mtime)})</span>` : '<span class="down">nicht gefunden</span>'}</li>`).join("")}</ul>` : '<p class="note">Keine Auctionator.lua automatisch gefunden.</p>'}
         <p><button class="btn primary" id="autoImp" ${st.auctionator_paths.some((x) => x.exists) ? "" : "disabled"}>Jetzt importieren</button></p>
         <div class="dropzone" id="drop">Auctionator.lua hierher ziehen oder <label style="color:var(--link);cursor:pointer"><input type="file" id="file" accept=".lua,.bak" hidden>Datei wählen</label></div>
@@ -1397,6 +1436,7 @@ async function viewData() {
       </div>
     </div>
     ${dataFlowCard()}
+    ${marketRunCard(st.market_runs)}
     ${catalogCoverageCard(st.catalog_coverage)}
     <div class="card flush mt"><h2>Auktionshäuser</h2>${table([
       { label: "Bezeichnung", fmt: (h) => `<span class="fac ${esc(h.faction)}"></span>${esc(hname(h))}` }, { label: "Blizzard-Name", fmt: (h) => `<span class="muted">${esc(h.kind === "haus" ? h.name : "–")}</span>` },

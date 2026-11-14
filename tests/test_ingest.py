@@ -165,7 +165,7 @@ class BattleNetTest(unittest.TestCase):
         self.client = battlenet.BattleNetClient("id", "secret", region="eu", opener=opener)
 
     def test_collect(self):
-        res = battlenet.collect(self.con, self.client, log=lambda *a: None)
+        res = battlenet.collect(self.con, self.client, now=1794308400, log=lambda *a: None)
         self.assertEqual((res.houses, res.skipped), (1, 1))  # Haus 112 ohne Auktionen übersprungen
         self.assertTrue(any("namespace=dynamic-forever-eu" in c for c in self.calls))
         houses = {r["ext_id"]: dict(r) for r in self.con.execute("SELECT * FROM houses")}
@@ -189,8 +189,8 @@ class BattleNetTest(unittest.TestCase):
         self.assertEqual(json.loads(lad), [[20, 200], [35, 50]])
 
     def test_same_snapshot_skipped(self):
-        battlenet.collect(self.con, self.client, fetch_metadata=False, log=lambda *a: None)
-        res = battlenet.collect(self.con, self.client, fetch_metadata=False, log=lambda *a: None)
+        battlenet.collect(self.con, self.client, now=1794308400, fetch_metadata=False, log=lambda *a: None)
+        res = battlenet.collect(self.con, self.client, now=1794308400, fetch_metadata=False, log=lambda *a: None)
         self.assertEqual(res.snapshots, 0)
         self.assertEqual(res.skipped, 2)
 

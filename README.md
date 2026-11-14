@@ -291,3 +291,16 @@ als eigene oder frei unterlizenzierte Daten ausgegeben. Blizzard-Fanrichtlinien:
 https://www.blizzard.com/en-us/legal/c1ae32ac-7ff9-4ac3-a03b-fc04b8697010/blizzard-legal-faq
 Keine Lizenz eines fremden Fanprojekts wird als Lizenz der Blizzard-Daten ausgegeben.
 Für kommerzielle Nutzung müssen die Rechte gesondert geprüft werden.
+
+
+### Marktqualität und Preisbegriffe (Schritt 3)
+
+Jeder Battle.net-Lauf speichert ein dauerhaftes `market_runs`-Manifest: ausgewähltes Ruleset/Namespace, erwartete Häuser, beide Endpunkte je Haus, Quellzeit, Abrufzeit, HTTP-Ergebnis, Inhalts-SHA256 und Zählungen. Nur explizite leere `auctions`-Listen bestätigen einen Leerstand. Fehlende Listen, ungültige Zeilen, fehlende Quellzeiten bei Angeboten, Quellalter über 3 Stunden und mehr als 10 Minuten Zeitversatz werden nicht als vollständiger Markt übernommen. Ein Lauf hat ein 15-Minuten-Abrufbudget; HTTP-Retries beachten Retry-After (über 120 Sekunden wird statt eines verfrühten Retries abgebrochen). Preise werden erst nach der Abrufphase in einer gemeinsamen Transaktion geschrieben. Teilgruppen sind ausdrücklich unvollständig; bei zu großem Gruppen-Zeitversatz bleibt der vorige Gruppenstand. Gleichheit anderer Rulesets ist nicht verifiziert.
+
+`min` bleibt aus Kompatibilitätsgründen der Name der bisherigen Referenzreihe. Im Einzelhaus ist das das günstigste Stückangebot. Im Sammelmarkt ist es der mengengewichtete Median der hausweisen P10-Preise. Das neue `lowest` / `last_lowest` führt das tatsächlich günstigste beobachtete Stückangebot getrennt. Für alte Gruppenstände ohne diese Beobachtung bleibt es unbekannt; kein historischer Preis wird erfunden. Sammelmärkte sind keine Garantie, dass ein Angebot im eigenen Verbund kaufbar ist.
+
+24-h-/7-Tage-Referenzen sind am Marktzeitpunkt verankert, mit maximal 3 bzw. 18 Stunden älterem Vergleichspunkt und bis zu 10 Minuten späterem Quellstand. Dashboard und Kategorien zeigen Mediane vergleichbarer Änderungen mit Stichprobengröße statt eines ausreißeranfälligen arithmetischen Marktmittels. Unvollständige oder mehr als 3 Stunden alte Marktstände bekommen kein zusammenfassendes Änderungssignal. Das ist kein fester Warenkorbindex. Angebot, Angebotswert und Preisauffälligkeiten sind kein Absatz, Umsatz, Liquiditäts- oder Gewinnversprechen.
+
+Neue Tagesverdichtungen speichern echte Beobachtungszahl und Extrema der Referenzreihe. Alte Tagespunkte ohne Stichprobennachweis bleiben `n=null`, nicht 24. Historische Reihen enthalten teils Tagesmittel; ein Reihentief ist kein garantiertes Angebotstief. Chartlücken über mehr als das 2,5-Fache des typischen Schritts (mindestens 3 Stunden) werden sichtbar getrennt. Daten-/Methodikdetails sind einklappbar.
+
+Die geprüfte Datenbank wird vor dem Seitenbau und vor langsamer Metadatenpflege gesichert. Abruffehler bleiben im Workflow sichtbar; der letzte brauchbare Preisstand samt Fehlerprotokoll kann trotzdem veröffentlicht werden. Die bestehende Taktsteuerung wurde in diesem Schritt nicht verändert.

@@ -162,7 +162,7 @@ const StaticAPI = (() => {
       const avg = (k) => { const v = rs.map((r) => r[k]).filter((x) => x !== null && x !== undefined); return v.length ? Math.round(mean(v)) : null; };
       const mins = rs.map((r) => r.min).filter((x) => x !== null), maxs = rs.map((r) => r.max).filter((x) => x !== null);
       return { ts: rs[Math.floor(rs.length / 2)].ts, min: avg("min"), low: mins.length ? Math.min(...mins) : null, p10: avg("p10"),
-        median: avg("median"), mean: avg("mean"), max: maxs.length ? Math.max(...maxs) : null, quantity: avg("quantity"), auctions: avg("auctions"), n: rs.length };
+        median: avg("median"), mean: avg("mean"), max: maxs.length ? Math.max(...maxs) : null, quantity: avg("quantity"), auctions: avg("auctions"), n: rs.every(r=>r.n!==null) ? rs.reduce((s,r)=>s+(r.n??1),0) : null, lowest: rs.some(r=>r.lowest!=null) ? Math.min(...rs.filter(r=>r.lowest!=null).map(r=>r.lowest)) : null, aggregated: true };
     };
     for (const r of rows) {
       const k = Math.floor((r.ts - t0) / width);
@@ -200,31 +200,23 @@ const StaticAPI = (() => {
 
   // ------------------------------------------------------------- Endpunkte
   async function classes(params) {
-    const h = await house(params.house);
-    const out = new Map();
-    for (const r of await summary(h.id)) {
-      const cid = r.class_id ?? -1;
-      if (!out.has(cid)) out.set(cid, { class_id: cid, class_name: r.class_name || CLASS_NAMES[cid] || "Ohne Metadaten", items: 0, market_value: 0, quantity: 0, subs: new Map(), w24: [0, 0], w7: [0, 0] });
-      const c = out.get(cid);
-      c.items++; c.market_value += r.market_value || 0; c.quantity += r.current_quantity || 0;
-      const sk = r.subclass_id ?? "null";
-      if (!c.subs.has(sk)) c.subs.set(sk, { subclass_id: r.subclass_id, subclass_name: r.subclass_name || (r.subclass_id === null ? "Unbekannt" : `Unterklasse ${r.subclass_id}`), items: 0, market_value: 0, quantity: 0, _c24: [], _c7: [] });
-      const s = c.subs.get(sk);
-      s.items++; s.market_value += r.market_value || 0; s.quantity += r.current_quantity || 0;
-      if (r.chg24_min !== null) s._c24.push(r.chg24_min);
-      if (r.chg7d_min !== null) s._c7.push(r.chg7d_min);
+    const h=await house(params.house),out=new Map();
+    const reliable=!!h.quality?.complete && h.quality.ts>=Date.now()/1000-10800;
+    for(const r of await summary(h.id)) {
+      const cid=r.class_id??-1;
+      if(!out.has(cid))out.set(cid,{class_id:cid,class_name:r.class_name||CLASS_NAMES[cid]||"Ohne Metadaten",items:0,market_value:0,quantity:0,subs:new Map(),_24:[],_7:[]});
+      const c=out.get(cid),sid=r.subclass_id??null;
+      if(!c.subs.has(sid))c.subs.set(sid,{subclass_id:sid,subclass_name:r.subclass_name||(sid===null?"Unbekannt":`Unterklasse ${sid}`),items:0,market_value:0,quantity:0,_24:[],_7:[]});
+      for(const target of [c,c.subs.get(sid)]) {
+        target.items++;target.market_value+=r.market_value||0;target.quantity+=r.current_quantity||0;
+        if(reliable&&r.is_current&&r.chg24_min!=null)target._24.push(r.chg24_min);
+        if(reliable&&r.is_current&&r.chg7d_min!=null)target._7.push(r.chg7d_min);
+      }
     }
-    const result = [];
-    for (const c of out.values()) {
-      const subs = [...c.subs.values()].sort((a, b) => (a.subclass_id ?? -1) - (b.subclass_id ?? -1)).map((s) => {
-        const o = { ...s, chg24: s._c24.length ? mean(s._c24) : null, chg7d: s._c7.length ? mean(s._c7) : null };
-        delete o._c24; delete o._c7; return o;
-      });
-      const wavg = (k) => { const w = subs.filter((s) => s[k] !== null); const n = w.reduce((a, s) => a + s.items, 0); return n ? w.reduce((a, s) => a + s[k] * s.items, 0) / n : null; };
-      result.push({ class_id: c.class_id, class_name: c.class_name, items: c.items, market_value: c.market_value, quantity: c.quantity, subclasses: subs, chg24: wavg("chg24"), chg7d: wavg("chg7d") });
-    }
-    result.sort((a, b) => b.market_value - a.market_value);
-    return { house_id: h.id, classes: result };
+    const finish=t=>{for(const [key,name] of [["_24","chg24"],["_7","chg7d"]]){t[name]=t[key].length?median(t[key]):null;t[name+"_n"]=t[key].length;delete t[key];}return t;};
+    const result=[...out.values()].map(c=>{c.subclasses=[...c.subs.values()].sort((a,b)=>(a.subclass_id??-1)-(b.subclass_id??-1)).map(finish);delete c.subs;return finish(c);});
+    result.sort((a,b)=>b.market_value-a.market_value);
+    return {house_id:h.id,classes:result};
   }
 
   const SORTS = { name: "name", price: "last_min", median: "last_median", qty: "last_qty", avg_qty: "avg7_qty", chg24: "chg24_min",
@@ -305,10 +297,15 @@ const StaticAPI = (() => {
     const sum = (k) => rows.reduce((s, r) => s + (r[k] || 0), 0);
     const p = { house: h.id, limit: 6 };
     return {
-      house: h,
+      house: h, quality: h.quality || {},
       kpis: { items: rows.length, market_value: sum("market_value"), quantity: sum("last_qty"),
         auctions: rows.some((r) => r.last_auctions !== null) ? sum("last_auctions") : null,
-        avg_chg24: avgOf(null, "last_min", "prev24_min"), avg_chg7d: avgOf(null, "last_min", "prev7d_min") },
+        avg_chg24: avgOf(null, "last_min", "prev24_min"), avg_chg7d: avgOf(null, "last_min", "prev7d_min"),
+        ...Object.fromEntries([["24","prev24_min"],["7d","prev7d_min"]].flatMap(([label,col]) => {
+          const vals = rows.filter(r=>r[col]>0 && r.last_min>0).map(r=>(r.last_min/r[col]-1)*100);
+          return [[`median_chg${label}`,vals.length ? median(vals) : null],[`comparable${label}`,vals.length],
+            [`up${label}`,vals.filter(x=>x>0).length],[`down${label}`,vals.filter(x=>x<0).length]];
+        })), comparisons_reliable: !!h.quality?.complete && h.quality.ts >= Date.now()/1000-10800 },
       last_ts: snaps.length ? snaps[snaps.length - 1].ts : null,
       snapshot_count: snaps.length,
       market_series: snaps.slice(-400),
@@ -384,7 +381,7 @@ const StaticAPI = (() => {
     const rows = (await historyRows(f, h, "all")).slice();
     const snaps = await snapshots(h.id);
     const lad = new Map(snaps.map((s) => [s.ts, s.has_ladder && s.file]));
-    const out = rows.map((r, i) => ({ ...r, prev_min: i ? rows[i - 1].min : null, has_ladder: lad.get(r.ts) ? 1 : 0, daily: (r.n || 1) >= 20, merged: (r.n || 1) > 1 }))
+    const out = rows.map((r, i) => ({ ...r, prev_min: i ? rows[i - 1].min : null, has_ladder: lad.get(r.ts) ? 1 : 0, daily: !!r.aggregated, merged: !!r.aggregated || (r.n || 1) > 1 }))
       .map((r) => ({ ...r, chg_min: r.prev_min ? (r.min / r.prev_min - 1) * 100 : null })).reverse();
     const pg = page(out, params);
     return { total: pg.total, page: pg.page, page_size: pg.page_size, rows: pg.slice };
@@ -442,7 +439,7 @@ const StaticAPI = (() => {
   }
   async function status() {
     const m = await meta();
-    return { static: true, catalog_coverage: m.catalog_coverage, generated_at: m.generated_at, counts: m.counts, repo_url: m.repo_url, history_days: m.history_days,
+    return { static: true, market_runs: m.market_runs || [], catalog_coverage: m.catalog_coverage, generated_at: m.generated_at, counts: m.counts, repo_url: m.repo_url, history_days: m.history_days,
       battlenet_configured: false, auctionator_paths: [], collector: null };
   }
 

@@ -219,5 +219,7 @@ def _merge(rows):
         "p10": avg("p10"), "median": avg("median"), "mean": avg("mean"),
         "max": max(maxs) if maxs else None,
         "quantity": avg("quantity"), "auctions": avg("auctions"),
-        "n": len(rows),
+        "n": sum(r.get("n", 1) for r in rows) if all(r.get("n", 1) is not None for r in rows) else None,
+        "lowest": min((r["lowest"] for r in rows if r.get("lowest") is not None), default=None),
+        "aggregated": True,
     }

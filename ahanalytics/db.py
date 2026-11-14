@@ -166,6 +166,18 @@ def fold(text):
 
 def _migrate(con):
     """Ergänzt Spalten älterer Datenbanken."""
+    con.execute("""CREATE TABLE IF NOT EXISTS market_runs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, started_at INTEGER NOT NULL,
+        finished_at INTEGER, region TEXT, ruleset TEXT, status TEXT, manifest TEXT NOT NULL)""")
+    for table, fields in {
+        "snapshots": [("complete", "INTEGER"), ("run_id", "INTEGER"), ("source_min_ts", "INTEGER"), ("source_max_ts", "INTEGER"), ("payload_hash", "TEXT")],
+        "prices": [("lowest", "INTEGER"), ("sample_n", "INTEGER"), ("reference_low", "INTEGER"), ("reference_high", "INTEGER")],
+        "item_summary": [("last_lowest", "INTEGER"), ("prev24_ts", "INTEGER"), ("prev7d_ts", "INTEGER")],
+    }.items():
+        have = {r[1] for r in con.execute(f"PRAGMA table_info({table})")}
+        for col, typ in fields:
+            if col not in have:
+                con.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
     cols = {r[1] for r in con.execute("PRAGMA table_info(items)")}
     for col, typ in (("catalog_build", "TEXT"), ("catalog_state", "TEXT"),
                      ("catalog_test", "INTEGER"), ("binding", "INTEGER"), ("catalog_aliases", "TEXT")):
@@ -321,6 +333,7 @@ def apply_typical_min(stats: dict, house_mins: list[dict]) -> None:
     for iid, st in stats.items():
         vals = sorted((m[iid][0], m[iid][1]) for m in house_mins if iid in m)
         if vals:
+            st["lowest"] = st.get("lowest", st["min"])
             st["min"] = weighted_percentile(vals, 0.5)
 
 
@@ -383,7 +396,9 @@ def build_group_snapshots(con, group_id: int, log=print) -> int:
                           "median": weighted_percentile(sorted(a["_med"]), 0.5),
                           "p10": weighted_percentile(sorted(a["_p10"]), 0.5)}
         if stats:
-            write_snapshot(con, group_id, max(buckets[bucket].values()), "sammel", stats)
+            sid = write_snapshot(con, group_id, max(buckets[bucket].values()), "sammel", stats)
+            con.execute("UPDATE prices SET lowest=NULL WHERE house_id=? AND ts=?", (group_id,max(buckets[bucket].values())))
+            con.execute("UPDATE snapshots SET complete=0 WHERE id=?", (sid,))
             written += 1
     if written:
         log(f"Sammelgruppe {group_id}: {written} Zeitpunkte aus Einzelhäusern ergänzt")
@@ -430,6 +445,9 @@ def write_snapshot(con, house_id: int, ts: int, source: str, stats: dict,
         con.executemany("INSERT OR REPLACE INTO ladders(snapshot_id, item_id, data) VALUES (?,?,?)",
                         ((snap_id, int(iid), json.dumps(lad, separators=(",", ":")))
                          for iid, lad in ladders.items()))
+    con.executemany("""UPDATE prices SET lowest=?, sample_n=1, reference_low=min, reference_high=min
+                       WHERE house_id=? AND item_id=? AND ts=?""",
+                    ((s.get("lowest", s.get("min")), house_id, int(iid), ts) for iid, s in stats.items()))
     return snap_id
 
 
@@ -458,14 +476,16 @@ def refresh_summary(con, house_ids=None):
     if house_ids is None:
         house_ids = [r[0] for r in con.execute("SELECT id FROM houses")]
     for hid in house_ids:
-        row = con.execute("SELECT MAX(ts) FROM prices WHERE house_id=?", (hid,)).fetchone()
+        row = con.execute("SELECT MAX(ts) FROM snapshots WHERE house_id=?", (hid,)).fetchone()
         con.execute("DELETE FROM item_summary WHERE house_id=?", (hid,))
         if not row or row[0] is None:
             continue
         hmax = row[0]
         con.execute(
             """
-            INSERT INTO item_summary
+            INSERT INTO item_summary(house_id,item_id,first_ts,last_ts,points,last_min,last_median,last_qty,last_auctions,
+                prev24_min,prev24_median,prev7d_min,prev7d_median,avg7_min,avg30_min,avg7_median,avg30_median,
+                avg7_qty,cv7_min,low30_min,high30_min,last_lowest,prev24_ts,prev7d_ts)
             WITH agg AS (
               SELECT item_id,
                      MIN(ts) first_ts, MAX(ts) last_ts, COUNT(*) points,
@@ -485,15 +505,15 @@ def refresh_summary(con, house_ids=None):
                    a.avg7_min, a.avg30_min, a.avg7_median, a.avg30_median, a.avg7_qty,
                    CASE WHEN a.avg7_min > 0 AND a.sq7 - a.avg7_min*a.avg7_min > 0
                         THEN sqrt(a.sq7 - a.avg7_min*a.avg7_min) / a.avg7_min ELSE 0 END,
-                   a.low30, a.high30
+                   a.low30, a.high30, l.lowest, p24.ts, p7.ts
             FROM agg a
             JOIN prices l ON l.house_id = :hid AND l.item_id = a.item_id AND l.ts = a.last_ts
             LEFT JOIN prices p24 ON p24.house_id = :hid AND p24.item_id = a.item_id AND p24.ts = (
                  SELECT MAX(ts) FROM prices WHERE house_id = :hid AND item_id = a.item_id
-                   AND ts <= a.last_ts - 86400 + 600)
+                   AND ts <= :h - 86400 + 600 AND ts >= :h - 86400 - 10800)
             LEFT JOIN prices p7 ON p7.house_id = :hid AND p7.item_id = a.item_id AND p7.ts = (
                  SELECT MAX(ts) FROM prices WHERE house_id = :hid AND item_id = a.item_id
-                   AND ts <= a.last_ts - 7*86400 + 600)
+                   AND ts <= :h - 7*86400 + 600 AND ts >= :h - 7*86400 - 64800)
             """, {"hid": hid, "h": hmax})
 
 
@@ -537,6 +557,12 @@ def compact(con, hourly_days: int = 7, keep_days: int = 180, house_hourly_days: 
                                MAX(max), CAST(ROUND(AVG(quantity)) AS INTEGER), CAST(ROUND(AVG(auctions)) AS INTEGER)
                         FROM prices WHERE house_id=? AND ts < ? AND ts % 86400 != {d}
                         GROUP BY item_id, ts / 86400""", (hid, cut_day))
+                con.execute(f"""UPDATE prices AS daily SET
+                    sample_n=(SELECT SUM(COALESCE(sample_n,1)) FROM prices p
+                              WHERE p.house_id=daily.house_id AND p.item_id=daily.item_id AND p.ts/86400=daily.ts/86400 AND p.ts%86400!={d}),
+                    reference_low=(SELECT MIN(COALESCE(reference_low,min)) FROM prices p WHERE p.house_id=daily.house_id AND p.item_id=daily.item_id AND p.ts/86400=daily.ts/86400 AND p.ts%86400!={d}),
+                    reference_high=(SELECT MAX(COALESCE(reference_high,min)) FROM prices p WHERE p.house_id=daily.house_id AND p.item_id=daily.item_id AND p.ts/86400=daily.ts/86400 AND p.ts%86400!={d})
+                    WHERE daily.house_id=? AND daily.ts<? AND daily.ts%86400={d}""", (hid,cut_day))
                 con.execute(f"DELETE FROM prices WHERE house_id=? AND ts < ? AND ts % 86400 != {d}", (hid, cut_day))
                 con.execute(
                     f"""INSERT OR IGNORE INTO snapshots(house_id, ts, source, item_count, auction_count, total_value, imported_at)

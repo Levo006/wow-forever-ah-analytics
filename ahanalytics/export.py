@@ -65,6 +65,7 @@ def _stamp_index(out_dir, version):
 STATIC_SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
 
 SUMMARY_FIELDS = [
+    "last_lowest", "prev24_ts", "prev7d_ts", "price_basis",
     "item_id", "first_ts", "last_ts", "points", "last_min", "last_median", "last_qty", "last_auctions",
     "prev24_min", "prev24_median", "prev7d_min", "prev7d_median", "avg7_min", "avg30_min",
     "avg7_median", "avg30_median", "avg7_qty", "cv7_min", "low30_min", "high30_min",
@@ -73,6 +74,7 @@ SUMMARY_FIELDS = [
     "market_value", "spark", "market_ts", "market_complete", "is_current", "current_quantity", "availability", "aliases", "translation_missing", "catalog_build", "catalog_state", "catalog_test", "binding",
 ]
 ITEM_HOUSE_FIELDS = [
+    "last_lowest", "prev24_ts", "prev7d_ts", "price_basis",
     "house_id", "first_ts", "last_ts", "points", "last_min", "last_median", "last_qty", "last_auctions",
     "prev24_min", "prev7d_min", "avg7_min", "avg30_min", "avg7_qty", "cv7_min", "low30_min", "high30_min",
     "chg24_min", "chg7d_min", "chg24_median", "chg7d_median", "market_value",
@@ -80,8 +82,8 @@ ITEM_HOUSE_FIELDS = [
 ]
 CATALOG_FIELDS = ["item_id", "name", "name_en", "quality", "class_id", "class_name", "subclass_id", "subclass_name",
                   "icon", "item_level", "is_commodity", "aliases", "translation_missing", "catalog_build", "catalog_state", "catalog_test", "binding", "has_history", "required_level", "slot"]
-PRICE_FIELDS = ["ts", "min", "p10", "median", "mean", "max", "quantity", "auctions", "n"]
-SNAP_FIELDS = ["item_id", "min", "p10", "median", "mean", "max", "quantity", "auctions", "prev_min"]
+PRICE_FIELDS = ["lowest", "aggregated", "ts", "min", "p10", "median", "mean", "max", "quantity", "auctions", "n"]
+SNAP_FIELDS = ["lowest", "item_id", "min", "p10", "median", "mean", "max", "quantity", "auctions", "prev_min"]
 
 
 def _round(v):
@@ -125,7 +127,9 @@ def _merge(ts, rs):
     return {"ts": ts, "min": avg("min"), "p10": avg("p10"), "median": avg("median"),
             "mean": avg("mean"), "max": max(maxs) if maxs else None,
             "quantity": avg("quantity"), "auctions": avg("auctions"),
-            "n": sum(r.get("n", 1) for r in rs)}
+            "n": sum(r.get("n", 1) for r in rs) if all(r.get("n", 1) is not None for r in rs) else None,
+            "lowest": min((r["lowest"] for r in rs if r.get("lowest") is not None), default=None),
+            "aggregated": True}
 
 
 def compact_history(rows, latest, hourly_days=7, tiers=None):
@@ -133,12 +137,12 @@ def compact_history(rows, latest, hourly_days=7, tiers=None):
 
     ``tiers``: [(max. Alter in s oder None, Bucket-Größe in s; 0 = Original), …] –
     Punkte älter als die letzte Stufe fallen weg. Ohne ``tiers``: die letzten
-    ``hourly_days`` Tage unverändert, davor Tagesmittel. Spalte ``n`` = Anzahl
-    zusammengefasster Snapshots (1 = Original, Tageswerte aus der DB zählen 24).
+    ``hourly_days`` Tage unverändert, davor Tagesmittel. Spalte ``n`` = bekannte Anzahl der Beobachtungen. Alte Tagesmittel ohne
+    Zählungsprovenienz bleiben unbekannt (null), statt 24 Messungen zu erfinden.
     """
     if tiers is None:
         tiers = [(hourly_days * 86400, 0), (None, 86400)]
-    rows = [{**r, "n": 24 if db.is_daily_ts(r["ts"]) else 1} for r in rows]
+    rows = [{**r, "n": r.get("sample_n") if db.is_daily_ts(r["ts"]) else r.get("sample_n") or 1, "aggregated": db.is_daily_ts(r["ts"])} for r in rows]
     out, groups = [], {}
     for r in rows:
         age = latest - r["ts"]
@@ -147,7 +151,7 @@ def compact_history(rows, latest, hourly_days=7, tiers=None):
                 break
         else:
             continue  # zu alt
-        if size == 0 or (r["n"] > 1 and size == 86400):
+        if size == 0 or (r.get("aggregated") and size == 86400):
             out.append(r)  # Original bzw. bereits Tageswert
             continue
         groups.setdefault((size, _bucket_key(r["ts"], size)), []).append(r)
@@ -195,7 +199,7 @@ def export_site(con, out_dir: str, history_days: int = 180, snapshot_files: int 
 
         # Snapshots
         snaps = [dict(r) for r in con.execute(
-            """SELECT s.id, s.ts, s.source, s.item_count, s.auction_count, s.total_value, s.imported_at,
+            """SELECT s.complete, s.run_id, s.source_min_ts, s.source_max_ts, s.id, s.ts, s.source, s.item_count, s.auction_count, s.total_value, s.imported_at,
                       EXISTS(SELECT 1 FROM ladders l WHERE l.snapshot_id = s.id) has_ladder
                FROM snapshots s WHERE s.house_id=? ORDER BY s.ts""", (hid,))]
         n_files = house_snapshot_files if h.get("kind") == "haus" else snapshot_files
@@ -218,6 +222,7 @@ def export_site(con, out_dir: str, history_days: int = 180, snapshot_files: int 
                        {**_columnar(SNAP_FIELDS, prices), "ladders": ladders})
                 stats["snap_files"] += 1
             prev_ts = s["ts"]
+        h["quality"] = api.market_quality(con, hid)
         h["latest"] = latest
 
     # Items: Metadaten + verdichtete Historie je Haus (Analysen rechnet der Browser)
@@ -278,7 +283,8 @@ def export_site(con, out_dir: str, history_days: int = 180, snapshot_files: int 
 
     meta = {
         "generated_at": int(time.time()),
-        "catalog_version": 3,
+        "catalog_version": 4,
+        "market_runs": api.market_runs(con),
         "catalog_coverage": catalog.coverage(con),
         "search_items": len(cat),
         "app_version": app_version,

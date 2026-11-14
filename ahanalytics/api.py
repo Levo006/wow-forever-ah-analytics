@@ -74,6 +74,9 @@ def _house_filter(params, alias="s"):
 def _item_row(r) -> dict:
     d = itemnames.enrich(r)
     if "market_ts" in d:
+        d["price_basis"] = "robust_reference" if db.house_kind(d.get("market_source", ""), d.get("market_ext_id", "")) in db.GROUPS else "lowest_ask"
+        if d.get("last_lowest") is None and d["price_basis"] == "lowest_ask" and d.get("granularity") != "day":
+            d["last_lowest"] = d.get("last_min")
         d["is_current"] = bool(d.get("last_ts") and d["last_ts"] == d["market_ts"])
         d["current_quantity"] = d.get("last_qty") if d["is_current"] else (0 if d.get("market_complete") else None)
         d["availability"] = "observed" if d["is_current"] else ("not_observed" if d.get("market_complete") else "unknown")
@@ -125,6 +128,7 @@ def _resolve_house(con, params):
 
 
 SUMMARY_COLS = """
+  s.last_lowest, s.prev24_ts, s.prev7d_ts, h.source AS market_source, h.ext_id AS market_ext_id,
   s.house_id, s.item_id, s.first_ts, s.last_ts, s.points, s.last_min, s.last_median, s.last_qty,
   s.last_auctions, s.prev24_min, s.prev24_median, s.prev7d_min, s.prev7d_median,
   s.avg7_min, s.avg30_min, s.avg7_median, s.avg30_median, s.avg7_qty, s.cv7_min,
@@ -134,7 +138,7 @@ SUMMARY_COLS = """
   i.catalog_build, i.catalog_state, i.catalog_test, i.binding, i.catalog_aliases,
   h.name AS house_name, h.region, h.faction, h.granularity,
   (SELECT MAX(ts) FROM snapshots z WHERE z.house_id=s.house_id) AS market_ts,
-  COALESCE((SELECT value FROM meta WHERE key='complete:' || s.house_id), '0') = '1' AS market_complete,
+  COALESCE((SELECT complete FROM snapshots z WHERE z.house_id=s.house_id ORDER BY ts DESC LIMIT 1),0) AS market_complete,
   CASE WHEN s.prev24_min > 0 THEN (1.0*s.last_min/s.prev24_min - 1)*100 END AS chg24_min,
   CASE WHEN s.prev7d_min > 0 THEN (1.0*s.last_min/s.prev7d_min - 1)*100 END AS chg7d_min,
   CASE WHEN s.prev24_median > 0 THEN (1.0*s.last_median/s.prev24_median - 1)*100 END AS chg24_median,
@@ -171,7 +175,21 @@ def status(con, params, cfg=None, collector=None):
                       (SELECT COUNT(*) FROM item_summary) series""").fetchone()),
         "collector": collector.state() if collector else None,
         "catalog_coverage": catalog.coverage(con),
+        "market_runs": market_runs(con),
     }
+
+
+def market_runs(con, limit=3):
+    return [dict(json.loads(r["manifest"]), id=r["id"]) for r in con.execute(
+        "SELECT id,manifest FROM market_runs ORDER BY id DESC LIMIT ?", (limit,))]
+
+
+def market_quality(con, hid):
+    row = con.execute("SELECT ts,complete,run_id,source_min_ts,source_max_ts FROM snapshots WHERE house_id=? ORDER BY ts DESC LIMIT 1", (hid,)).fetchone()
+    result = dict(row) if row else {"complete":None, "ts":None}
+    recent = con.execute("SELECT r.id,r.status FROM market_runs r JOIN houses h ON h.region=r.region WHERE h.id=? ORDER BY r.id DESC LIMIT 1",(hid,)).fetchone()
+    if recent: result.update(latest_run_id=recent["id"],latest_run_status=recent["status"])
+    return result
 
 
 def houses(con, params):
@@ -254,9 +272,21 @@ def overview(con, params):
     snaps = [dict(r) for r in reversed(snaps)]
     house = dict(con.execute("SELECT * FROM houses WHERE id=?", (hid,)).fetchone())
     p = {"house": str(hid), "limit": "6"}
+    comparisons = [dict(r) for r in con.execute("SELECT last_min,prev24_min,prev7d_min FROM item_summary WHERE house_id=? AND last_ts=?", (hid,house_latest(con,hid)))]
+    k = dict(k)
+    import statistics
+    for label,col in (("24","prev24_min"),("7d","prev7d_min")):
+        vals = [(r["last_min"]/r[col]-1)*100 for r in comparisons if r.get(col) and r.get("last_min")]
+        k[f"median_chg{label}"] = statistics.median(vals) if vals else None
+        k[f"comparable{label}"] = len(vals)
+        k[f"up{label}"] = sum(v>0 for v in vals)
+        k[f"down{label}"] = sum(v<0 for v in vals)
+    quality = market_quality(con,hid)
+    k["comparisons_reliable"] = bool(quality.get("complete")) and bool(quality.get("ts") and quality["ts"] >= time.time()-10800)
     return {
         "house": house,
-        "kpis": dict(k),
+        "kpis": k,
+        "quality": quality,
         "last_ts": snaps[-1]["ts"] if snaps else None,
         "snapshot_count": con.execute("SELECT COUNT(*) FROM snapshots WHERE house_id=?",
                                       (hid,)).fetchone()[0],
@@ -271,47 +301,35 @@ def overview(con, params):
 
 
 def classes(con, params):
-    hid = _resolve_house(con, params)
-    rows = con.execute(
-        """SELECT i.class_id, i.class_name, i.subclass_id, i.subclass_name,
-                  COUNT(*) items,
-                  SUM(CASE WHEN s.last_ts=(SELECT MAX(ts) FROM snapshots WHERE house_id=s.house_id) THEN COALESCE(s.last_min,0)*COALESCE(s.last_qty,0) ELSE 0 END) market_value,
-                  SUM(CASE WHEN s.last_ts=(SELECT MAX(ts) FROM snapshots WHERE house_id=s.house_id) THEN s.last_qty ELSE 0 END) quantity,
-                  AVG(CASE WHEN s.prev24_min>0 THEN 1.0*s.last_min/s.prev24_min-1 END)*100 chg24,
-                  AVG(CASE WHEN s.prev7d_min>0 THEN 1.0*s.last_min/s.prev7d_min-1 END)*100 chg7d
-           FROM item_summary s JOIN items i ON i.id = s.item_id
-           WHERE s.house_id = ?
-           GROUP BY i.class_id, i.subclass_id ORDER BY i.class_id, i.subclass_id""",
-        (hid,)).fetchall()
-    out: dict = {}
-    for r in rows:
-        cid = r["class_id"] if r["class_id"] is not None else -1
-        c = out.setdefault(cid, {
-            "class_id": cid,
-            "class_name": r["class_name"] or CLASS_NAMES.get(cid, "Ohne Metadaten"),
-            "items": 0, "market_value": 0, "quantity": 0, "subclasses": [], "_w24": [], "_w7": []})
-        c["items"] += r["items"]
-        c["market_value"] += r["market_value"] or 0
-        c["quantity"] += r["quantity"] or 0
-        if r["chg24"] is not None:
-            c["_w24"].append((r["chg24"], r["items"]))
-        if r["chg7d"] is not None:
-            c["_w7"].append((r["chg7d"], r["items"]))
-        c["subclasses"].append({
-            "subclass_id": r["subclass_id"],
-            "subclass_name": r["subclass_name"] or ("Unbekannt" if r["subclass_id"] is None
-                                                   else f"Unterklasse {r['subclass_id']}"),
-            "items": r["items"], "market_value": r["market_value"], "quantity": r["quantity"],
-            "chg24": r["chg24"], "chg7d": r["chg7d"]})
-    result = []
+    import statistics
+    hid = _resolve_house(con,params)
+    out = {}
+    reliable = market_quality(con,hid)
+    reliable = bool(reliable.get("complete")) and bool(reliable.get("ts") and reliable["ts"]>=time.time()-10800)
+    for raw in con.execute(f"SELECT {SUMMARY_COLS} {SUMMARY_FROM} WHERE s.house_id=?", (hid,)):
+        row = _item_row(raw)
+        cid = row["class_id"] if row["class_id"] is not None else -1
+        c = out.setdefault(cid,{"class_id":cid,"class_name":row["class_name"] or CLASS_NAMES.get(cid,"Ohne Metadaten"),"items":0,"market_value":0,"quantity":0,"_subs":{},"_24":[],"_7":[]})
+        sid = row["subclass_id"]
+        sub = c["_subs"].setdefault(sid,{"subclass_id":sid,"subclass_name":row["subclass_name"] or ("Unbekannt" if sid is None else f"Unterklasse {sid}"),"items":0,"market_value":0,"quantity":0,"_24":[],"_7":[]})
+        for target in (c,sub):
+            target["items"] += 1
+            target["market_value"] += row["market_value"] or 0
+            target["quantity"] += row.get("current_quantity") or 0
+            for suffix,key in (("24","chg24_min"),("7","chg7d_min")):
+                if reliable and row["is_current"] and row.get(key) is not None:target["_"+suffix].append(row[key])
+    def finish(target):
+        for suffix,name in (("24","chg24"),("7","chg7d")):
+            vals=target.pop("_"+suffix)
+            target[name]=statistics.median(vals) if vals else None
+            target[name+"_n"]=len(vals)
+        return target
+    result=[]
     for c in out.values():
-        for key, src in (("chg24", "_w24"), ("chg7d", "_w7")):
-            w = c.pop(src)
-            n = sum(x[1] for x in w)
-            c[key] = sum(a * b for a, b in w) / n if n else None
-        result.append(c)
-    result.sort(key=lambda c: -(c["market_value"] or 0))
-    return {"house_id": hid, "classes": result}
+        c["subclasses"]=[finish(sub) for _,sub in sorted(c.pop("_subs").items(),key=lambda kv:kv[0] if kv[0] is not None else -1)]
+        result.append(finish(c))
+    result.sort(key=lambda c:-c["market_value"])
+    return {"house_id":hid,"classes":result}
 
 
 SEARCH_SORTS = {
@@ -438,13 +456,17 @@ def _range_bounds(con, hid, rng):
 
 
 def _history_rows(con, hid, item_id, lo, hi=None):
-    q = """SELECT ts, min, p10, median, mean, max, quantity, auctions FROM prices
+    q = """SELECT ts, min, p10, median, mean, max, quantity, auctions, lowest, sample_n, reference_low, reference_high FROM prices
            WHERE house_id=? AND item_id=? AND ts >= ?"""
     args = [hid, item_id, lo]
     if hi is not None:
         q += " AND ts <= ?"
         args.append(hi)
-    return [dict(r) for r in con.execute(q + " ORDER BY ts", args)]
+    rows = [dict(r) for r in con.execute(q + " ORDER BY ts", args)]
+    for row in rows:
+        row["n"] = row["sample_n"] if db.is_daily_ts(row["ts"]) else row["sample_n"] or 1
+        row["aggregated"] = db.is_daily_ts(row["ts"])
+    return rows
 
 
 def history(con, item_id, params):

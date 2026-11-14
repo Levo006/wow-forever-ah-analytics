@@ -13,8 +13,8 @@ Stand der Forever-API (inoffiziell, von der Community ermittelt, Nov. 2026):
   (``auctions`` kann fehlen).
 * Commodities: ``/data/wow/ruleset/{id}/auctions/{houseId}/commodities``
   → ``{auctions: [{id, item:{id}, quantity, unit_price, time_left}]}``
-* Alle Rulesets liefern dieselben Häuser mit identischen Auktionen –
-  deshalb wird nur EIN Ruleset abgefragt.
+* Es wird EIN Ruleset abgefragt. Gleichheit anderer Rulesets ist nicht
+  nachgewiesen und wird im Laufmanifest nicht behauptet.
 * Rund 40 % der Item-IDs liefern beim Item-Endpunkt 404 → Metadaten optional.
 
 Annahme: ``buyout`` bei Nicht-Commodities ist der Preis der gesamten Auktion;
@@ -25,6 +25,7 @@ from __future__ import annotations
 import base64
 import gzip
 import json
+import random
 import threading
 import time
 import urllib.error
@@ -48,6 +49,23 @@ class ApiError(RuntimeError):
         self.status = status
         self.url = url
         self.body = body
+
+
+def _retry_delay(headers, attempt):
+    value = (headers or {}).get("Retry-After")
+    if value:
+        try:
+            delay = max(0, float(value))
+            if delay > 120: raise ApiError("Retrybudget", "", "Retry-After über 120 Sekunden; kein früherer Retry")
+            return delay
+        except ValueError:
+            try:
+                delay = max(0, parsedate_to_datetime(value).timestamp()-time.time())
+                if delay > 120: raise ApiError("Retrybudget", "", "Retry-After über 120 Sekunden; kein früherer Retry")
+                return delay
+            except (TypeError, ValueError):
+                pass
+    return min(30, 2 ** attempt + random.uniform(0, 1))
 
 
 class BattleNetClient:
@@ -122,14 +140,14 @@ class BattleNetClient:
                 if exc.code == 401:
                     self._token = None
                 if exc.code in (401, 429, 500, 502, 503, 504) and attempt < retries - 1:
-                    time.sleep(1.5 * (attempt + 1))
+                    time.sleep(_retry_delay(exc.headers, attempt))
                     last_exc = exc
                     continue
                 raise ApiError(exc.code, url) from exc
             except (urllib.error.URLError, TimeoutError) as exc:
                 last_exc = exc
                 if attempt < retries - 1:
-                    time.sleep(2 * (attempt + 1))
+                    time.sleep(_retry_delay({}, attempt))
                     continue
                 raise ApiError("Netzwerk", url, str(exc)) from exc
         raise ApiError("?", url, str(last_exc))
@@ -183,112 +201,197 @@ def discover_houses(client: BattleNetClient, ruleset=None):
 
 
 def collect(con, client: BattleNetClient, ruleset=None, only_houses=None,
-            ladder_keep=48, fetch_metadata=True, log=print) -> ImportResult:
+            ladder_keep=48, fetch_metadata=True, log=print, now=None) -> ImportResult:
+    """Stage all endpoints, validate each house, then atomically publish observations.
+
+    An omitted auctions array is unknown, never a confirmed empty market. Partial
+    groups are explicit and cannot prove absence. No comparison of other rulesets
+    is implied by selecting one ruleset.
+    """
+    import hashlib
+    now = int(time.time()) if now is None else int(now)
     res = ImportResult(SOURCE)
-    houses = discover_houses(client, ruleset)
-    if only_houses:
-        wanted = {int(h) for h in only_houses}
-        houses = [h for h in houses if int(h["id"]) in wanted]
-    touched = []
-    complete = {k: True for k in db.GROUPS}
-    group_times = {k: [] for k in db.GROUPS}
-    commodity_items: set[int] = set()
-    # Sammelgruppen: alle Einzelauktionen gemeinsam auswerten (exakter Median usw.)
-    db.drop_legacy_groups(con, log=log)
-    pools: dict[str, list] = {k: [] for k in db.GROUPS}
-    pool_ts: dict[str, int] = {k: 0 for k in db.GROUPS}
-    pool_mins: dict[str, list] = {k: [] for k in db.GROUPS}  # je Haus {item: (preis, menge)}
-    for h in houses:
-        hid_ext = f"{client.region}-{h['id']}"
-        faction = faction_from_name(h["name"])
+    manifest = {"version": 1, "started_at": now, "region": client.region,
+                "namespace": client.ns("dynamic"), "ruleset": ruleset,
+                "ruleset_scope": "selected_only_not_cross_ruleset_verified",
+                "limits": {"max_source_age_s": 10800, "max_skew_s": 600, "future_s": 600},
+                "only_houses": list(only_houses or []), "expected_houses": [],
+                "endpoints": [], "groups": [], "errors": []}
+    started_clock = time.monotonic()
+    rid = con.execute("INSERT INTO market_runs(started_at,region,ruleset,status,manifest) VALUES(?,?,?,?,?)",
+                      (now,client.region,str(ruleset or ""),"running",json.dumps(manifest))).lastrowid
+    def finish(status):
+        manifest.update(status=status, finished_at=int(time.time()))
+        con.execute("UPDATE market_runs SET finished_at=?,ruleset=?,status=?,manifest=? WHERE id=?",
+                    (manifest["finished_at"],str(manifest["ruleset"] or ""),status,json.dumps(manifest),rid))
+    try:
+        houses = discover_houses(client, ruleset)
+        if not houses or any(not isinstance(h.get("id"), int) or h["id"] <= 0 for h in houses):
+            raise ValueError("Leeres oder ungültiges Häuserverzeichnis")
+        if len({h["id"] for h in houses}) != len(houses):
+            raise ValueError("Doppelte Haus-ID im Verzeichnis")
+        manifest["ruleset"] = houses[0]["ruleset"]
+        if only_houses:
+            wanted = {int(h) for h in only_houses}
+            missing = wanted - {h["id"] for h in houses}
+            if missing:
+                raise ValueError(f"Angeforderte Häuser fehlen: {sorted(missing)}")
+            houses = [h for h in houses if h["id"] in wanted]
+        manifest["expected_houses"] = [h["id"] for h in houses]
+        known = {int(row[0].split("-")[-1]) for row in con.execute(
+            "SELECT ext_id FROM houses WHERE source=? AND region=?", (SOURCE, client.region))
+            if row[0].split("-")[-1].isdigit()}
+        disappeared = known - set(manifest["expected_houses"]) if not only_houses else set()
+        if disappeared:
+            manifest["errors"].append(f"Bekannte Häuser fehlen im Verzeichnis: {sorted(disappeared)}")
+        staged = []
+        for h in houses:
+            base = f"/data/wow/ruleset/{h['ruleset']}/auctions/{h['id']}"
+            entries, data, commodity_ids = [], [], set()
+            for commodity, path in ((False,base),(True,base+"/commodities")):
+                entry = {"house": h["id"], "endpoint": "commodities" if commodity else "items",
+                         "path": path, "fetched_at": int(time.time()), "status": "error"}
+                entries.append(entry); manifest["endpoints"].append(entry)
+                try:
+                    if time.monotonic()-started_clock > 900:
+                        raise ValueError("Abrufbudget von 15 Minuten erreicht")
+                    payload, headers = client.get(path)
+                    entry["http_status"] = 200 if payload is not None else 304
+                    entry["sha256"] = hashlib.sha256(json.dumps(payload,sort_keys=True,separators=(",",":")).encode()).hexdigest()
+                    lm = next((v for k,v in headers.items() if k.lower()=="last-modified"),None)
+                    entry["last_modified"] = lm
+                    entry["etag"] = next((v for k,v in headers.items() if k.lower()=="etag"),None)
+                    try:
+                        source_ts = int(parsedate_to_datetime(lm).timestamp()) if lm else None
+                    except (TypeError,ValueError,OverflowError):
+                        source_ts = None
+                    entry["source_ts"] = source_ts
+                    if not isinstance(payload,dict) or not isinstance(payload.get("auctions"),list):
+                        raise ValueError("auctions-Liste fehlt: unbekannt, nicht leer")
+                    auctions = payload["auctions"]
+                    entry["auction_count"] = len(auctions)
+                    seen = set()
+                    for a in auctions:
+                        if not isinstance(a,dict) or not isinstance(a.get("item"),dict):
+                            raise ValueError("Ungültige Auktionsstruktur")
+                        iid, qty = a["item"].get("id"), a.get("quantity")
+                        if type(iid) is not int or iid <= 0 or type(qty) is not int or qty <= 0:
+                            raise ValueError("Ungültige Item-ID oder Menge")
+                        aid = a.get("id")
+                        if aid is not None:
+                            if type(aid) is not int or aid in seen:
+                                raise ValueError("Ungültige oder doppelte Auktions-ID")
+                            seen.add(aid)
+                        price = a.get("unit_price") if commodity or "unit_price" in a else a.get("buyout")
+                        if price is not None and (type(price) is not int or price < 0):
+                            raise ValueError("Ungültiger Preis")
+                        if commodity and price is None:
+                            raise ValueError("Commodity ohne Stückpreis")
+                    if auctions and source_ts is None:
+                        raise ValueError("Quellzeit fehlt")
+                    if source_ts and source_ts > now + 600:
+                        raise ValueError("Quellzeit liegt in der Zukunft")
+                    if auctions and source_ts < now - 10800:
+                        raise ValueError("Quellstand älter als 3 Stunden")
+                    rows = list(listings_from_payload(payload,commodity))
+                    entry.update(status="ok" if auctions else "empty", listing_count=len(rows),
+                                 item_count=len({x[0] for x in rows}))
+                    data.extend(rows)
+                    if commodity: commodity_ids.update(i for i,_,_ in rows)
+                except (ApiError,ValueError,TypeError,KeyError) as exc:
+                    entry["error"] = str(exc)
+                    if isinstance(exc,ApiError):
+                        entry["http_status"] = exc.status
+            times = [e["source_ts"] for e in entries if e.get("auction_count") and e.get("source_ts")]
+            valid = all(e["status"] in ("ok","empty") for e in entries)
+            if times and max(times)-min(times)>600:
+                valid = False
+                for e in entries: e.update(status="invalid",error="Zeitversatz zwischen Endpunkten über 10 Minuten")
+            digest = hashlib.sha256("|".join(e.get("sha256", "") for e in entries).encode()).hexdigest()
+            old = con.execute("SELECT payload_hash FROM snapshots JOIN houses ON houses.id=snapshots.house_id WHERE houses.source=? AND houses.ext_id=? AND snapshots.ts=?", (SOURCE,f"{client.region}-{h['id']}",(max(times) if times else now)//60*60)).fetchone()
+            if valid and old and old[0] and old[0] != digest:
+                valid = False
+                for e in entries: e.update(status="invalid",error="Geänderter Inhalt bei gleicher Quellzeit; vorherigen Stand behalten")
+            h.update(payload_hash=digest,faction=faction_from_name(h["name"]), entries=entries, listings=data,
+                     times=times, commodity_ids=commodity_ids, valid=valid, ts=(max(times) if times else now)//60*60)
+            staged.append(h)
+        touched = []; commodity_items = set()
         with db.transaction(con):
-            house_id = db.upsert_house(con, SOURCE, hid_ext, f"{h['name']} #{h['id']}",
-                                       region=client.region, faction=faction,
-                                       ruleset=h["ruleset"], granularity="hour")
-        base = f"/data/wow/ruleset/{h['ruleset']}/auctions/{h['id']}"
-        try:
-            items_payload, hdr1 = client.get(base)
-            comm_payload, hdr2 = client.get(base + "/commodities")
-        except ApiError as exc:
-            complete[db.group_for_faction(faction)] = False
-            db.set_meta(con, f"complete:{house_id}", "0")
-            if exc.status == 404:
-                res.messages.append(f"Haus {h['id']}: 404")
-                res.skipped += 1
-                continue
-            raise
-        t1, t2 = _ts_from_headers(hdr1), _ts_from_headers(hdr2)
-        valid_payload = isinstance(items_payload, dict) and isinstance(items_payload.get("auctions"), list) and isinstance(comm_payload, dict) and isinstance(comm_payload.get("auctions"), list)
-        synced = abs(t1 - t2) <= 600
-        db.set_meta(con, f"complete:{house_id}", "1" if valid_payload and synced else "0")
-        complete[db.group_for_faction(faction)] &= valid_payload and synced
-        group_times[db.group_for_faction(faction)].extend((t1, t2))
-        ts = max(t1, t2)
-        ts -= ts % 60
-        listings = list(listings_from_payload(items_payload, False))
-        comm = list(listings_from_payload(comm_payload, True))
-        del items_payload, comm_payload
-        commodity_items.update(i for i, _, _ in comm)
-        stats, ladders = aggregate_listings(listings + comm)
-        if stats:
-            key = db.group_for_faction(faction)
-            pools[key].extend(listings)
-            pools[key].extend(comm)
-            # günstige Preisstufe je Haus (10 %-Perzentil statt Einzel-Lockangebot)
-            pool_mins[key].append({i: (s["p10"], s["quantity"]) for i, s in stats.items()})
-            pool_ts[key] = max(pool_ts[key], ts)
-        if db.snapshot_exists(con, house_id, ts):
-            res.skipped += 1
-            log(f"Haus {h['id']}: Snapshot {ts} bereits vorhanden – übersprungen")
-            continue
-        if not stats:  # manche Häuser liefern (noch) keine Auktionen
-            res.skipped += 1
-            log(f"Haus {h['id']} ({h['name']}): keine Auktionen – übersprungen")
-            continue
-        with db.transaction(con):
-            db.write_snapshot(con, house_id, ts, SOURCE, stats, ladders)
-            db.prune_ladders(con, ladder_keep)
-        touched.append(house_id)
-        res.houses += 1
-        res.snapshots += 1
-        res.price_points += len(stats)
-        log(f"Haus {h['id']} ({h['name']}): {len(listings) + len(comm)} Auktionen, "
-            f"{len(stats)} Items")
-    for key, pool in pools.items():
-        if not pool:
-            gid = db.upsert_group_house(con, SOURCE, client.region, key)
-            db.set_meta(con, f"complete:{gid}", "0")
-            continue
-        with db.transaction(con):
-            gid = db.upsert_group_house(con, SOURCE, client.region, key)
-            times = group_times[key]
-            all_ok = complete[key] and bool(times) and max(times) - min(times) <= 600 and not only_houses
-            db.set_meta(con, f"complete:{gid}", "1" if all_ok else "0")
-            if not db.snapshot_exists(con, gid, pool_ts[key]):
-                stats, ladders = aggregate_listings(pool)
-                db.apply_typical_min(stats, pool_mins[key])
-                db.write_snapshot(con, gid, pool_ts[key], SOURCE, stats, ladders)
-                db.prune_ladders(con, ladder_keep)
-                touched.append(gid)
-                log(f"Sammelgruppe {key}: {len(pool)} Auktionen, {len(stats)} Items")
-            if db.build_group_snapshots(con, gid, log=log) and gid not in touched:
-                touched.append(gid)
-        pools[key] = []
-        pool_mins[key] = []
-    with db.transaction(con):
-        if commodity_items:
-            con.executemany("UPDATE items SET is_commodity=1 WHERE id=?",
-                            ((i,) for i in commodity_items))
-        if touched:
-            db.refresh_summary(con, touched)
+            for h in staged:
+                hid = db.upsert_house(con,SOURCE,f"{client.region}-{h['id']}",f"{h['name']} #{h['id']}",
+                                      region=client.region,faction=h["faction"],ruleset=h["ruleset"],granularity="hour")
+                h["db_id"] = hid
+                if not h["valid"]:
+                    res.skipped += 1
+                    continue
+                stats, ladders = aggregate_listings(h["listings"])
+                if not db.snapshot_exists(con,hid,h["ts"]) or con.execute("SELECT payload_hash FROM snapshots WHERE house_id=? AND ts=?",(hid,h["ts"])).fetchone()[0] is None:
+                    sid = db.write_snapshot(con,hid,h["ts"],SOURCE,stats,ladders)
+                    con.execute("UPDATE snapshots SET complete=1,run_id=?,source_min_ts=?,source_max_ts=?,payload_hash=? WHERE id=?",
+                                (rid,min(h["times"]) if h["times"] else None,max(h["times"]) if h["times"] else None,h["payload_hash"],sid))
+                    touched.append(hid); res.houses += 1; res.snapshots += 1; res.price_points += len(stats)
+                else:
+                    res.skipped += 1
+                    # Revalidation attaches run evidence; no rewrite of existing observations.
+                    con.execute("UPDATE snapshots SET complete=1,run_id=? WHERE house_id=? AND ts=?",(rid,hid,h["ts"]))
+                db.set_meta(con,f"complete:{hid}","1")
+                log(f"Haus {h['id']}: {len(stats)} Items; Endpunkte geprüft")
+            if not only_houses:
+                for key in db.GROUPS:
+                    members = [h for h in staged if db.group_for_faction(h["faction"])==key]
+                    valid = [h for h in members if h["valid"]]
+                    times = [t for h in valid for t in h["times"]]
+                    complete = len(valid)==len(members) and bool(members) and not disappeared
+                    synced = not times or max(times)-min(times)<=600
+                    group = {"key":key,"expected":len(members),"valid":len(valid),"complete":complete and synced,
+                             "source_min_ts":min(times) if times else None,"source_max_ts":max(times) if times else None}
+                    manifest["groups"].append(group)
+                    if not valid or not synced:
+                        group["activation"] = "retained_previous"
+                        continue
+                    gid = db.upsert_group_house(con,SOURCE,client.region,key)
+                    ts = (max(times) if times else now)//60*60
+                    digest = hashlib.sha256("|".join(sorted(h["payload_hash"] for h in valid)).encode()).hexdigest()
+                    prior = con.execute("SELECT payload_hash FROM snapshots WHERE house_id=? AND ts=?",(gid,ts)).fetchone()
+                    if prior and prior[0]:
+                        group["activation"] = "unchanged" if prior[0]==digest else "retained_previous_content_conflict"
+                        # Do not upgrade an older partial snapshot without rewriting the pool.
+                        continue
+                    pools = [row for h in valid for row in h["listings"]]
+                    stats,ladders = aggregate_listings(pools)
+                    mins = []
+                    for h in valid:
+                        ss,_ = aggregate_listings(h["listings"])
+                        mins.append({i:(s["p10"],s["quantity"]) for i,s in ss.items()})
+                    db.apply_typical_min(stats,mins)
+                    sid = db.write_snapshot(con,gid,ts,SOURCE,stats,ladders)
+                    con.execute("UPDATE snapshots SET complete=?,run_id=?,source_min_ts=?,source_max_ts=?,payload_hash=? WHERE id=?",
+                                (int(group["complete"]),rid,group["source_min_ts"],group["source_max_ts"],digest,sid))
+                    db.set_meta(con,f"complete:{gid}",int(group["complete"]))
+                    group.update(activation="complete" if group["complete"] else "partial",house_id=gid,ts=ts)
+                    touched.append(gid)
+            commodity_items = {i for h in staged if h["valid"] for i in h["commodity_ids"]}
+            con.executemany("UPDATE items SET is_commodity=1 WHERE id=?", ((i,) for i in commodity_items))
+            if touched:
+                db.prune_ladders(con,ladder_keep)
+                db.refresh_summary(con,touched)
+            status = "complete" if all(h["valid"] for h in staged) and not manifest["errors"] and not only_houses and all(g["complete"] and g.get("activation")!="retained_previous_content_conflict" for g in manifest["groups"] if g["expected"]) else "partial"
+            if not any(h["valid"] for h in staged): status="rejected"
+            finish(status)
             db.bump_data_version(con)
-        db.log_import(con, SOURCE, "ok", res.summary())
-    res.items = con.execute("SELECT COUNT(*) FROM items").fetchone()[0]
-    if fetch_metadata:
-        n = fetch_item_metadata(con, client, log=log)
-        if n:
-            res.messages.append(f"{n} Item-Metadaten geladen")
-    return res
+            db.log_import(con,SOURCE,status,f"Marktlauf {rid}: {sum(h['valid'] for h in staged)}/{len(staged)} Häuser geprüft; {status}")
+        if status == "rejected":
+            raise RuntimeError(f"Marktlauf {rid}: kein Hauspaar sicher freigegeben")
+        res.items = con.execute("SELECT COUNT(*) FROM items").fetchone()[0]
+        res.messages.append(f"Marktlauf {rid}: {status}")
+        if fetch_metadata:
+            n = fetch_item_metadata(con,client,log=log)
+            if n: res.messages.append(f"{n} Item-Metadaten geladen")
+        return res
+    except Exception as exc:
+        manifest["errors"].append(str(exc))
+        finish("rejected")
+        raise
 
 
 def _loc(v, locale="de_DE"):

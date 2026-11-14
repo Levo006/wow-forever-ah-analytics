@@ -12,7 +12,7 @@ client_id = ""
 client_secret = ""
 regions = ["eu"]      # eu, us, kr, tw
 locale = "de_DE"      # Sprache der Item-Namen
-ruleset = ""          # leer = erstes Ruleset (alle liefern dieselben Häuser)
+ruleset = ""          # leer = erstes Ruleset; Gleichheit anderer Rulesets nicht geprüft
 houses = []           # leer = alle Auktionshäuser, sonst z. B. [110, 111, 112]
 
 [collector]

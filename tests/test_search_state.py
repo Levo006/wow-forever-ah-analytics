@@ -28,7 +28,7 @@ class SearchStateTest(unittest.TestCase):
                 1: {"min": price, "quantity": 5}, 7753: {"min": 100, "quantity": 2}})
         db.write_snapshot(self.con, self.a, self.ts, "test", {2: {"min": 500, "quantity": 7}, 7753: {"min": 100, "quantity": 2}})
         db.write_snapshot(self.con, self.h, self.ts, "test", {85: {"min": 300, "quantity": 1}})
-        db.set_meta(self.con, f"complete:{self.a}", "1")
+        self.con.execute("UPDATE snapshots SET complete=1 WHERE house_id=?", (self.a,))
         db.refresh_summary(self.con)
 
     def tearDown(self):
@@ -55,7 +55,7 @@ class SearchStateTest(unittest.TestCase):
         self.assertNotIn(1, [r["item_id"] for r in api.deals(self.con, {"house": str(self.a)})["deals"]])
         self.assertEqual(api.overview(self.con, {"house": str(self.a)})["kpis"]["quantity"], 9)
         self.assertEqual(len(api.history(self.con, 1, {"house": str(self.a), "range": "all"})["points"]), 3)
-        db.set_meta(self.con, f"complete:{self.a}", "0")
+        self.con.execute("UPDATE snapshots SET complete=0 WHERE house_id=? AND ts=?", (self.a,self.ts))
         r = api.search(self.con, {"q": "1", "house": str(self.a)})["items"][0]
         self.assertEqual(r["availability"], "unknown")
         self.assertIsNone(r["current_quantity"])

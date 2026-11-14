@@ -119,7 +119,7 @@ class CollectGroupsTest(unittest.TestCase):
         self.client = battlenet.BattleNetClient("id", "secret", region="eu", opener=opener)
 
     def test_pools(self):
-        battlenet.collect(self.con, self.client, fetch_metadata=False, log=QUIET)
+        battlenet.collect(self.con, self.client, now=1794308400, fetch_metadata=False, log=QUIET)
         g = {r["ext_id"]: r["id"] for r in self.con.execute("SELECT * FROM houses")}
         alle = self.con.execute("SELECT * FROM prices WHERE house_id=?", (g["eu-allianz"],)).fetchone()
         self.assertEqual(alle["quantity"], 501)
@@ -127,7 +127,7 @@ class CollectGroupsTest(unittest.TestCase):
         self.assertEqual(alle["median"], 100)   # exakt aus allen Einzelauktionen
         neu = self.con.execute("SELECT * FROM prices WHERE house_id=?", (g["eu-neutral"],)).fetchone()
         self.assertEqual((neu["min"], neu["quantity"]), (400, 20))
-        res = battlenet.collect(self.con, self.client, fetch_metadata=False, log=QUIET)
+        res = battlenet.collect(self.con, self.client, now=1794308400, fetch_metadata=False, log=QUIET)
         self.assertEqual(res.snapshots, 0)      # gleicher Stand: nichts doppelt
         self.assertEqual(self.con.execute("SELECT COUNT(*) FROM snapshots WHERE house_id=?",
                                           (g["eu-allianz"],)).fetchone()[0], 1)
