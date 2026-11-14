@@ -191,6 +191,13 @@ jobs:
         timeout-minutes: 10
         run: python run.py metadata --limit 80
 
+      # Items ohne deutschen Namen (Client-Build und Wowhead-Forever kennen keinen):
+      # belegte Classic-Namen als markierte Suchaliase, keine erfundenen Forever-Namen.
+      - name: Belegte deutsche Aliase ergänzen (Wowhead Classic, gedrosselt)
+        continue-on-error: true
+        timeout-minutes: 10
+        run: python run.py classic-aliases --limit 150
+
       - name: Metadatenstand zusätzlich sichern
         if: ${{ !cancelled() && steps.restore.outcome == 'success' && steps.collect.outcome != 'skipped' }}
         run: |
