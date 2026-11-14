@@ -56,6 +56,18 @@ CREATE TABLE IF NOT EXISTS items (
 CREATE INDEX IF NOT EXISTS items_class ON items(class_id, subclass_id);
 CREATE INDEX IF NOT EXISTS items_name ON items(name COLLATE NOCASE);
 
+-- Belegte deutsche Namen aus einer externen Quelle (z. B. Wowhead Classic),
+-- wenn weder Client-Build noch Wowhead-Forever einen deutschen Namen kennen.
+-- Nur Suchaliase: behaupten keine bestätigte aktuelle Forever-Lokalisierung.
+CREATE TABLE IF NOT EXISTS verified_aliases (
+    item_id     INTEGER PRIMARY KEY,
+    status      TEXT NOT NULL,          -- ok | missing (missing = Quelle kennt keinen DE-Namen)
+    alias       TEXT,                   -- bei ok: belegter Name; NULL = gleich dem englischen Namen
+    source      TEXT,                   -- wowhead_classic | manuell
+    source_url  TEXT,                   -- Beleg
+    checked_at  INTEGER
+);
+
 CREATE TABLE IF NOT EXISTS snapshots (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     house_id      INTEGER NOT NULL REFERENCES houses(id),

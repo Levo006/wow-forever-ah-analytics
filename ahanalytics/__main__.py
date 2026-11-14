@@ -49,6 +49,9 @@ def main(argv=None):
     m.add_argument("--until-done", action="store_true",
                    help="bei Drosselung durch Wowhead 20 Minuten warten und weitermachen, bis alles geladen ist")
 
+    ca = sub.add_parser("classic-aliases", help="Belegte deutsche Aliase aus Wowhead Classic ergänzen (gedrosselt)")
+    ca.add_argument("--limit", type=int, default=200, help="höchstens so viele Items pro Lauf prüfen")
+
     pb = sub.add_parser("publish", help="Website exportieren und auf GitHub Pages (Zweig gh-pages) veröffentlichen")
     pb.add_argument("--no-push", action="store_true", help="nur nach site/ exportieren, nicht hochladen")
 
@@ -163,6 +166,9 @@ def main(argv=None):
             else:
                 print("Wowhead drosselt – warte 20 Minuten …", flush=True)
             time.sleep(20 * 60)
+    elif args.cmd == "classic-aliases":
+        from .sources import wowhead
+        wowhead.fetch_classic_aliases(con, limit=args.limit)
     elif args.cmd == "publish":
         from .publish import publish
         publish(con, cfg, push=not args.no_push)

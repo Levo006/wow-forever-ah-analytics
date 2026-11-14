@@ -17,6 +17,12 @@ def enrich(row):
         if alias and alias not in (row.get("name"), row.get("name_en")) and alias not in row["aliases"]:
             row["aliases"].append(alias)
     row.pop("catalog_aliases", None)
+    # Extern belegter Name (verified_aliases): ebenfalls nur ein Suchalias,
+    # ersetzt niemals den bestätigten Namen und hebt translation_missing nicht auf.
+    verified = (row.get("verified_alias") or "").strip()
+    if verified and verified not in (row.get("name"), row.get("name_en")) and verified not in row["aliases"]:
+        row["aliases"].append(verified)
+    row.pop("verified_alias", None)
     name = row.get("name")
     row["translation_missing"] = not name or (name.startswith("[") and name.endswith("]"))
     if row["translation_missing"]:

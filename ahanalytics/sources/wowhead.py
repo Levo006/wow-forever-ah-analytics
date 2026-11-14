@@ -21,7 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from .. import db
 
-URL = "https://www.wowhead.com/forever/{lang}item={id}&xml"  # lang = "de/" oder "" (Englisch)
+URL = "https://www.wowhead.com/{database}/{lang}item={id}&xml"  # database = forever | classic; lang = "de/" oder "" (Englisch)
 USER_AGENT = "Mozilla/5.0 (compatible; wow-ah-analytics/1.0)"
 _lock = threading.Lock()
 
@@ -56,9 +56,9 @@ def parse_xml(text: str) -> dict | None:
     }
 
 
-def fetch_one(item_id: int, lang="de", opener=urllib.request.urlopen, timeout=20, retries=3):
+def fetch_one(item_id: int, lang="de", database="forever", opener=urllib.request.urlopen, timeout=20, retries=3):
     """Gibt (status, felder) zurück: status ∈ ok | missing | error."""
-    url = URL.format(lang="" if lang == "en" else f"{lang}/", id=item_id)
+    url = URL.format(database=database, lang="" if lang == "en" else f"{lang}/", id=item_id)
     for attempt in range(retries):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
@@ -196,6 +196,85 @@ def fetch_english_names(con, limit=10000, pause=2.0, recheck_days=7, log=print,
         return found
     finally:
         _lock_en.release()
+
+
+def fetch_classic_aliases(con, limit=200, pause=2.0, log=print, opener=urllib.request.urlopen) -> int:
+    """Belegte deutsche Namen aus der Wowhead-Classic-Datenbank als Suchaliase.
+
+    Für Items ohne bestätigten Forever-Namen (fehlend oder in [Klammern]) wird
+    die Classic-Ausgabe von Wowhead befragt. Ein Fund wird nur als markierter
+    Alias in ``verified_aliases`` gespeichert: Er behauptet keine bestätigte
+    aktuelle Forever-Lokalisierung und verändert weder Itemnamen noch Preise.
+    Eingeklammerte Classic-Namen (keine deutsche Übersetzung bekannt) gelten
+    nicht als Beleg und werden als „missing“ markiert, genauso wie Items, die
+    die Classic-Datenbank nicht kennt – beides wird nicht stündlich erneut
+    abgefragt. Netzfehler bleiben unmarkiert und werden später erneut versucht.
+    Zuerst kommen die zuletzt am Markt beobachteten Items.
+    """
+    if not _lock.acquire(blocking=False):
+        log("Metadaten-Abruf läuft bereits.")
+        return 0
+    try:
+        ids = [r[0] for r in con.execute(
+            """SELECT i.id FROM items i
+               LEFT JOIN verified_aliases va ON va.item_id = i.id
+               WHERE (i.name IS NULL OR i.name = '' OR i.name LIKE '[%') AND va.item_id IS NULL
+               ORDER BY COALESCE((SELECT MAX(s.last_ts) FROM item_summary s WHERE s.item_id = i.id), 0) DESC,
+                        i.id LIMIT ?""", (limit,))]
+        if not ids:
+            return 0
+        log(f"Prüfe Wowhead Classic für {len(ids)} Items ohne deutschen Namen (ca. 1 alle 2 s) …")
+        found, checked, blocked = 0, 0, False
+        batch = []
+
+        def flush():
+            nonlocal batch
+            if not batch:
+                return
+            now = int(time.time())
+            with db.transaction(con):
+                con.executemany(
+                    """INSERT OR REPLACE INTO verified_aliases(item_id,status,alias,source,source_url,checked_at)
+                       VALUES (?,?,?,?,?,?)""",
+                    [(iid, st, alias, src, url, now) for iid, st, alias, src, url in batch])
+                db.bump_data_version(con)
+            batch = []
+
+        for iid in ids:
+            status, data = fetch_one(iid, lang="de", database="classic", opener=opener)
+            if status == "blocked":
+                blocked = True
+                break
+            checked += 1
+            if status == "ok":
+                name = (data.get("name") or "").strip()
+                url = f"https://www.wowhead.com/classic/de/item={iid}"
+                if name.startswith("["):
+                    # Auch Wowhead Classic kennt keine deutsche Übersetzung.
+                    batch.append((iid, "missing", None, "wowhead_classic", url))
+                else:
+                    row = con.execute("SELECT name_en FROM items WHERE id=?", (iid,)).fetchone()
+                    en = (row[0] or "").strip() if row else ""
+                    found += 1
+                    # Gleich dem englischen Namen: kein zusätzlicher Suchbegriff, nur Quittung.
+                    batch.append((iid, "ok", name if name != en else None, "wowhead_classic", url))
+            elif status == "missing":
+                batch.append((iid, "missing", None, "wowhead_classic", None))
+            # "error": unmarkiert -> beim nächsten Lauf erneut
+            if len(batch) >= 100:
+                flush()
+                log(f"  {checked}/{len(ids)} geprüft, {found} belegte Namen")
+            time.sleep(pause)
+        flush()
+        msg = f"Classic-Aliase: {found} von {checked} geprüften Items belegt"
+        if blocked:
+            msg += f" – Wowhead drosselt gerade, {len(ids) - checked} Items folgen beim nächsten Lauf"
+        log(msg)
+        with db.transaction(con):
+            db.log_import(con, "wowhead-classic", "ok", msg)
+        return found
+    finally:
+        _lock.release()
 
 
 _lock_en = threading.Lock()

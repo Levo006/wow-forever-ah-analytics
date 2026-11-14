@@ -271,10 +271,12 @@ def export_site(con, out_dir: str, history_days: int = 180, snapshot_files: int 
     stats["sources"] = origins.export_shards(con, data_dir, log=log)
     # Items, die (noch) nie im AH waren – aus Rezepten, Quests, Sets, QuestieDB: suchbar mit eigener Seite
     cat = [api._item_row(r) for r in con.execute(
-        """SELECT id AS item_id, name, name_en, quality, class_id, class_name,
-                  subclass_id, subclass_name, icon, item_level, is_commodity,
-                  catalog_build, catalog_state, catalog_test, binding, required_level, slot, catalog_aliases
-           FROM items ORDER BY id""")]
+        """SELECT i.id AS item_id, i.name, i.name_en, i.quality, i.class_id, i.class_name,
+                  i.subclass_id, i.subclass_name, i.icon, i.item_level, i.is_commodity,
+                  i.catalog_build, i.catalog_state, i.catalog_test, i.binding, i.required_level, i.slot,
+                  i.catalog_aliases, va.alias AS verified_alias
+           FROM items i LEFT JOIN verified_aliases va ON va.item_id = i.id AND va.status = 'ok'
+           ORDER BY i.id""")]
     for r in cat:
         r["has_history"] = r["item_id"] in item_ids
     stats["catalog"] = sum(not r["has_history"] for r in cat)

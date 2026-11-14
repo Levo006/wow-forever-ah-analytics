@@ -136,6 +136,7 @@ SUMMARY_COLS = """
   i.name, i.name_en, i.quality, i.class_id, i.class_name, i.subclass_id, i.subclass_name, i.icon,
   i.item_level, i.is_commodity, i.meta_status,
   i.catalog_build, i.catalog_state, i.catalog_test, i.binding, i.catalog_aliases,
+  va.alias AS verified_alias,
   h.name AS house_name, h.region, h.faction, h.granularity,
   (SELECT MAX(ts) FROM snapshots z WHERE z.house_id=s.house_id) AS market_ts,
   COALESCE((SELECT complete FROM snapshots z WHERE z.house_id=s.house_id ORDER BY ts DESC LIMIT 1),0) AS market_complete,
@@ -147,6 +148,7 @@ SUMMARY_COLS = """
 """
 SUMMARY_FROM = """
   FROM item_summary s JOIN items i ON i.id = s.item_id JOIN houses h ON h.id = s.house_id
+  LEFT JOIN verified_aliases va ON va.item_id = s.item_id AND va.status = 'ok'
 """
 
 
@@ -347,7 +349,8 @@ def search(con, params):
     rows = [_item_row(r) for r in con.execute(f"SELECT {SUMMARY_COLS} {base}", args)]
     seen = {r["item_id"] for r in rows}
     global_ids = {r[0] for r in con.execute("SELECT DISTINCT item_id FROM item_summary")}
-    for raw in con.execute("SELECT id AS item_id, * FROM items"):
+    for raw in con.execute("""SELECT i.id AS item_id, i.*, va.alias AS verified_alias FROM items i
+                              LEFT JOIN verified_aliases va ON va.item_id = i.id AND va.status = 'ok'"""):
         if raw["item_id"] in seen:
             continue
         r = _item_row(raw)
@@ -424,7 +427,9 @@ def _attach_sparklines(con, items, days=14):
 
 
 def item(con, item_id, params):
-    meta = con.execute("SELECT * FROM items WHERE id=?", (item_id,)).fetchone()
+    meta = con.execute("""SELECT i.*, va.alias AS verified_alias FROM items i
+                          LEFT JOIN verified_aliases va ON va.item_id = i.id AND va.status = 'ok'
+                          WHERE i.id=?""", (item_id,)).fetchone()
     if not meta:
         raise NotFound(f"Item {item_id} unbekannt")
     rows = con.execute(f"SELECT {SUMMARY_COLS} {SUMMARY_FROM} WHERE s.item_id=? "
