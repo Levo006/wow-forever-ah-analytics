@@ -275,6 +275,18 @@ const StaticAPI = (() => {
       losers: sortRows(rows.filter((r) => r[col] < 0), col, "asc").slice(0, limit) };
   }
 
+  async function liquidity(params) {
+    const h = await house(params.house);
+    let rows = (await summary(h.id)).filter((r) => r.liq_score !== null && r.liq_score !== undefined);
+    if (params.class !== undefined && params.class !== "") rows = rows.filter((r) => r.class_id === Number(params.class));
+    const limit = Math.min(200, num(params.limit) || 30);
+    const cur = rows.filter((r) => r.is_current);
+    return { house_id: h.id, window_days: 7,
+      computed_at: cur.reduce((m, r) => Math.max(m, r.liq_ts || 0), 0) || null,
+      hot: sortRows([...cur], "liq_score", "desc").slice(0, limit),
+      cold: sortRows(cur.filter((r) => (r.liq_events || 0) <= 1), "market_value", "desc").slice(0, limit) };
+  }
+
   async function deals(params) {
     const h = await house(params.house);
     const basis = params.basis || "avg7";
@@ -357,7 +369,7 @@ const StaticAPI = (() => {
       if (!m) throw e;
       return onlyRecipe();
     }
-    return { item: f.item, houses: await itemHouses(f) };
+    return { item: f.item, houses: await itemHouses(f), liquidity: f.liquidity || {} };
   }
   async function history(id, params) {
     const h = await house(params.house);
@@ -457,6 +469,7 @@ const StaticAPI = (() => {
     [/^compare$/, (m, p) => compare(p)],
     [/^movers$/, (m, p) => movers(p)],
     [/^deals$/, (m, p) => deals(p)],
+    [/^liquidity$/, (m, p) => liquidity(p)],
     [/^recipes$/, () => recipes()],
     [/^quests$/, () => quests()],
     [/^sources\/(\d+)$/, (m) => sources(+m[1])],

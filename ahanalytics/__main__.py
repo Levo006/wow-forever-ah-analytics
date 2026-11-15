@@ -205,8 +205,10 @@ def main(argv=None):
         from . import catalog
         print(catalog.update(con, refresh=args.refresh))
     elif args.cmd == "refresh":
+        from . import liquidity
         with db.transaction(con):
             db.refresh_summary(con)
+            liquidity.update_liquidity(con)
             db.bump_data_version(con)
         print("Zusammenfassungen aktualisiert.")
     elif args.cmd == "info":

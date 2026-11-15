@@ -68,6 +68,34 @@ CREATE TABLE IF NOT EXISTS verified_aliases (
     checked_at  INTEGER
 );
 
+-- Liquiditäts-/Umsatzsignale (siehe liquidity.py): keine Verkaufsnachweise,
+-- sondern beobachtete Angebotsbewegungen. Aktuelle 7-Tage-Werte je Item/Haus:
+CREATE TABLE IF NOT EXISTS item_liquidity (
+    house_id    INTEGER NOT NULL,
+    item_id     INTEGER NOT NULL,
+    presence    REAL,                    -- Anteil geprüfter Snapshots mit Angebot (0..1)
+    events      INTEGER,                 -- Umsatzsignale: Ausverkäufe + Mengeneinbrüche (7 Tage)
+    vanish      INTEGER,                 -- davon komplette Ausverkäufe
+    units       INTEGER,                 -- verschwundene Stückzahl (obere Schätzung)
+    rate        REAL,                    -- Signale pro 24 Beobachtungsstunden
+    score       INTEGER,                 -- 0..100, hausintern gewichtet
+    computed_at INTEGER,
+    PRIMARY KEY (house_id, item_id)
+) WITHOUT ROWID;
+
+-- Tägliche Liquiditäts-Historie (nur Fraktions-Sammelmärkte, ~90 Tage):
+CREATE TABLE IF NOT EXISTS liquidity_daily (
+    house_id    INTEGER NOT NULL,
+    item_id     INTEGER NOT NULL,
+    day         INTEGER NOT NULL,        -- ts/86400 (UTC-Kalendertag)
+    expected    INTEGER,                 -- geprüfte Snapshots an diesem Tag
+    present     INTEGER,                 -- davon mit Angebot
+    events      INTEGER,
+    vanish      INTEGER,
+    units       INTEGER,
+    PRIMARY KEY (house_id, item_id, day)
+) WITHOUT ROWID;
+
 CREATE TABLE IF NOT EXISTS snapshots (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     house_id      INTEGER NOT NULL REFERENCES houses(id),
@@ -593,6 +621,8 @@ def compact(con, hourly_days: int = 7, keep_days: int = 180, house_hourly_days: 
             old = latest - k_days * 86400
             stats["deleted"] += con.execute("DELETE FROM prices WHERE house_id=? AND ts < ?", (hid, old)).rowcount
             con.execute("DELETE FROM snapshots WHERE house_id=? AND ts < ?", (hid, old))
+            con.execute("DELETE FROM liquidity_daily WHERE house_id=? AND day < ?",
+                        (hid, old // 86400))
     if stats["days"] or stats["deleted"]:
         with transaction(con):
             refresh_summary(con)

@@ -137,7 +137,7 @@ function setParams(patch, replace = true) {
 
 const routes = {
   "": viewDashboard, search: viewSearch, categories: viewCategories, item: viewItem,
-  snapshot: viewSnapshot, compare: viewCompare, movers: viewMovers, deals: viewDeals, data: viewData,
+  snapshot: viewSnapshot, compare: viewCompare, movers: viewMovers, deals: viewDeals, liquidity: viewLiquidity, data: viewData,
 };
 
 async function route() {
@@ -329,7 +329,20 @@ const COL = {
   spark: { label: "14 Tage", fmt: (r) => sparkline(r.spark) },
   updated: { label: "Stand", sort: "updated", fmt: (r) => `<span class="muted small">${dt(r.last_ts)}</span>` },
   cmp: { label: "", fmt: (r) => `<button class="btn small" data-cmp="${r.item_id}" title="Zum Vergleich hinzufügen">${state.compare.includes(r.item_id) ? "✓" : "+"} Vgl.</button>` },
-};
+  liq: { label: "Umsatz", fmt: (r) => liqBadge(r) },
+}
+
+/** Liquiditäts-Badge: Signale aus Angebotsbewegungen, nie ein Verkaufsnachweis. */
+function liqBadge(x) {
+  if (x.liq_score === null || x.liq_score === undefined)
+    return `<span class="pill" title="Für dieses Haus liegen noch keine Umsatzsignale vor - die Auswertung entsteht aus den stündlichen Marktläufen.">Umsatz unbekannt</span>`;
+  const tip = `${num(x.liq_events)} Umsatzsignale (davon ${num(x.liq_vanish)} Ausverkäufe) in 7 Tagen · ${num((x.liq_presence || 0) * 100, 0)} % der geprüften Stunden gelistet · geschätzt aus Angebotsbewegungen, kein Verkaufsnachweis`;
+  if ((x.liq_events || 0) <= 1)
+    return `<span class="pill liq-l" title="${tip}">⚠ kein Umsatz beobachtet</span>`;
+  if (x.liq_score >= 60) return `<span class="pill liq-h" title="${tip}">hoher Umsatz</span>`;
+  if (x.liq_score >= 30) return `<span class="pill liq-m" title="${tip}">mittlerer Umsatz</span>`;
+  return `<span class="pill liq-l" title="${tip}">wenig Umsatz</span>`;
+}
 document.addEventListener("click", (e) => {
   const b = e.target.closest("button[data-cmp]");
   if (!b) return;
@@ -925,7 +938,8 @@ async function viewItem(r) {
       <div class="ht"><b>${title}</b><span>${sub}</span></div>
       <div class="hp">${listingPrice(row)}</div>
       <div class="hm"><span>Median ${money(row.last_median)}</span><span>${row.is_current ? compact(row.last_qty) + " Stück" : "historisch"}</span></div>
-      <div class="hm"><span>${row.is_current ? "24 h " + pct(row.chg24_min) : "zuletzt " + dt(row.last_ts)}</span>${cheapest && row.house_id === cheapest.house_id && listed.length > 1 ? '<span class="best">★ günstigstes</span>' : ""}</div></button>`;
+      <div class="hm"><span>${row.is_current ? "24 h " + pct(row.chg24_min) : "zuletzt " + dt(row.last_ts)}</span>${cheapest && row.house_id === cheapest.house_id && listed.length > 1 ? '<span class="best">★ günstigstes</span>' : ""}</div>
+      ${row.liq_score != null ? `<div class="hm"><span>${liqBadge(row)}</span></div>` : ""}</button>`;
   };
   const cards = card(total, `${fac.name} gesamt`, "robuste Kaufreferenz", { total: true, hid: groupId(fk) }) +
     allSingles.map((h) => card(rowOf(h.id), `Verbund ${h.verbund || "?"}`, `#${String(h.ext_id).split("-").pop()}`, { hid: h.id })).join("");
@@ -982,6 +996,7 @@ async function viewItem(r) {
     <div class="folds">
       ${fold("rec", "Herkunft & Verwendung", "Lade Rezepte und Quests …", true)}
       ${fold("kpi", "Kennzahlen", house.avg7_min ? `Ø 7 T ${money(house.avg7_min)} · 7 T ${pct(house.chg7d_min)}` : "")}
+      ${fold("liq", "Umsatz & Liquidität", house.liq_score != null ? `Score ${num(house.liq_score)} · ${num(house.liq_events)} Signale / 7 T` : "noch keine Daten")}
       ${fold("qty", "Angebotsmenge", house.is_current && house.last_qty != null ? `${num(house.last_qty)} Stück im letzten Snapshot` : "Historischer Verlauf")}
       ${fold("season", "Tageszeit & Wochentag", "Wann ist es am günstigsten?")}
       ${fold("all", "Alle Auktionshäuser im Vergleich", `${info.houses.filter((h) => h.kind === "haus").length} Häuser`)}
@@ -1076,6 +1091,27 @@ async function viewItem(r) {
         <div class="kpi" title="Tägliche Schwankung (Std.-Abw. der Log-Renditen)"><div class="l">Schwankung</div><div class="v">${v.daily == null ? "–" : num(v.daily * 100, 1) + " %/Tag"}</div><div class="d">${v.daily == null ? "ab 2 Tagen Daten" : v.daily < 0.03 ? "stabil" : v.daily < 0.1 ? "normal" : "stark"}</div></div>
         <div class="kpi"><div class="l">Auktionen</div><div class="v">${num(house.last_auctions)}</div><div class="d">Median ${money(house.last_median)}</div></div>
       </div>`;
+    },
+    liq: (el) => {
+      const days = (info.liquidity || {})[String(house.house_id)] || [];
+      if (house.liq_score == null && !days.length) {
+        el.innerHTML = '<div class="empty">Für dieses Haus liegen noch keine Umsatzsignale vor. Die Auswertung entsteht aus den stündlichen Marktläufen und braucht einige Stunden Vorlauf.</div>';
+        return;
+      }
+      const kpis = house.liq_score != null ? `<div class="mini">
+        <div class="kpi"><div class="l">Umsatz-Score (7 Tage)</div><div class="v">${num(house.liq_score)} / 100</div><div class="d">${liqBadge(house)}</div></div>
+        <div class="kpi"><div class="l">Umsatzsignale</div><div class="v">${num(house.liq_events)}</div><div class="d">davon ${num(house.liq_vanish)} komplette Ausverkäufe</div></div>
+        <div class="kpi"><div class="l">Gelistet</div><div class="v">${num((house.liq_presence || 0) * 100, 0)} %</div><div class="d">der geprüften Stunden-Snapshots</div></div>
+        <div class="kpi"><div class="l">Verschwundene Menge</div><div class="v">${num(house.liq_units)}</div><div class="d">obere Schätzung, enthält Abläufe und Zurücknahmen</div></div>
+      </div>` : "";
+      const hist = days.length ? `<h3 style="margin:14px 0 6px">Tägliche Signale</h3>` + table([
+        { label: "Tag", fmt: (x) => new Date(x.day * 86400e3).toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit" }) },
+        { label: "gelistet", num: true, fmt: (x) => x.expected ? num(100 * x.present / x.expected, 0) + " %" : "–" },
+        { label: "Signale", num: true, fmt: (x) => num(x.events) },
+        { label: "Ausverkäufe", num: true, fmt: (x) => num(x.vanish) },
+        { label: "Menge", num: true, fmt: (x) => num(x.units) }],
+        [...days].reverse().slice(0, 14), { empty: "Noch keine abgeschlossenen Tage." }) : "";
+      el.innerHTML = kpis + hist + `<p class="note" style="margin-top:10px">Umsatzsignale entstehen aus beobachteten Angebotsbewegungen: Ausverkäufe und Mengeneinbrüche zwischen geprüften Stunden-Snapshots. Teilstände nach Abruffehlern sind ausgeklammert. Ein tatsächlicher Verkauf ist damit wahrscheinlich, aber nicht bewiesen – Auktionen können auch ablaufen oder zurückgenommen worden sein.</p>`;
     },
     qty: (el) => {
       if (!pts.length) { el.innerHTML = '<div class="empty">Keine Daten.</div>'; return; }
@@ -1332,12 +1368,40 @@ async function viewDeals(r) {
     { label: "Jetzt", num: true, fmt: (x) => money(x.last_min) },
     { label: "Referenz", num: true, fmt: (x) => money(x.ref_price) },
     { label: "Rabatt", num: true, fmt: (x) => `<span class="chg up">−${num(x.discount, 1)} %</span>` },
+    COL.liq,
     { label: "Ersparnis/Stück", num: true, fmt: (x) => money(x.saving) },
     { label: "Menge", num: true, fmt: (x) => num(x.last_qty) },
     { label: "Ø Menge 7 T", num: true, fmt: (x) => num(x.avg7_qty) },
     { label: "Reihen-Tief 30 T", num: true, fmt: (x) => money(x.low30_min) },
     { label: "Stand", fmt: (x) => `<span class="muted small">${dt(x.last_ts)}</span>` }, COL.cmp],
     d.deals, { rowHref: (x) => `/item/${x.item_id}?house=${x.house_id}`, empty: "Keine Deals mit diesen Kriterien." });
+}
+
+// ============================================================== Liquidität
+async function viewLiquidity(r) {
+  const house = curHouse(r.params);
+  const h = houseById(house);
+  const p = { ...r.params };
+  const classes = await getClasses(house);
+  main.innerHTML = `
+    <div class="pagehead"><h1>Liquidität</h1><span class="sub">Wie oft Items wirklich den Besitzer wechseln · ${esc(hname(h))} · geschätzt aus Angebotsbewegungen, keine Verkaufsnachweise</span></div>
+    <div class="card filters">
+      <label class="f"><span>Klasse</span><select id="cl"><option value="">Alle</option>${classes.map((c) => `<option value="${c.class_id}" ${String(p.class) === String(c.class_id) ? "selected" : ""}>${esc(c.class_name)}</option>`).join("")}</select></label>
+    </div>
+    <div class="grid g2"><div class="card flush" id="hot"><div class="loading">…</div></div><div class="card flush" id="cold"><div class="loading">…</div></div></div>`;
+  $("#cl").onchange = (e) => setParams({ class: e.target.value });
+  const d = await api("liquidity", { ...p, house, limit: 40 });
+  const listed = { label: "gelistet", num: true, title: "Anteil der geprüften Stunden-Snapshots mit Angebot (7 Tage)", fmt: (x) => num((x.liq_presence || 0) * 100, 0) + " %" };
+  $("#hot").innerHTML = `<h2>▲ Meistgehandelt</h2>` + table([COL.item, COL.liq,
+    { label: "Signale 7 T", num: true, title: "Ausverkäufe + Mengeneinbrüche zwischen geprüften Stunden-Snapshots", fmt: (x) => num(x.liq_events) },
+    { label: "davon Ausverkäufe", num: true, fmt: (x) => num(x.liq_vanish) },
+    listed, COL.price, COL.cmp],
+    d.hot, { rowHref: (x) => `/item/${x.item_id}?house=${x.house_id}`, empty: "Noch keine Umsatzsignale für diesen Markt." });
+  $("#cold").innerHTML = `<h2>⚠ Gelisted, aber (fast) kein Umsatz in 7 Tagen</h2>` + table([COL.item, COL.liq,
+    listed,
+    { label: "aktuelles Angebot", num: true, fmt: (x) => money(x.last_min) },
+    { label: "Marktwert", num: true, fmt: (x) => money(x.market_value, { short: true }) }, COL.cmp],
+    d.cold, { rowHref: (x) => `/item/${x.item_id}?house=${x.house_id}`, empty: "Keine Angebote ohne Umsatzsignale." });
 }
 
 // ================================================================== Daten

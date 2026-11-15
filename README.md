@@ -109,7 +109,8 @@ Auf jeder Item-Seite zeigt der aufklappbare Abschnitt **„Herkunft & Verwendung
 | **Snapshot** | Alle Items eines Zeitpunkts mit Änderung zum vorherigen Snapshot; für ein Item die **Preisstaffel** (Menge je Preisstufe) inkl. Kosten für 20/100 Stück; Vor/Zurück-Navigation |
 | **Vergleich** | Bis zu 8 Items in einem Chart, absolut oder **indexiert (Start = 100)**, wählbare Kennzahl, Kennzahlentabelle, **Korrelationsmatrix** der Preisänderungen |
 | **Top-Movers** | Gewinner/Verlierer über 24 h oder 7 T, nach Mindestpreis oder Median, Mindest-Liquidität und Klasse filterbar |
-| **Deals** | Items, deren aktueller Mindestpreis X % unter dem Ø 7 T / Ø 30 T liegt (Referenz Mindestpreis oder Median), mit Ersparnis pro Stück |
+| **Deals** | Items, deren aktueller Mindestpreis X % unter dem Ø 7 T / Ø 30 T liegt (Referenz Mindestpreis oder Median), mit Ersparnis pro Stück und **Umsatz-Badge** je Haus |
+| **Liquidität** | Items mit den meisten Umsatz-Signalen der letzten 7 Tage (schneller Umschlag) und Items ohne beobachteten Umsatz (teure Ladenhüter), mit Score, Signalen und Gelistet-Anteil |
 | **Daten** | Auctionator-Import per Knopf oder Datei-Upload (Drag & Drop), Battle.net-Status und manueller Abruf, Häuserliste, Import-Protokoll |
 
 Der Markt wird oben rechts gewählt; Hell/Dunkel per ◐. Items kommen über „+ Vgl.“ in jeder Tabelle in den Vergleich.
@@ -124,6 +125,7 @@ Der Markt wird oben rechts gewählt; Hell/Dunkel per ◐. Items kommen über „
 * **Tageszeit-/Wochentagsmuster:** jeder Punkt geteilt durch den zentrierten 24-h- bzw. 7-Tage-Median (entfernt den Trend), gemittelt je Stunde (Ortszeit) bzw. Wochentag. Braucht stündliche Daten (≥ 2 Tage) bzw. ≥ 14 Tage Historie.
 * **Marktwert:** Mindestpreis × angebotene Menge (Obergrenzen-Schätzung des Angebotswerts).
 * **Deals:** aktueller Mindestpreis ≤ Referenz · (1 − Schwelle).
+* **Umsatz-Signale / Liquidität:** Stündliche Snapshots werden je Item und Haus verglichen; ein Signal ist ein Ausverkauf (Menge geht auf 0) oder ein deutlicher Mengeneinbruch (min. 2 Stück, min. 25 %). Ausgelassene Prüflücken (Snapshots > 3 h auseinander) und Teilstände (Fehlscans, complete=0) zählen nicht. Gelistet = Anteil der geprüften Snapshots, in denen das Item anwesend war. **Umsatz-Score (0–100)** = 40 % Gelistet-Anteil + 60 % Perzentil der Signale pro Stunde innerhalb des Hauses. Ein Signal ist ein *beobachtetes* Umsatz-Anzeichen (Auktionen können auch ausgelaufen sein), kein Verkaufsnachweis. Liquiditätswerte entstehen seit diesem Update stündlich mit; Tageshistorie ab 90 Tagen Retention.
 
 ---
 

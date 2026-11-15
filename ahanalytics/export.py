@@ -72,6 +72,7 @@ SUMMARY_FIELDS = [
     "name", "name_en", "quality", "class_id", "class_name", "subclass_id", "subclass_name", "icon",
     "item_level", "is_commodity", "chg24_min", "chg7d_min", "chg24_median", "chg7d_median",
     "market_value", "spark", "market_ts", "market_complete", "is_current", "current_quantity", "availability", "aliases", "translation_missing", "catalog_build", "catalog_state", "catalog_test", "binding",
+    "liq_presence", "liq_events", "liq_vanish", "liq_units", "liq_rate", "liq_score", "liq_ts",
 ]
 ITEM_HOUSE_FIELDS = [
     "last_lowest", "prev24_ts", "prev7d_ts", "price_basis",
@@ -79,6 +80,7 @@ ITEM_HOUSE_FIELDS = [
     "prev24_min", "prev7d_min", "avg7_min", "avg30_min", "avg7_qty", "cv7_min", "low30_min", "high30_min",
     "chg24_min", "chg7d_min", "chg24_median", "chg7d_median", "market_value",
     "market_ts", "market_complete", "is_current", "current_quantity", "availability",
+    "liq_presence", "liq_events", "liq_vanish", "liq_units", "liq_rate", "liq_score",
 ]
 CATALOG_FIELDS = ["item_id", "name", "name_en", "quality", "class_id", "class_name", "subclass_id", "subclass_name",
                   "icon", "item_level", "is_commodity", "aliases", "translation_missing", "catalog_build", "catalog_state", "catalog_test", "binding", "has_history", "required_level", "slot"]
@@ -253,7 +255,8 @@ def export_site(con, out_dir: str, history_days: int = 180, snapshot_files: int 
             info["item"].pop(k, None)
         hs_rows = info["houses"]
         _write(os.path.join(data_dir, "item", f"{iid}.json"),
-               {"item": info["item"], "houses": _columnar(ITEM_HOUSE_FIELDS, hs_rows), "history": hist})
+               {"item": info["item"], "houses": _columnar(ITEM_HOUSE_FIELDS, hs_rows),
+                "history": hist, "liquidity": info.get("liquidity") or {}})
         if n and n % 1000 == 0:
             log(f"  {n} Items exportiert …")
     stats["items"] = len(item_ids)

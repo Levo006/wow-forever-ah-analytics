@@ -191,6 +191,9 @@ table.t { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-
 .up { color: var(--up); } .down { color: var(--down); }
 .chg { font-weight: 600; white-space: nowrap; }
 .pill { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; background: var(--surface-3); color: var(--text-secondary); white-space: nowrap; }
+.pill.liq-h { background: color-mix(in srgb, var(--up) 16%, transparent); color: var(--up); }
+.pill.liq-m { background: color-mix(in srgb, #d8a028 16%, transparent); color: #d8a028; }
+.pill.liq-l { background: color-mix(in srgb, var(--down) 14%, transparent); color: var(--down); }
 .spark { display: block; }
 .bar { height: 6px; border-radius: 3px; background: var(--s1); min-width: 2px; }
 .barcell { width: 140px; }

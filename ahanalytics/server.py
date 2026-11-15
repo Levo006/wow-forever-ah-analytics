@@ -124,6 +124,7 @@ def make_handler(cfg, pool: db.ConnectionPool, cache: ResponseCache, collector: 
         ("GET", r"/api/compare", lambda c, p, m: api.compare(c, p)),
         ("GET", r"/api/movers", lambda c, p, m: api.movers(c, p)),
         ("GET", r"/api/deals", lambda c, p, m: api.deals(c, p)),
+        ("GET", r"/api/liquidity", lambda c, p, m: api.liquidity(c, p)),
         ("GET", r"/api/import/log", lambda c, p, m: api.import_log(c, p)),
         ("GET", r"/api/recipes", lambda c, p, m: api.recipes(c, p)),
         ("GET", r"/api/quests", lambda c, p, m: api.quests(c, p)),

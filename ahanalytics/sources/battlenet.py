@@ -375,6 +375,8 @@ def collect(con, client: BattleNetClient, ruleset=None, only_houses=None,
             if touched:
                 db.prune_ladders(con,ladder_keep)
                 db.refresh_summary(con,touched)
+                from .. import liquidity
+                liquidity.update_liquidity(con,touched,log=log)
             status = "complete" if all(h["valid"] for h in staged) and not manifest["errors"] and not only_houses and all(g["complete"] and g.get("activation")!="retained_previous_content_conflict" for g in manifest["groups"] if g["expected"]) else "partial"
             if not any(h["valid"] for h in staged): status="rejected"
             finish(status)

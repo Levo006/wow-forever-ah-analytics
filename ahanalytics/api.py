@@ -6,6 +6,7 @@ import os
 import time
 
 from . import db, metrics, itemnames
+from . import liquidity as liquidity_
 from .itemmeta import CLASS_NAMES, QUALITY_NAMES
 
 RANGES = {"24h": 86400, "7d": 7 * 86400, "30d": 30 * 86400, "90d": 90 * 86400, "all": None}
@@ -137,6 +138,8 @@ SUMMARY_COLS = """
   i.item_level, i.is_commodity, i.meta_status,
   i.catalog_build, i.catalog_state, i.catalog_test, i.binding, i.catalog_aliases,
   va.alias AS verified_alias,
+  lq.presence AS liq_presence, lq.events AS liq_events, lq.vanish AS liq_vanish,
+  lq.units AS liq_units, lq.rate AS liq_rate, lq.score AS liq_score, lq.computed_at AS liq_ts,
   h.name AS house_name, h.region, h.faction, h.granularity,
   (SELECT MAX(ts) FROM snapshots z WHERE z.house_id=s.house_id) AS market_ts,
   COALESCE((SELECT complete FROM snapshots z WHERE z.house_id=s.house_id ORDER BY ts DESC LIMIT 1),0) AS market_complete,
@@ -149,6 +152,7 @@ SUMMARY_COLS = """
 SUMMARY_FROM = """
   FROM item_summary s JOIN items i ON i.id = s.item_id JOIN houses h ON h.id = s.house_id
   LEFT JOIN verified_aliases va ON va.item_id = s.item_id AND va.status = 'ok'
+  LEFT JOIN item_liquidity lq ON lq.house_id = s.house_id AND lq.item_id = s.item_id
 """
 
 
@@ -448,7 +452,15 @@ def item(con, item_id, params):
         d = info.get(h["house_id"], {})
         for k in ("kind", "label", "short", "verbund", "group"):
             h[k] = d.get(k)
-    return {"item": meta, "houses": hs}
+    liq: dict = {}
+    for r in con.execute(
+            """SELECT d.house_id, d.day, d.expected, d.present, d.events, d.vanish, d.units
+               FROM liquidity_daily d JOIN houses h ON h.id = d.house_id
+               WHERE d.item_id=? ORDER BY d.house_id, d.day""", (item_id,)):
+        liq.setdefault(str(r[0]), []).append(
+            {"day": r[1], "expected": r[2], "present": r[3],
+             "events": r[4], "vanish": r[5], "units": r[6]})
+    return {"item": meta, "houses": hs, "liquidity": liq}
 
 
 def _range_bounds(con, hid, rng):
@@ -699,6 +711,28 @@ def deals(con, params):
             ORDER BY discount DESC LIMIT ?""", args + [limit]).fetchall()
     return {"house_id": hid, "basis": basis, "threshold": threshold * 100,
             "deals": [_item_row(r) for r in rows]}
+
+
+def liquidity(con, params):
+    """Liquiditäts-Ranking: meiste Umsatzsignale bzw. aktuelle Angebote ohne Umsatz."""
+    hid = _resolve_house(con, params)
+    limit = _int(params, "limit", 30, lo=1, hi=200)
+    where = ["s.house_id = ?", "lq.score IS NOT NULL",
+             "s.last_ts=(SELECT MAX(ts) FROM snapshots WHERE house_id=s.house_id)"]
+    args: list = [hid]
+    if params.get("class") not in (None, ""):
+        where.append("i.class_id = ?")
+        args.append(_int(params, "class"))
+    base = f"SELECT {SUMMARY_COLS} {SUMMARY_FROM} WHERE {' AND '.join(where)}"
+    hot = con.execute(base + " ORDER BY lq.score DESC, lq.events DESC, s.item_id LIMIT ?",
+                      args + [limit]).fetchall()
+    cold = con.execute(base + " AND lq.events <= 1"
+                              " ORDER BY market_value DESC, s.item_id LIMIT ?",
+                       args + [limit]).fetchall()
+    ts = con.execute("SELECT MAX(computed_at) FROM item_liquidity WHERE house_id=?",
+                     (hid,)).fetchone()[0]
+    return {"house_id": hid, "window_days": liquidity_.WINDOW // 86400, "computed_at": ts,
+            "hot": [_item_row(r) for r in hot], "cold": [_item_row(r) for r in cold]}
 
 
 def recipes(con, params):
