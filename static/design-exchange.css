@@ -126,7 +126,7 @@ td {padding-top:13px;padding-bottom:13px;}
 .fold>summary {min-height:60px;padding:17px 20px;}
 .fold .ft {font-size:14px;letter-spacing:-.01em;}
 :focus-visible {outline:2px solid var(--link);outline-offset:3px;}
-@media(min-width:1051px) { .topbar>.nav {grid-column:2;}.topctl {grid-column:1/-1;} .topbar:after {content:"PREISE. PERSPEKTIVE. PROFIT?";grid-column:3;grid-row:1;font-size:9px;letter-spacing:.15em;color:var(--text-muted);} }
+@media(min-width:1051px) { .topbar>.nav {grid-column:2;}.topctl {grid-column:1/-1;} .topbar:after {content:"PREISE. PERSPEKTIVE. PROFIT?";grid-column:3;grid-row:1;font-size:9px;letter-spacing:.15em;color:var(--text-muted);} html[lang="en"] .topbar:after {content:"PRICES. PERSPECTIVE. PROFIT?";} }
 @media(max-width:1050px) and (min-width:701px) {.topbar {grid-template-columns:1fr auto;}.nav {justify-self:end;}.topctl {flex-wrap:wrap;}.adventure-link {padding:15px 13px;gap:10px;}.adventure-link .arrow{display:none;}}
 @media(max-width:700px) {
  body {padding-bottom:85px;font-size:13px;}
@@ -447,4 +447,4 @@ td {padding-top:13px;padding-bottom:13px;}
 @media(max-width:700px) {
   .langswitch {order:1;align-self:center;}
   .langswitch button {height:42px;}
-}
+  }
