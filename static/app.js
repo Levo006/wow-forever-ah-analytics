@@ -371,15 +371,27 @@ function updateCompareBadge() {
 }
 
 // ============================================================= Übersicht
+/** Täglich wechselnde Händlerweisheit für die Startseiten-Suche. */
+const HERO_FLAVOR = [
+  "„Zeit ist Gold, Freund – und hier siehst du, wie viel.“",
+  "„Alles muss raus! Zumindest sagt das die Angebotsmenge.“",
+  "„Der frühe Händler fängt das Schnäppchen.“",
+  "„Kauf, wenn es fällt. Schrei, wenn es steigt. So will es das Handelshaus.“",
+  "„Ein Beutel voll Gold beginnt mit einem Blick auf die Preise.“",
+  "„Wer den Markt kennt, zahlt nie drauf.“",
+];
+
 /** Große Suche oben auf der Startseite (sofort sichtbar, Übersicht lädt darunter). */
 function homeSearch(house) {
   const ex = ["Kupfererz", "Seidenstoff", "Rezept: Elixier", "Muster: Leinen", "Zähes Wolfsfleisch"];
+  const flavor = HERO_FLAVOR[Math.floor(Date.now() / 864e5) % HERO_FLAVOR.length];
   return `<form class="card hero" id="heroForm" role="search">
       <h1>Item suchen</h1>
       <p class="muted">Preise, Verlauf, Herkunft (Beute, Händler, Quests) und Verwendung (Berufe, Rezepte, was daraus wird) – für jedes Item, auch ohne AH-Angebot.</p>
       <div class="herobox"><input id="heroInput" type="search" name="q" autocomplete="off" placeholder="Item-Name (DE/EN) oder ID" aria-label="Item suchen">
         <button class="btn primary">Suchen</button><div id="heroResults" class="ac hero-ac" hidden></div></div>
       <div class="heroex muted small">Beispiele: ${ex.map((q) => `<a href="#/search?q=${encodeURIComponent(q)}${house ? "&house=" + house : ""}">${esc(q)}</a>`).join(" · ")}</div>
+      <div class="heroflavor">${flavor}</div>
     </form>
     <div id="dash"><div class="loading">Lade Marktübersicht …</div></div>`;
 }
