@@ -489,3 +489,8 @@ h1 { font-weight: 700; }
 .secthead { display: flex; align-items: baseline; gap: 12px; margin: 22px 0 12px; flex-wrap: wrap; }
 .secthead h2 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: 18px; }
 .secthead .sub { color: var(--text-muted); font-size: 13px; }
+
+/* Fokus-Listen: Item-Namen duerfen umbrechen, keine Querscrollbalken */
+.g3 table.t { font-size: 12.5px; }
+.g3 table.t td, .g3 table.t th { padding-left: 6px; padding-right: 6px; }
+.g3 table.t td:first-child, .g3 table.t th:first-child { white-space: normal; overflow-wrap: anywhere; }
