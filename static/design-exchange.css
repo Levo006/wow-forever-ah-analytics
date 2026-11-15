@@ -280,3 +280,160 @@ td {padding-top:13px;padding-bottom:13px;}
 .expert-analysis-body {padding:0 10px 10px;}
 @media(max-width:700px){.expert-analysis>summary>span{display:block;margin:5px 0 0 13px;font-size:9px;}}
 .original-tooltip th {text-transform:none;letter-spacing:0;backdrop-filter:none;}
+
+/* ROUND3-2026-11: Desktop-Breite und Lesbarkeit. Breitere Spalte, groessere Typo und Zahlen,
+   klarere Scan-Hierarchie auf grossen Monitoren. Mobil (<=700px) und Tablet (701-1050px) unveraendert. */
+
+/* Stufe 1: ab Desktop waechst die Spalte mit dem Monitor statt bei 1376px stehen zu bleiben. */
+@media (min-width: 1051px) {
+  main { max-width: 1560px; }
+  .topbar { padding-left: max(28px, calc((100vw - 1560px)/2)); padding-right: max(28px, calc((100vw - 1560px)/2)); }
+  .foot { max-width: 1560px; }
+  .t tbody tr:nth-child(even) { background: color-mix(in srgb, var(--surface-2) 35%, transparent); }
+  .t tbody tr:hover { background: var(--surface-2); }
+}
+
+/* Stufe 2: grosse Desktop-Monitore (ab 1600px) - Typo, Zahlen, Icons und Kacheln einen Schritt groesser. */
+@media (min-width: 1500px) {
+  body { font-size: 15px; }
+  main { max-width: 1700px; padding: 36px 34px 52px; }
+  .topbar { padding-left: max(32px, calc((100vw - 1700px)/2)); padding-right: max(32px, calc((100vw - 1700px)/2)); gap: 20px 32px; }
+  .foot { max-width: 1700px; font-size: 11px; }
+  .brandtext { font-size: 22px; }
+  .brandtext span { font-size: 9px; }
+  .brandmark { width: 46px; height: 50px; font-size: 36px; }
+  .brandmark.coin-logo { width: 48px; height: 48px; }
+  .nav a { font-size: 14px; padding: 13px 16px; gap: 9px; }
+  .nav a svg { width: 18px; height: 18px; }
+  .market button { padding: 6px 18px; min-height: 38px; }
+  .market select { min-height: 34px; }
+  .quick input { width: 300px; min-height: 38px; }
+  .iconbtn { width: 42px; height: 42px; }
+  .ac { width: 480px; }
+  .ac .acsub { font-size: 12px; }
+  .ac .acprice { font-size: 14px; }
+  .hero { min-height: 430px; padding: 48px 52px; }
+  .hero h1 { font-size: clamp(36px, 3.4vw, 56px); }
+  .hero .eyebrow { font-size: 11px; }
+  .hero-desc { font-size: 15px; max-width: 500px; }
+  .herobox { max-width: 600px; }
+  .herobox input { font-size: 15px; min-height: 50px; }
+  .hero .btn.primary { font-size: 14px; min-height: 50px; padding: 0 26px; }
+  .heroex { font-size: 11px; max-width: 560px; }
+  .heroflavor { font-size: 13px; }
+  .hero-seal { font-size: 10px; }
+  .hero-seal span { font-size: 30px; }
+  .adventure-links { gap: 16px; margin: 20px 0 34px; }
+  .adventure-link { padding: 20px 22px; gap: 16px; }
+  .adventure-icon { width: 48px; height: 48px; font-size: 32px; }
+  .adventure-link b { font-size: 15px; }
+  .adventure-link small { font-size: 12px; }
+  .market-heading h1 { font-size: 31px; }
+  .market-heading .sub { font-size: 12px; max-width: 460px; }
+  .kpis { gap: 16px; margin-bottom: 20px; }
+  .kpi { padding: 26px 24px 22px; }
+  .kpi .l { font-size: 12px; min-height: 19px; }
+  .kpi .v { font-size: 34px; margin-top: 10px; }
+  .kpi .d { font-size: 11px; margin-top: 6px; }
+  .mini .kpi { padding: 14px 16px; }
+  .mini .kpi .v { font-size: 20px; }
+  .card { padding: 20px; }
+  .card h2 { font-size: 18px; }
+  .card.flush > h2 { padding: 18px 20px 0; }
+  .grid { gap: 20px; }
+  .secthead { margin: 34px 0 18px; }
+  .secthead h2 { font-size: 26px; }
+  .secthead .sub { font-size: 11px; }
+  .crumbs { font-size: 12px; }
+  .note { font-size: 12px; padding: 12px 16px; }
+  .small { font-size: 13px; }
+  .btn { font-size: 13px; min-height: 40px; padding: 8px 16px; }
+  .btn.small { font-size: 12.5px; min-height: 30px; }
+  .seg button { padding: 6px 13px; }
+  .tgl button { font-size: 13px; padding: 5px 14px; }
+  .filters .f > span { font-size: 11.5px; }
+  .qual span { font-size: 13px; }
+  .t th, .t td { padding: 10px 13px; }
+  th { font-size: 11px; padding-top: 15px; padding-bottom: 15px; }
+  td { padding-top: 14px; padding-bottom: 14px; }
+  .g3 table.t { font-size: 13.5px; }
+  .t td.itemcell { max-width: 460px; }
+  .g3 table.t td, .g3 table.t th { padding-left: 8px; padding-right: 8px; }
+  .t td.itemcell .item { font-weight: 600; }
+  .pager { font-size: 13px; }
+  .ico { width: 34px; height: 34px; }
+  .ico.big { width: 64px; height: 64px; font-size: 26px; }
+  .ico.md { width: 38px; height: 38px; }
+  .pill { font-size: 13px; }
+  .barcell { width: 170px; }
+  .chartbox { height: 400px; }
+  .chartbox.md { height: 280px; }
+  .chartbox.sm { height: 200px; }
+  .legend { font-size: 13px; }
+  .mcard .big { font-size: 32px; }
+  .mcard .mt1 { font-size: 13px; }
+  .mcard .mt1 b { font-size: 14px; }
+  .mcard .mrow { font-size: 13px; }
+  .ftab { padding: 17px 20px; }
+  .ftab .fn { font-size: 14px; }
+  .ftab .fn small { font-size: 12px; }
+  .ftab .fp { font-size: 26px; }
+  .ftab .fd { font-size: 12px; }
+  .hcards { gap: 14px; }
+  .hcard { padding: 17px; }
+  .hcard .ht { font-size: 13px; }
+  .hcard .hp { font-size: 25px; }
+  .hcard .hm { font-size: 12.5px; }
+  .hcard.off .hp { font-size: 14px; }
+  .fold > summary { padding: 18px 22px; }
+  .fold .ft { font-size: 15px; }
+  .fold .fs { font-size: 13px; }
+  .fold .fb h3 { font-size: 15px; }
+  .item-banner { padding: 34px; gap: 24px; }
+  .item-banner .ico.big { width: 88px; height: 88px; }
+  .item-banner h1 { font-size: 38px; }
+  .item-banner .en { font-size: 12px; }
+  .item-banner .tag { font-size: 11px; }
+  .itemhead .meta { font-size: 13.5px; }
+  .ilayout { grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; }
+  .wtip { font-size: 14px; }
+  .wtip .tn { font-size: 16px; }
+  .wtip.original-tooltip, .item-inspector .wtip { font-size: 15px; }
+  .original-tooltip b { font-size: 18px; }
+  .original-item-panel { padding: 24px; }
+  .original-item-label { font-size: 11px; }
+  .tooltip-provenance { font-size: 11px; }
+  .item-inspector { width: 520px; }
+  .inspector-top { font-size: 10px; }
+  .inspector-prices { font-size: 13px; }
+  .inspector-source { font-size: 11px; }
+  .catgrid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+  .cat { padding: 16px; }
+  .cat .nm { font-size: 16px; }
+  .cat .row { font-size: 13.5px; }
+  .matrix td { font-size: 13px; min-width: 76px; }
+  .expert-analysis { font-size: 13px; }
+  .expert-analysis > summary > span { font-size: 11px; }
+  .rt td { font-size: 14px; }
+  .rchips button { font-size: 13px; }
+  .rfoot { font-size: 14px; }
+  .hint { font-size: 14px; }
+  .infogrid { grid-template-columns: minmax(0, 360px) minmax(0, 1fr); gap: 20px; }
+  .listing-status { font-size: 12px; }
+}
+
+/* Stufe 3: sehr breite Monitore (ab 2100px) - Spalte und Schrift wachsen weiter mit. */
+@media (min-width: 2100px) {
+  body { font-size: 16px; }
+  main { max-width: 1900px; }
+  .topbar { padding-left: max(36px, calc((100vw - 1900px)/2)); padding-right: max(36px, calc((100vw - 1900px)/2)); }
+  .foot { max-width: 1900px; }
+  .kpi .v { font-size: 38px; }
+  .hero { min-height: 470px; }
+  .hero h1 { font-size: clamp(40px, 3.4vw, 64px); }
+  .chartbox { height: 440px; }
+  .ftab .fp { font-size: 29px; }
+  .hcard .hp { font-size: 28px; }
+  .mcard .big { font-size: 36px; }
+  .item-banner h1 { font-size: 42px; }
+}
