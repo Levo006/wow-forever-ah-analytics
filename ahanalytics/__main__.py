@@ -177,6 +177,10 @@ def main(argv=None):
                         house_hourly_days=args.house_hourly_days, house_keep_days=args.house_keep_days)
         with db.transaction(con):
             db.prune_ladders(con, cfg["collector"]["ladder_keep"])
+            # Liquidität hier nochmals über alle Stundenhäuser rechnen: läuft auch dann,
+            # wenn der Marktabruf nichts Neues freigegeben hat (Ausfall, unveränderte Daten).
+            from . import liquidity
+            liquidity.update_liquidity(con)
         con.execute("PRAGMA wal_checkpoint(TRUNCATE)")  # alles in die Hauptdatei (wird danach gepackt)
         if args.vacuum and (st["days"] or st["deleted"]):
             con.execute("VACUUM")
