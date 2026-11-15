@@ -32,7 +32,7 @@ import time
 
 from . import api, catalog, db, gamedata, origins, recipes
 
-ASSETS = ("app.css", "static-api.js", "recipes-core.js", "app.js")
+ASSETS = ("app.css", "design-exchange.css", "static-api.js", "recipes-core.js", "app.js", "item-tooltip.js")
 
 
 def frontend_version(src_dir=None) -> str:

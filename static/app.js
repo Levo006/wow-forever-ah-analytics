@@ -276,7 +276,7 @@ function table(cols, rows, { sort, dir, onSort, rowHref, empty = "Keine Einträg
     return `<th class="${c.num ? "n" : ""} ${s}" ${c.sort ? `data-sort="${c.sort}"` : ""} ${c.title ? `title="${esc(c.title)}"` : ""}>${c.label}</th>`;
   }).join("");
   const tb = rows.map((r, i) => { const href = rowHref && rowHref(r); return `<tr data-i="${i}" ${href ? `data-href="${esc(href)}"` : 'class="nohover"'}>`; }).map((open, i) => open +
-    cols.map((c) => `<td class="${c.num ? "n" : ""} ${c.cls || ""}">${c.fmt ? c.fmt(rows[i]) : esc(rows[i][c.key])}</td>`).join("") + "</tr>").join("");
+    cols.map((c) => `<td data-label="${esc(c.label || "")}" class="${c.num ? "n" : ""} ${c.cls || ""}">${c.fmt ? c.fmt(rows[i]) : esc(rows[i][c.key])}</td>`).join("") + "</tr>").join("");
   const id = "t" + Math.random().toString(36).slice(2, 8);
   setTimeout(() => {
     const el = document.getElementById(id);
@@ -386,13 +386,21 @@ function homeSearch(house) {
   const ex = ["Kupfererz", "Seidenstoff", "Rezept: Elixier", "Muster: Leinen", "Zähes Wolfsfleisch"];
   const flavor = HERO_FLAVOR[Math.floor(Date.now() / 864e5) % HERO_FLAVOR.length];
   return `<form class="card hero" id="heroForm" role="search">
-      <h1>Item suchen</h1>
-      <p class="muted">Preise, Verlauf, Herkunft (Beute, Händler, Quests) und Verwendung (Berufe, Rezepte, was daraus wird) – für jedes Item, auch ohne AH-Angebot.</p>
+      <div class="hero-scene" aria-hidden="true"></div>
+      <div class="hero-copy"><div class="eyebrow"><span class="tiny-star">✦</span> DEIN HANDELSPOSTEN IN AZEROTH</div>
+      <h1>Wissen ist Macht.<br><em>Und manchmal Gold.</em></h1>
+      <p class="hero-desc">Weniger raten. Besser handeln. Entdecke Preise, Marktbewegungen und die Geschichte hinter jedem Item.</p>
       <div class="herobox"><input id="heroInput" type="search" name="q" autocomplete="off" placeholder="Item-Name (DE/EN) oder ID" aria-label="Item suchen">
         <button class="btn primary">Suchen</button><div id="heroResults" class="ac hero-ac" hidden></div></div>
       <div class="heroex muted small">Beispiele: ${ex.map((q) => `<a href="#/search?q=${encodeURIComponent(q)}${house ? "&house=" + house : ""}">${esc(q)}</a>`).join(" · ")}</div>
-      <div class="heroflavor">${flavor}</div>
+      <div class="heroflavor">${flavor}</div></div>
+      <div class="hero-seal" aria-hidden="true"><span>EU</span>WoW: Forever</div>
     </form>
+    <div class="adventure-links" aria-label="Schnelleinstieg">
+      <a href="#/search${house ? "?house=" + house : ""}" class="adventure-link"><span class="adventure-icon">⌕</span><span><b>Schatzsuche</b><small>Dein Item. Dein Preis.</small></span><span class="arrow">↗</span></a>
+      <a href="#/liquidity${house ? "?house=" + house : ""}" class="adventure-link"><span class="adventure-icon">↗</span><span><b>Marktkompass</b><small>Was bewegt sich wirklich?</small></span><span class="arrow">↗</span></a>
+      <a href="#/categories?class=7${house ? "&house=" + house : ""}" class="adventure-link"><span class="adventure-icon">◇</span><span><b>Für deine Berufe</b><small>Handwerkswaren entdecken</small></span><span class="arrow">↗</span></a>
+    </div>
     <div id="dash"><div class="loading">Lade Marktübersicht …</div></div>`;
 }
 
@@ -407,7 +415,7 @@ async function viewDashboard(r) {
   const k = d.kpis, h = d.house;
   const hh = houseById(h.id) || h;
   $("#dash").innerHTML = `
-    <div class="pagehead"><h1>${esc(hname(hh))}</h1>
+    <div class="pagehead market-heading"><div><div class="eyebrow">DER MARKT AUF EINEN BLICK</div><h1>${esc(hname(hh))}</h1></div>
       <span class="sub">${esc(scopeText(hh))} · Stand ${dt(d.last_ts)} (${ago(d.last_ts)})</span></div>
     <div class="kpis">
       <div class="kpi"><div class="l">Beobachtete Items</div><div class="v">${num(k.items)}</div></div>
@@ -426,7 +434,7 @@ async function viewDashboard(r) {
         { label: "Marktwert", num: true, fmt: (c) => money(c.market_value, { short: true }) },
       ], d.categories.slice(0, 9), { rowHref: (c) => `/categories?class=${c.class_id}&house=${h.id}` })}</div>
     </div>
-    <div class="secthead mt"><h2>Im Fokus</h2><span class="sub">nur Handelswaren und Items ab Qualität ungewöhnlich · kein Grau- und Weißschrott</span></div>
+    <div class="secthead mt"><h2><span class="section-star" aria-hidden="true">✦</span> Im Fokus</h2><span class="sub">nur Handelswaren und Items ab Qualität ungewöhnlich · kein Grau- und Weißschrott</span></div>
     <div class="grid g3">
       <div class="card flush"><div class="cardhead" style="padding:14px 16px 0"><h2>▲ Steigt</h2><span class="right small muted">24 h</span></div>${moversMini(d.movers.gainers)}</div>
       <div class="card flush"><div class="cardhead" style="padding:14px 16px 0"><h2>▼ Fällt</h2><span class="right small muted">24 h</span></div>${moversMini(d.movers.losers)}</div>
@@ -555,6 +563,12 @@ function wowTooltip(it) {
     ${it.item_level && it.class_id != null && [2, 4].includes(+it.class_id) ? `<div class="cy">Gegenstandsstufe ${it.item_level}</div>` : ""}
     ${lines.map((l) => `<div class="ln ${col[l.c] || ""}"><span>${esc(l.t)}</span>${l.r ? `<span>${esc(l.r)}</span>` : ""}</div>`).join("")}
     ${it.vendor_sell ? `<div class="sell">Verkaufspreis: ${money(it.vendor_sell)}</div>` : ""}</div>`;
+}
+
+function originalItemPanel(it) {
+  const binding = ({1:"Wird beim Aufheben gebunden",2:"Wird beim Anlegen gebunden",3:"Wird bei Benutzung gebunden",4:"Questgegenstand"})[it.binding];
+  const fallback = wowTooltip(it) || `<div class="wtip"><div class="tn q${it.quality ?? 1}">${esc(it.name)}</div>${binding ? `<div>${binding}</div>` : ""}${it.item_level ? `<div class="cy">Gegenstandsstufe ${it.item_level}</div>` : ""}${it.slot ? `<div>${esc(it.slot)}</div>` : ""}${it.required_level ? `<div>Benötigt Stufe ${it.required_level}</div>` : ""}<p class="cm">Weitere Original-Stats werden geladen.</p></div>`;
+  return `<section class="original-item-panel"><div class="original-item-label"><span>ORIGINAL-ITEMTEXT</span><button type="button" class="btn" data-inspect-item="${Number(it.id || it.item_id)}">⌕ Vergrößern</button></div><div data-original-tooltip="${Number(it.id || it.item_id)}">${fallback}<p class="tooltip-provenance">Vorhandene Blizzard-Daten · vollständiger Forever-Text wird geladen …</p></div></section>`;
 }
 
 /** Aufklappbarer Abschnitt; Inhalt wird erst beim ersten Öffnen gerendert (Zustand wird gemerkt). */
@@ -890,11 +904,12 @@ async function viewItem(r) {
     // Item ohne AH-Daten (z. B. nur aus Rezepten bekannt): Kopf + Herstellung/Verwendung
     const sh = houseById(state.house);
     const fk0 = (sh && (GROUP_KINDS.includes(sh.kind) ? sh.kind : sh.group)) || "allianz";
-    main.innerHTML = `<div class="ihead"><div class="who">${icon(it, true)}
+    main.innerHTML = `<div class="ihead item-banner"><div class="who">${icon(it, true)}
         <div style="min-width:0"><h1 class="q${it.quality ?? 1}">${esc(it.name)}</h1>
           <div class="en">${it.name_en && it.name_en !== it.name ? esc(it.name_en) + " · " : ""}ID ${id} · <a href="https://www.wowhead.com/forever/de/item=${id}" target="_blank" rel="noopener">Wowhead ↗</a></div>
           ${it.class_name || it.item_level ? `<div class="chips mt">${it.class_name ? `<span class="pill">${esc([...new Set([it.class_name, it.subclass_name].filter(Boolean))].join(" › "))}</span>` : ""}${it.item_level ? `<span class="pill">Stufe ${it.item_level}</span>` : ""}</div>` : ""}</div></div></div>
       <div class="card"><div class="empty">Für dieses Item liegt seit Beginn unserer Erfassung keine Preisbeobachtung vor. Daraus lässt sich keine sichere Aussage zur Handelbarkeit ableiten.</div></div>
+      ${originalItemPanel(it)}
       ${catalogNote(it)}
       <div class="folds">${fold("rec", "Herkunft & Verwendung", "Lade Rezepte und Quests …", true)}</div>`;
     wireFolds({ rec: (el) => renderRecipes(el, id, fk0) });
@@ -936,7 +951,7 @@ async function viewItem(r) {
     const g = groupRow(f.k);
     return `<button type="button" class="ftab ${f.k} ${f.k === fk ? "on" : ""}" data-k="${f.k}" role="tab" aria-selected="${f.k === fk}">
       <span class="fn"><span><span class="fac ${f.fac}"></span>${f.name}</span><small>${f.sub}</small></span>
-      <span class="fp">${g ? listingPrice(g) : '<span class="muted">keine Preisbeobachtung</span>'}</span>
+      <span class="fp">${g ? listingPrice(g) : '<span class="muted missing-price">kein Preis<br>beobachtet</span>'}</span>
       ${g ? `<span class="fd">${g.is_current ? pct(g.chg24_min) : "historisch"}</span>` : ""}</button>`;
   }).join("");
 
@@ -974,7 +989,7 @@ async function viewItem(r) {
 
   main.innerHTML = `
     <div class="crumbs"><a href="#/categories">Kategorien</a> › <a href="${catHref()}">${esc(it.class_name || "Ohne Metadaten")}</a>${it.subclass_name ? ` › <a href="${catHref(`&subclass=${it.subclass_id}`)}">${esc(it.subclass_name)}</a>` : ""}</div>
-    <div class="ihead">
+    <div class="ihead item-banner">
       <div class="who">${icon(it, true)}
         <div style="min-width:0"><h1 class="q${it.quality ?? 1}">${esc(it.name)}</h1>
           <div class="en">${it.name_en && it.name_en !== it.name ? esc(it.name_en) + " · " : ""}ID ${id} · <a href="https://www.wowhead.com/forever/de/item=${id}" target="_blank" rel="noopener">Wowhead ↗</a></div>
@@ -983,6 +998,7 @@ async function viewItem(r) {
         <button class="btn" id="cmpBtn">${inCmp ? "✓ Im Vergleich" : "+ Vergleich"}</button>
         <a class="btn" href="#/compare?items=${[...new Set([...state.compare, id])].join(",")}${hid ? "&house=" + hid : ""}">Vergleichen ›</a>
       </div></div>
+    ${originalItemPanel(it)}
     ${catalogNote(it)}
     <div class="ftabs" role="tablist" id="ftabs">${tabs}</div>
     <div class="hcards" id="hcards">${cards}</div>
@@ -1006,8 +1022,9 @@ async function viewItem(r) {
       ${fold("rec", "Herkunft & Verwendung", "Lade Rezepte und Quests …", true)}
       ${fold("liq", "Umsatz & Liquidität", house.liq_score != null ? `Score ${num(house.liq_score)} · ${num(house.liq_events)} Signale / 7 T` : "noch keine Daten", true)}
       ${fold("kpi", "Kennzahlen & Muster", house.avg7_min ? `Ø 7 T ${money(house.avg7_min)} · 7 T ${pct(house.chg7d_min)}` : "")}
-      ${fold("all", "Alle Auktionshäuser im Vergleich", `${info.houses.filter((h) => h.kind === "haus").length} Häuser`)}
-      ${fold("raw", "Rohdaten & Ausreißer", "Snapshots und ungewöhnliche Preispunkte")}
+      <details class="expert-analysis"><summary>Analyse-Details <span>Verbundvergleich · Snapshots · Ausreißer</span></summary><div class="expert-analysis-body">
+      ${fold("all", "Verbundvergleich", `${info.houses.filter((h) => h.kind === "haus").length} Häuser`)}
+      ${fold("raw", "Snapshots & Ausreißer", "Preispunkte prüfen")}</div></details>
       ${fold("info", "Item-Details", it.details?.lines?.length ? "Tooltip wie im Spiel" : "")}
     </div>` : `<div class="card"><div class="empty">Keine Preisbeobachtung im gewählten Markt.</div></div>
     <div class="folds">${fold("rec", "Herkunft & Verwendung", "Lade Rezepte und Quests …", true)}${fold("all", "Alle Auktionshäuser im Vergleich", "")}${fold("info", "Item-Details", "")}</div>`}`;
