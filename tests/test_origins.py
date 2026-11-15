@@ -190,8 +190,8 @@ class ImportTest(unittest.TestCase):
         self.assertEqual(d["objects"]["1731"], ["Copper Vein", "Wald von Elwynn"])
         self.assertEqual(d["quests"]["33"][0], "Wolves")
         self.assertEqual(d["names"]["774"][0], "Malachite")                  # englischer Ersatzname
-        self.assertEqual(d["names"]["774"][4], 1)                            # jetzt mit eigener Seite (in items eingetragen)
-        self.assertEqual(d["names"]["9363"][4], 1)
+        self.assertEqual(d["names"]["774"][5], 1)                            # jetzt mit eigener Seite (in items eingetragen)
+        self.assertEqual(d["names"]["9363"][5], 1)
         # Battle.net-Titel hat Vorrang
         self.con.execute("CREATE TABLE IF NOT EXISTS quests (id INTEGER PRIMARY KEY, title TEXT, zone TEXT, faction TEXT)")
         self.con.execute("INSERT INTO quests(id, title, zone, faction) VALUES (33, 'Wölfe an der Grenze', 'Nordhaintal', 'Allianz')")

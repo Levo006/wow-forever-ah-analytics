@@ -350,7 +350,7 @@ def export_items(con, item_ids) -> dict:
     names = item_table(con, refs, dict(rows("SELECT id, name FROM qdb_item_names WHERE id IN ({})", refs))) if refs else {}
     known = {r[0] for r in rows("SELECT id FROM items WHERE id IN ({})", refs)} if refs else set()
     for k, v in names.items():
-        v.append(1 if int(k) in known else 0)        # 5. Feld: hat eine Item-Seite
+        v.append(1 if int(k) in known else 0)        # 6. Feld: hat eine Item-Seite (5. ist name_en aus item_table)
     return {"items": out, "npcs": npc_out, "objects": obj_out, "quests": q_out, "names": names}
 
 

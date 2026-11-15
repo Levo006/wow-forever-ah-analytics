@@ -12,35 +12,40 @@
   <header class="topbar">
     <a class="brand" href="#/"><img class="brandmark coin-logo" src="assets/coin-gold.svg" alt=""><span class="brandtext">FOREVER<span> AUKTIONSHAUS · ANALYTICS</span></span></a>
     <nav class="nav" id="nav">
-      <a href="#/" data-route="dashboard"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>Übersicht</a>
-      <a href="#/search" data-route="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg>Suche</a>
-      <a href="#/categories" data-route="categories"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5Zm-9 9 9 5 9-5M3 16l9 5 9-5"/></svg>Kategorien</a>
-      <a href="#/liquidity" data-route="liquidity"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10m8 10V4m8 16v-7M2 21h20"/></svg>Liquidität</a>
+      <a href="#/" data-route="dashboard"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg><span data-i18n="Übersicht">Übersicht</span></a>
+      <a href="#/search" data-route="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg><span data-i18n="Suche">Suche</span></a>
+      <a href="#/categories" data-route="categories"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5Zm-9 9 9 5 9-5M3 16l9 5 9-5"/></svg><span data-i18n="Kategorien">Kategorien</span></a>
+      <a href="#/liquidity" data-route="liquidity"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10m8 10V4m8 16v-7M2 21h20"/></svg><span data-i18n="Liquidität">Liquidität</span></a>
     </nav>
     <div class="topctl">
       <div class="market" id="market" role="group" aria-label="Markt">
-        <button type="button" data-k="allianz" title="Alle Allianz-Auktionshäuser zusammengefasst"><span class="fac Allianz"></span>Allianz</button>
-        <button type="button" data-k="horde" title="Alle Horde-Auktionshäuser zusammengefasst"><span class="fac Horde"></span>Horde</button>
-        <button type="button" data-k="neutral" title="Neutrale Auktionshäuser (Schwarzmeerräuber: Beutebucht, Gadgetzan, Everlook)"><span class="fac Neutral"></span>Neutral</button>
-        <label class="sr" for="houseSel">Einzelnes Auktionshaus</label>
-        <select id="houseSel" title="Auf ein einzelnes Auktionshaus filtern"></select>
+        <button type="button" data-k="allianz" data-i18n="Alle Allianz-Auktionshäuser zusammengefasst" data-i18n-attr="title" title="Alle Allianz-Auktionshäuser zusammengefasst"><span class="fac Allianz"></span><span data-i18n="Allianz">Allianz</span></button>
+        <button type="button" data-k="horde" data-i18n="Alle Horde-Auktionshäuser zusammengefasst" data-i18n-attr="title" title="Alle Horde-Auktionshäuser zusammengefasst"><span class="fac Horde"></span><span data-i18n="Horde">Horde</span></button>
+        <button type="button" data-k="neutral" data-i18n="Neutrale Auktionshäuser (Schwarzmeerräuber: Beutebucht, Gadgetzan, Everlook)" data-i18n-attr="title" title="Neutrale Auktionshäuser (Schwarzmeerräuber: Beutebucht, Gadgetzan, Everlook)"><span class="fac Neutral"></span><span data-i18n="Neutral">Neutral</span></button>
+        <label class="sr" for="houseSel" data-i18n="Einzelnes Auktionshaus">Einzelnes Auktionshaus</label>
+        <select id="houseSel" data-i18n="Auf ein einzelnes Auktionshaus filtern" data-i18n-attr="title" title="Auf ein einzelnes Auktionshaus filtern"></select>
       </div>
       <a id="fresh" class="pill fresh" href="#/data" hidden></a>
       <form id="quickSearch" class="quick" role="search">
-        <input id="quickInput" type="search" placeholder="Item suchen … (DE/EN oder ID)" autocomplete="off" aria-label="Item suchen">
+        <input id="quickInput" type="search" data-i18n-ph="Item suchen … (DE/EN oder ID)" placeholder="Item suchen … (DE/EN oder ID)" autocomplete="off" data-i18n="Item suchen" data-i18n-attr="aria-label" aria-label="Item suchen">
         <div id="quickResults" class="ac" hidden></div>
       </form>
-      <button id="themeBtn" class="iconbtn" title="Hell/Dunkel umschalten" aria-label="Farbschema umschalten">◐</button>
+      <div class="langswitch" id="langSwitch" role="group" aria-label="Sprache / Language">
+        <button type="button" data-lang="de">DE</button>
+        <button type="button" data-lang="en">EN</button>
+      </div>
+      <button id="themeBtn" class="iconbtn" data-i18n="Hell/Dunkel umschalten" data-i18n-attr="title" title="Hell/Dunkel umschalten" data-i18n-aria="Farbschema umschalten" aria-label="Farbschema umschalten">◐</button>
     </div>
   </header>
-  <main id="main" tabindex="-1"><div class="loading">Lade …</div></main>
+  <main id="main" tabindex="-1"><div class="loading" data-i18n="Lade …">Lade …</div></main>
   <footer class="foot">
-    <a href="#/data">Daten &amp; Quellen</a>
-    <span class="muted">Stündlich aus der Battle.net API · WoW: Forever (EU) · <a href="#/compare" id="footCmp">Vergleich <span id="cmpCount" class="badge" hidden></span></a></span>
+    <a href="#/data" data-i18n="Daten &amp; Quellen">Daten &amp; Quellen</a>
+    <span class="muted"><span data-i18n="Stündlich aus der Battle.net API · WoW: Forever (EU) · ">Stündlich aus der Battle.net API · WoW: Forever (EU) · </span><a href="#/compare" id="footCmp"><span data-i18n="Vergleich">Vergleich</span> <span id="cmpCount" class="badge" hidden></span></a></span>
   </footer>
   <div id="toast" class="toast" hidden></div>
   <div id="tooltip" class="vtip" hidden></div>
   <script src="vendor/chart.umd.min.js"></script>
+  <script src="i18n.js"></script>
   <script src="static-api.js"></script>
   <script src="recipes-core.js"></script>
   <script src="app.js"></script>

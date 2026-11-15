@@ -1,6 +1,7 @@
 /* Statikmodus: beantwortet API-Aufrufe aus vorberechneten JSON-Dateien
  * (erzeugt mit `python run.py export`). Wird nur aktiv, wenn data/meta.json
  * als JSON existiert – also z. B. auf GitHub Pages, nicht beim lokalen Server. */
+const T = (s) => (globalThis.AHI18N ? AHI18N.t(s) : s);
 "use strict";
 
 const StaticAPI = (() => {
@@ -11,7 +12,7 @@ const StaticAPI = (() => {
   function load(url) {
     if (!files.has(url)) {
       files.set(url, fetch(url).then((r) => {
-        if (!r.ok) throw new HttpError(r.status === 404 ? "Nicht im statischen Export enthalten." : `Laden fehlgeschlagen (${r.status})`);
+        if (!r.ok) throw new HttpError(r.status === 404 ? T("Nicht im statischen Export enthalten.") : T("Laden fehlgeschlagen") + ` (${r.status})`);
         return r.json();
       }).catch((e) => { files.delete(url); throw e; }));
     }
@@ -46,7 +47,7 @@ const StaticAPI = (() => {
     const m = await meta();
     const hid = id ? Number(id) : m.default;
     const h = m.houses.find((x) => x.id === hid);
-    if (!h) throw new HttpError(m.houses.length ? `Auktionshaus ${id} unbekannt` : "Keine Daten vorhanden.");
+    if (!h) throw new HttpError(m.houses.length ? T("Auktionshaus unbekannt") + ` ${id}` : T("Keine Daten vorhanden."));
     return h;
   }
   async function summary(hid) {
@@ -407,9 +408,9 @@ const StaticAPI = (() => {
     const h = await house(hid);
     const snaps = await snapshots(h.id);
     const idx = snaps.findIndex((s) => s.ts === ts);
-    if (idx < 0) throw new HttpError("Snapshot nicht gefunden");
+    if (idx < 0) throw new HttpError(T("Snapshot nicht gefunden"));
     const s = snaps[idx];
-    if (!s.file) throw new HttpError("Für diesen älteren Snapshot enthält der statische Export keine Detaildaten (nur die jüngsten Snapshots je Haus).");
+    if (!s.file) throw new HttpError(T("Für diesen älteren Snapshot enthält der statische Export keine Detaildaten (nur die jüngsten Snapshots je Haus)."));
     const data = await load(`data/house/${h.id}/snap/${ts}.json`);
     const meta = new Map((await summary(h.id)).map((r) => [r.item_id, r]));
     let rows = toRows(data).map((r) => {
@@ -438,7 +439,7 @@ const StaticAPI = (() => {
   }
   async function compare(params) {
     const list = ids(params.items).slice(0, 8);
-    if (!list.length) throw new HttpError("Parameter items fehlt");
+    if (!list.length) throw new HttpError(T("Parameter items fehlt"));
     const h = await house(params.house);
     const metric = params.metric || "min";
     const series = [];
@@ -482,12 +483,12 @@ const StaticAPI = (() => {
   ];
 
   async function request(path, params, opts = {}) {
-    if (opts.method && opts.method !== "GET") throw new Error("Im statischen Modus (GitHub Pages) nicht verfügbar – dafür die Website lokal starten.");
+    if (opts.method && opts.method !== "GET") throw new Error(T("Im statischen Modus (GitHub Pages) nicht verfügbar – dafür die Website lokal starten."));
     for (const [rx, fn] of routes) {
       const m = path.match(rx);
       if (m) return fn(m, params);
     }
-    throw new HttpError("Unbekannter Endpunkt");
+    throw new HttpError(T("Unbekannter Endpunkt"));
   }
 
   return { detect, request, meta };

@@ -319,19 +319,20 @@ def export_data(con, group_houses: dict[str, int] | None = None) -> dict:
 
 
 def item_table(con, item_ids, fallback=None) -> dict:
-    """{id: [Name, Qualität, Icon, im AH (0/1)]} für die Website."""
+    """{id: [Name, Qualität, Icon, im AH (0/1), Name EN|null]} für die Website."""
     fallback = fallback or {}
     in_ah = {r[0] for r in con.execute("SELECT DISTINCT item_id FROM item_summary")}
     meta, ids = {}, sorted(item_ids)
     for i in range(0, len(ids), 900):
         chunk = ids[i:i + 900]
-        for r in con.execute(f"SELECT id, COALESCE(name, name_en) AS name, quality, icon FROM items WHERE id IN ({','.join('?' * len(chunk))})", chunk):
+        for r in con.execute(f"SELECT id, COALESCE(name, name_en) AS name, quality, icon, name_en FROM items WHERE id IN ({','.join('?' * len(chunk))})", chunk):
             meta[r[0]] = r
     out = {}
     for iid in ids:
         m = meta.get(iid)
         name = (m["name"] if m and m["name"] else None) or fallback.get(iid) or f"Item #{iid}"
-        out[str(iid)] = [name, m["quality"] if m else None, m["icon"] if m else None, 1 if iid in in_ah else 0]
+        en = m["name_en"] if m and m["name_en"] and m["name_en"] != name else None
+        out[str(iid)] = [name, m["quality"] if m else None, m["icon"] if m else None, 1 if iid in in_ah else 0, en]
     return out
 
 

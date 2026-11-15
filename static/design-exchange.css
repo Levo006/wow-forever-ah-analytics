@@ -437,3 +437,14 @@ td {padding-top:13px;padding-bottom:13px;}
   .mcard .big { font-size: 36px; }
   .item-banner h1 { font-size: 42px; }
 }
+
+/* Sprachumschalter DE/EN */
+.langswitch {display:flex;flex-shrink:0;border:1px solid var(--border);border-radius:11px;overflow:hidden;}
+.langswitch button {appearance:none;border:0;background:transparent;color:var(--text-secondary);font:inherit;font-size:12px;font-weight:700;letter-spacing:.04em;padding:0 10px;height:39px;cursor:pointer;}
+.langswitch button + button {border-left:1px solid var(--border);}
+.langswitch button.on {background:var(--accent-soft, rgba(212,175,55,.16));color:var(--text);}
+.langswitch button:focus-visible {outline:2px solid var(--link);outline-offset:-2px;}
+@media(max-width:700px) {
+  .langswitch {order:1;align-self:center;}
+  .langswitch button {height:42px;}
+}

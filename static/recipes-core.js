@@ -49,7 +49,7 @@
 
   function itemInfo(idx, id) {
     const m = idx.items[String(id)];
-    return m ? { id, name: m[0] || `Item #${id}`, quality: m[1], icon: m[2], inAH: !!m[3] } : { id, name: `Item #${id}`, quality: null, icon: null, inAH: false };
+    return m ? { id, name: m[0] || `Item #${id}`, name_en: m[4] || null, quality: m[1], icon: m[2], inAH: !!m[3] } : { id, name: `Item #${id}`, name_en: null, quality: null, icon: null, inAH: false };
   }
   /** Aktueller Preis (typischer Tiefstpreis) einer Fraktion oder null. */
   function price(idx, faction, id) {
@@ -206,8 +206,8 @@
   }
 
   // ------------------------------------------------------------ Herkunft (QuestieDB)
-  const RANKS = ["", "Elite", "Seltene Elite", "Boss", "Selten"];
-  const QKIND = { 1: "Questziel", 2: "wird benötigt", 3: "startet Quest" };
+  const RANKS = () => (globalThis.AHI18N && AHI18N.get() === "en" ? ["", "Elite", "Rare Elite", "Boss", "Rare"] : ["", "Elite", "Seltene Elite", "Boss", "Selten"]);
+  const QKIND = () => (globalThis.AHI18N && AHI18N.get() === "en" ? { 1: "Quest objective", 2: "required item", 3: "starts quest" } : { 1: "Questziel", 2: "wird benötigt", 3: "startet Quest" });
 
   /**
    * Herkunft eines Items aus einer data/sources/<n>.json (bzw. /api/sources/<id>) aufbereiten.
@@ -219,12 +219,12 @@
     const npc = (nid, chance = null) => {
       const n = src.npcs?.[String(nid)] || [];
       const lv = n[1] == null ? "" : n[2] != null && n[2] !== n[1] ? `${n[1]}–${n[2]}` : String(n[1]);
-      return { id: nid, name: n[0] || `NPC #${nid}`, level: lv, minl: n[1] ?? null, rank: RANKS[n[3] || 0] || "", zone: n[4] || "",
+      return { id: nid, name: n[0] || `NPC #${nid}`, level: lv, minl: n[1] ?? null, rank: RANKS()[n[3] || 0] || "", zone: n[4] || "",
         faction: n[5] || "", sub: n[6] || "", chance: chance == null ? null : chance };
     };
     const quests = (e.q || []).filter((x) => Array.isArray(x)).map(([qid, kind]) => {
       const q = src.quests?.[String(qid)] || [];
-      return { id: qid, title: q[0] || `Quest #${qid}`, level: q[1] ?? null, minl: q[2] ?? null, zone: q[3] || "", faction: q[4] || "", kind, kindLabel: QKIND[kind] || "" };
+      return { id: qid, title: q[0] || `Quest #${qid}`, level: q[1] ?? null, minl: q[2] ?? null, zone: q[3] || "", faction: q[4] || "", kind, kindLabel: QKIND()[kind] || "" };
     });
     const objects = new Map();
     for (const [oid] of e.o || []) {
