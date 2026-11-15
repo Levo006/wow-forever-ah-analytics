@@ -1,0 +1,54 @@
+name: Einmal-Deploy Liquiditaet-Fix
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Patch anwenden (sha256 geprueft)
+        run: |
+          cat > /tmp/patch.b64 <<'B64'
+          ZGlmZiAtLWdpdCBhL2FoYW5hbHl0aWNzL19fbWFpbl9fLnB5IGIvYWhhbmFseXRpY3MvX19tYWluX18ucHkKaW5kZXggNmQzNzIx
+          MC4uNGJlNWZhZCAxMDA2NDQKLS0tIGEvYWhhbmFseXRpY3MvX19tYWluX18ucHkKKysrIGIvYWhhbmFseXRpY3MvX19tYWluX18u
+          cHkKQEAgLTE3Nyw2ICsxNzcsMTAgQEAgZGVmIG1haW4oYXJndj1Ob25lKToKICAgICAgICAgICAgICAgICAgICAgICAgIGhvdXNl
+          X2hvdXJseV9kYXlzPWFyZ3MuaG91c2VfaG91cmx5X2RheXMsIGhvdXNlX2tlZXBfZGF5cz1hcmdzLmhvdXNlX2tlZXBfZGF5cykK
+          ICAgICAgICAgd2l0aCBkYi50cmFuc2FjdGlvbihjb24pOgogICAgICAgICAgICAgZGIucHJ1bmVfbGFkZGVycyhjb24sIGNmZ1si
+          Y29sbGVjdG9yIl1bImxhZGRlcl9rZWVwIl0pCisgICAgICAgICAgICAjIExpcXVpZGl0w6R0IGhpZXIgbm9jaG1hbHMgw7xiZXIg
+          YWxsZSBTdHVuZGVuaMOkdXNlciByZWNobmVuOiBsw6R1ZnQgYXVjaCBkYW5uLAorICAgICAgICAgICAgIyB3ZW5uIGRlciBNYXJr
+          dGFicnVmIG5pY2h0cyBOZXVlcyBmcmVpZ2VnZWJlbiBoYXQgKEF1c2ZhbGwsIHVudmVyw6RuZGVydGUgRGF0ZW4pLgorICAgICAg
+          ICAgICAgZnJvbSAuIGltcG9ydCBsaXF1aWRpdHkKKyAgICAgICAgICAgIGxpcXVpZGl0eS51cGRhdGVfbGlxdWlkaXR5KGNvbikK
+          ICAgICAgICAgY29uLmV4ZWN1dGUoIlBSQUdNQSB3YWxfY2hlY2twb2ludChUUlVOQ0FURSkiKSAgIyBhbGxlcyBpbiBkaWUgSGF1
+          cHRkYXRlaSAod2lyZCBkYW5hY2ggZ2VwYWNrdCkKICAgICAgICAgaWYgYXJncy52YWN1dW0gYW5kIChzdFsiZGF5cyJdIG9yIHN0
+          WyJkZWxldGVkIl0pOgogICAgICAgICAgICAgY29uLmV4ZWN1dGUoIlZBQ1VVTSIpCg==
+          B64
+          tr -d '\n ' < /tmp/patch.b64 | base64 -d > /tmp/fix.patch
+          echo "227ba2b2b34c0b723ec36e935077405679d485620e9769a9269b9c69f33fd11c  /tmp/fix.patch" | sha256sum -c -
+          git apply --check /tmp/fix.patch
+          git apply /tmp/fix.patch
+      - name: Regressionstests
+        run: python -m unittest discover -s tests
+      - name: Committen, pushen, Workflow entfernen
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Liquiditaet auch im Verdichten-Schritt rechnen (robust bei leerem Marktabruf)"
+          git rm -q .github/workflows/deploy-liquidity-fix.yml
+          git commit -m "Einmal-Deploy-Workflow entfernt"
+          git push origin HEAD:main
+      - name: Datenlauf anstossen
+        run: gh workflow run update.yml --ref main
