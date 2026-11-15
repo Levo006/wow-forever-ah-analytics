@@ -4,6 +4,8 @@
 // ================================================================ Basics
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+const t = (s) => AHI18N.t(s);
+const tf = (s, ...args) => AHI18N.tf(s, ...args);
 const main = $("#main");
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const store = {
@@ -1707,4 +1709,4 @@ function watchVersion() {
   };
   setInterval(check, 5 * 60 * 1000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) check(); });
-}
+      }
