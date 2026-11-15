@@ -131,7 +131,7 @@ main { padding: 20px; max-width: 1500px; margin: 0 auto; outline: none; }
 .note { padding: 10px 14px; border-radius: 8px; background: var(--surface-2); color: var(--text-secondary); font-size: 13px; }
 
 /* KPI-Kacheln */
-.kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: 12px; margin-bottom: 16px; }
 .kpi { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; }
 .kpi .l { font-size: 12px; color: var(--text-muted); }
 .kpi .v { font-size: 20px; font-weight: 650; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
