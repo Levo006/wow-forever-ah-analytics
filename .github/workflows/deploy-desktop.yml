@@ -1,0 +1,79 @@
+name: Einmal-Deploy Desktop-Lesbarkeit
+on: workflow_dispatch
+permissions:
+  contents: write
+  actions: write
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Backup vor dem Umbau
+        run: git archive --format=tar.gz -o /tmp/before-desktop-runde3.tar.gz HEAD static
+      - uses: actions/upload-artifact@v4
+        with:
+          name: before-desktop-runde3
+          path: /tmp/before-desktop-runde3.tar.gz
+      - name: Patch sicher anwenden
+        run: |
+          set -euo pipefail
+          cat > /tmp/patch.b64 <<'B64'
+          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
+          B64
+          base64 -d /tmp/patch.b64 | gzip -d > /tmp/deploy.patch
+          echo "cb3edb1a4964e0cdb00ae2a91511e5268b1e1674da240de486ed39dc2c2388a4  /tmp/deploy.patch" | sha256sum -c -
+          git apply --check /tmp/deploy.patch
+          git apply --stat /tmp/deploy.patch
+          git apply /tmp/deploy.patch
+      - name: Regressionstests
+        run: |
+          python -m unittest discover -s tests
+          node tests/recipes_core.test.js
+          node --check static/app.js
+          node --check static/item-tooltip.js
+          node --check static/static-api.js
+      - name: Geprueften Stand speichern
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add static/design-exchange.css
+          git commit -m "Desktop: breiteres Layout, groessere Typo und Zahlen, klarere Scan-Hierarchie"
+          git rm .github/workflows/deploy-desktop.yml
+          git commit -m "Einmal-Deploy-Workflow entfernt"
+          git push
+      - name: Seite neu veroeffentlichen
+        run: gh workflow run update.yml --ref main
