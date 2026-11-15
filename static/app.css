@@ -67,6 +67,7 @@ button, input, select { font: inherit; color: inherit; }
 .nav a { padding: 6px 10px; border-radius: 8px; color: var(--text-secondary); font-weight: 520; }
 .nav a:hover { background: var(--surface-2); text-decoration: none; color: var(--text-primary); }
 .nav a.active { background: var(--surface-3); color: var(--text-primary); }
+.badge[hidden] { display: none; }
 .badge { display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: var(--accent-ink); font-size: 11px; text-align: center; font-weight: 700; }
 .topctl { margin-left: auto; display: flex; gap: 8px; align-items: center; }
 .topctl select { max-width: 260px; }
@@ -330,13 +331,11 @@ a.tag:hover { text-decoration: none; border-color: var(--link); color: var(--tex
 .fold[open] .chev { transform: rotate(90deg); }
 .fold .fb { padding: 4px 16px 16px; }
 .fold .fb .mini { margin-bottom: 0; }
-.pop { position: relative; }
-.pop > summary { list-style: none; }
-.pop > summary::-webkit-details-marker { display: none; }
-.popbody { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow);
-  padding: 10px 12px; display: flex; flex-direction: column; gap: 7px; min-width: 210px; font-size: 13px; }
-.popbody label { display: flex; align-items: center; gap: 7px; cursor: pointer; white-space: nowrap; }
-.popbody hr { border: 0; border-top: 1px solid var(--border); margin: 2px 0; width: 100%; }
+/* Ein/Aus-Schalter (Chart-Anzeige) */
+.tgl { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.tgl button { border: 1px solid var(--border); background: var(--surface-2); color: var(--text-secondary); border-radius: 14px; padding: 4px 12px; font-size: 12.5px; cursor: pointer; }
+.tgl button:hover { color: var(--text-primary); }
+.tgl button.on { background: var(--surface-3); color: var(--text-primary); border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); font-weight: 600; }
 .infogrid { display: grid; grid-template-columns: minmax(0, 320px) minmax(0, 1fr); gap: 16px; align-items: start; }
 @media (max-width: 760px) { .infogrid { grid-template-columns: minmax(0, 1fr); } }
 .kv td { white-space: normal; }
@@ -481,3 +480,12 @@ h1 { font-weight: 700; }
 
 .listing-status { display: block; white-space: normal; font-size: 11px; line-height: 1.4; font-weight: 400; }
 .hcard .hp .listing-status, .ftab .fp .listing-status { white-space: normal; }
+
+/* ------------------------------------------------------- Fußzeile & Abschnitte */
+.foot { display: flex; gap: 18px; align-items: center; justify-content: space-between; flex-wrap: wrap;
+  max-width: 1500px; margin: 26px auto 0; padding: 14px 20px 26px; color: var(--text-muted); font-size: 13px; border-top: 1px solid var(--border); }
+.foot a { color: var(--text-secondary); }
+.foot .badge { position: relative; top: -1px; }
+.secthead { display: flex; align-items: baseline; gap: 12px; margin: 22px 0 12px; flex-wrap: wrap; }
+.secthead h2 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: 18px; }
+.secthead .sub { color: var(--text-muted); font-size: 13px; }

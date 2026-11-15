@@ -14,11 +14,7 @@
       <a href="#/" data-route="dashboard">Übersicht</a>
       <a href="#/search" data-route="search">Suche</a>
       <a href="#/categories" data-route="categories">Kategorien</a>
-      <a href="#/movers" data-route="movers">Top-Movers</a>
-      <a href="#/deals" data-route="deals">Deals</a>
       <a href="#/liquidity" data-route="liquidity">Liquidität</a>
-      <a href="#/compare" data-route="compare">Vergleich <span id="cmpCount" class="badge" hidden></span></a>
-      <a href="#/data" data-route="data">Daten</a>
     </nav>
     <div class="topctl">
       <div class="market" id="market" role="group" aria-label="Markt">
@@ -37,6 +33,10 @@
     </div>
   </header>
   <main id="main" tabindex="-1"><div class="loading">Lade …</div></main>
+  <footer class="foot">
+    <a href="#/data">Daten &amp; Quellen</a>
+    <span class="muted">Stündlich aus der Battle.net API · WoW: Forever (EU) · <a href="#/compare" id="footCmp">Vergleich <span id="cmpCount" class="badge" hidden></span></a></span>
+  </footer>
   <div id="toast" class="toast" hidden></div>
   <div id="tooltip" class="vtip" hidden></div>
   <script src="vendor/chart.umd.min.js"></script>

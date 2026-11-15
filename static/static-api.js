@@ -36,6 +36,8 @@ const StaticAPI = (() => {
 
   // --------------------------------------------------------------- Helfer
   const num = (v) => (v === undefined || v === null || v === "" ? null : Number(v));
+  // Handelsrelevante Items: Handelswaren oder Qualitaet ab ungewoehnlich (kein Grau-/Weissschrott).
+  const isRelevant = (r) => (r.quality ?? 1) >= 2 || ((r.is_commodity || 0) === 1 && (r.quality ?? 1) >= 1);
   const ids = (v) => (v ? String(v).split(",").filter(Boolean).map(Number) : []);
   const DAY = 86400;
   const RANGES = { "24h": DAY, "7d": 7 * DAY, "30d": 30 * DAY, "90d": 90 * DAY, all: null };
@@ -269,6 +271,7 @@ const StaticAPI = (() => {
     if (mq) rows = rows.filter((r) => (r.avg7_qty ?? r.last_qty ?? 0) >= mq);
     if (mp) rows = rows.filter((r) => (r.last_min ?? 0) >= mp);
     if (params.class !== undefined && params.class !== "") rows = rows.filter((r) => r.class_id === Number(params.class));
+    if (params.relevant === "1") rows = rows.filter(isRelevant);
     const limit = Math.min(200, num(params.limit) || 25);
     return { house_id: h.id, window, metric, column: col,
       gainers: sortRows(rows.filter((r) => r[col] > 0), col, "desc").slice(0, limit),
@@ -296,6 +299,9 @@ const StaticAPI = (() => {
     const mq = num(params.min_qty);
     if (mq) rows = rows.filter((r) => (r.avg7_qty || 0) >= mq);
     if (params.class !== undefined && params.class !== "") rows = rows.filter((r) => r.class_id === Number(params.class));
+    if (params.relevant === "1") rows = rows.filter(isRelevant);
+    const lm = num(params.liq_min);
+    if (lm) rows = rows.filter((r) => (r.liq_score || 0) >= lm);
     rows = rows.map((r) => ({ ...r, ref_price: r[refKey], discount: (1 - r.last_min / r[refKey]) * 100, saving: r[refKey] - r.last_min }));
     sortRows(rows, "discount", "desc");
     return { house_id: h.id, basis, threshold: th * 100, deals: rows.slice(0, Math.min(500, num(params.limit) || 50)) };
@@ -322,9 +328,8 @@ const StaticAPI = (() => {
       snapshot_count: snaps.length,
       market_series: snaps.slice(-400),
       categories: (await classes({ house: h.id })).classes,
-      movers: await movers({ ...p, window: "24h" }),
-      deals: await deals({ ...p, threshold: 15 }),
-      most_volatile: sortRows(rows.filter((r) => (r.avg7_qty || 0) >= 1), "cv7_min", "desc").slice(0, 6),
+      movers: await movers({ ...p, window: "24h", relevant: "1" }),
+      deals: await deals({ ...p, threshold: 15, relevant: "1", liq_min: 30 }),
     };
   }
 

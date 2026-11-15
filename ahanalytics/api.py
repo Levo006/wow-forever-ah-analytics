@@ -149,6 +149,9 @@ SUMMARY_COLS = """
   CASE WHEN s.prev7d_median > 0 THEN (1.0*s.last_median/s.prev7d_median - 1)*100 END AS chg7d_median,
   CASE WHEN s.last_ts=(SELECT MAX(ts) FROM snapshots WHERE house_id=s.house_id) THEN COALESCE(s.last_min, 0) * COALESCE(s.last_qty, 0) ELSE 0 END AS market_value
 """
+# Handelsrelevante Items: Handelswaren oder Qualitaet ab ungewoehnlich (kein Grau-/Weissschrott).
+RELEVANT_WHERE = "(COALESCE(i.quality, 1) >= 2 OR (i.is_commodity = 1 AND COALESCE(i.quality, 1) >= 1))"
+
 SUMMARY_FROM = """
   FROM item_summary s JOIN items i ON i.id = s.item_id JOIN houses h ON h.id = s.house_id
   LEFT JOIN verified_aliases va ON va.item_id = s.item_id AND va.status = 'ok'
@@ -298,11 +301,8 @@ def overview(con, params):
                                       (hid,)).fetchone()[0],
         "market_series": snaps,
         "categories": classes(con, {"house": str(hid)})["classes"],
-        "movers": movers(con, {**p, "window": "24h"}),
-        "deals": deals(con, {**p, "threshold": "15"}),
-        "most_volatile": [_item_row(r) for r in con.execute(
-            f"SELECT {SUMMARY_COLS} {SUMMARY_FROM} WHERE s.house_id=? AND s.avg7_qty >= 1 AND s.last_ts=(SELECT MAX(ts) FROM snapshots WHERE house_id=s.house_id) "
-            f"ORDER BY s.cv7_min DESC LIMIT 6", (hid,))],
+        "movers": movers(con, {**p, "window": "24h", "relevant": "1"}),
+        "deals": deals(con, {**p, "threshold": "15", "relevant": "1", "liq_min": "30"}),
     }
 
 
@@ -675,6 +675,8 @@ def movers(con, params):
     if params.get("class") not in (None, ""):
         where.append("i.class_id = ?")
         args.append(_int(params, "class"))
+    if params.get("relevant") == "1":
+        where.append(RELEVANT_WHERE)
     limit = _int(params, "limit", 25, lo=1, hi=200)
     base = f"SELECT {SUMMARY_COLS} {SUMMARY_FROM} WHERE {' AND '.join(where)}"
     gain = con.execute(f"SELECT * FROM ({base}) WHERE {col} > 0 ORDER BY {col} DESC LIMIT ?",
@@ -702,6 +704,12 @@ def deals(con, params):
     if params.get("class") not in (None, ""):
         where.append("i.class_id = ?")
         args.append(_int(params, "class"))
+    if params.get("relevant") == "1":
+        where.append(RELEVANT_WHERE)
+    liq_min = _float(params, "liq_min", 0)
+    if liq_min:
+        where.append("COALESCE(lq.score, 0) >= ?")
+        args.append(liq_min)
     limit = _int(params, "limit", 50, lo=1, hi=500)
     rows = con.execute(
         f"""SELECT {SUMMARY_COLS}, {ref} AS ref_price,
