@@ -1131,7 +1131,7 @@ async function viewItem(r) {
 
   // Aufklappbare Abschnitte
   const enough = (house.last_ts || 0) - (house.first_ts || house.last_ts || 0) >= 2 * 86400;
-  const t = enough ? ana.trend || {} : {}, v = enough ? ana.volatility || {} : {};
+  const trnd = enough ? ana.trend || {} : {}, v = enough ? ana.volatility || {} : {};
   wireFolds({
     rec: recFold,
     kpi: (el) => {
@@ -1139,7 +1139,7 @@ async function viewItem(r) {
         <div class="kpi"><div class="l">${t("Ø 7 Tage")}</div><div class="v">${money(house.avg7_min)}</div><div class="d">${t("Ø 30 T")} ${money(house.avg30_min)}</div></div>
         <div class="kpi"><div class="l">${t("Spanne der Referenzreihe (30 T)")}</div><div class="v">${money(house.low30_min)}</div><div class="d">${tf("bis {0} · ältere Punkte teils Tagesmittel, kein garantiertes Angebotstief", money(house.high30_min))}</div></div>
         <div class="kpi"><div class="l">${t("Änderung 7 Tage")}</div><div class="v">${pct(house.chg7d_min)}</div><div class="d">24 h ${pct(house.chg24_min)}</div></div>
-        <div class="kpi" title="${tf("Lineare Regression auf ln(Preis) über {0}", anaRange)}"><div class="l">Trend</div><div class="v">${t.pct_per_day == null ? "–" : (t.pct_per_day > 0 ? "+" : "") + num(t.pct_per_day, 1) + " " + t("%/Tag")}</div><div class="d">${esc(t.direction ? AHI18N.trTrend(t.direction) : t("ab 2 Tagen Daten"))}</div></div>
+        <div class="kpi" title="${tf("Lineare Regression auf ln(Preis) über {0}", anaRange)}"><div class="l">Trend</div><div class="v">${trnd.pct_per_day == null ? "–" : (trnd.pct_per_day > 0 ? "+" : "") + num(trnd.pct_per_day, 1) + " " + t("%/Tag")}</div><div class="d">${esc(trnd.direction ? AHI18N.trTrend(trnd.direction) : t("ab 2 Tagen Daten"))}</div></div>
         <div class="kpi" title="${t("Tägliche Schwankung (Std.-Abw. der Log-Renditen)")}"><div class="l">${t("Schwankung")}</div><div class="v">${v.daily == null ? "–" : num(v.daily * 100, 1) + " " + t("%/Tag")}</div><div class="d">${v.daily == null ? t("ab 2 Tagen Daten") : v.daily < 0.03 ? t("stabil") : v.daily < 0.1 ? t("normal") : t("stark")}</div></div>
         <div class="kpi"><div class="l">${t("Auktionen")}</div><div class="v">${num(house.last_auctions)}</div><div class="d">Median ${money(house.last_median)}</div></div>
       </div>
@@ -1709,4 +1709,4 @@ function watchVersion() {
   };
   setInterval(check, 5 * 60 * 1000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) check(); });
-      }
+    }
