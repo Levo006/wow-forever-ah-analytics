@@ -103,7 +103,7 @@ td {padding-top:13px;padding-bottom:13px;}
 .foot {max-width:1320px;margin:auto;padding:22px 0;font-family:inherit;font-size:10px;letter-spacing:.02em;border-top-color:var(--border);}
 .crumbs {font-size:11px;margin-bottom:15px;}
 .item-banner {position:relative;isolation:isolate;overflow:hidden;display:flex;padding:30px;border:1px solid var(--border);border-radius:22px;background:linear-gradient(110deg,var(--surface-1) 40%,color-mix(in srgb,var(--surface-1) 90%,transparent));margin-bottom:20px;gap:20px;}
-.item-banner::before {content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(90deg,var(--surface-1) 30%,transparent),url('assets/market-city.webp') 85% 54%/cover;opacity:.24;}
+.item-banner::before {content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(90deg,var(--surface-1) 30%,transparent),none;opacity:.24;}
 .item-banner .ico.big {width:76px;height:76px;flex-shrink:0;border-radius:16px;border:3px solid #31475d;box-shadow:0 0 0 1px #a78c5a,0 8px 30px #0005;padding:3px;background:#0b1423;}
 .item-banner h1 {font-size:34px;font-weight:700;margin-bottom:7px;line-height:1.15;}
 .item-banner .en {font-size:11px;line-height:1.7;}
@@ -126,7 +126,7 @@ td {padding-top:13px;padding-bottom:13px;}
 .fold>summary {min-height:60px;padding:17px 20px;}
 .fold .ft {font-size:14px;letter-spacing:-.01em;}
 :focus-visible {outline:2px solid var(--link);outline-offset:3px;}
-@media(min-width:1051px) { .topbar>.nav {grid-column:2;}.topctl {grid-column:1/-1;} .topbar:after {content:"PREISE. PERSPEKTIVE. PROFIT?";grid-column:3;grid-row:1;font-size:9px;letter-spacing:.15em;color:var(--text-muted);} html[lang="en"] .topbar:after {content:"PRICES. PERSPECTIVE. PROFIT?";} }
+@media(min-width:1051px) { .topbar>.nav {grid-column:2;}.topctl {grid-column:1/-1;} }
 @media(max-width:1050px) and (min-width:701px) {.topbar {grid-template-columns:1fr auto;}.nav {justify-self:end;}.topctl {flex-wrap:wrap;}.adventure-link {padding:15px 13px;gap:10px;}.adventure-link .arrow{display:none;}}
 @media(max-width:700px) {
  body {padding-bottom:85px;font-size:13px;}
@@ -448,3 +448,28 @@ td {padding-top:13px;padding-bottom:13px;}
   .langswitch {order:1;align-self:center;}
   .langswitch button {height:42px;}
   }
+
+/* ===== Runde 5: ruhiger, einfacher, Goblin ===== */
+.hero {min-height:0!important;padding:26px 30px!important;background:linear-gradient(135deg,#142a40,#0f1d2e)!important;}
+.hero-scene,.hero-seal,.heroflavor,.hero-desc,.hero .eyebrow {display:none!important;}
+.hero h1 {font-size:clamp(22px,2.2vw,30px)!important;margin:0 0 14px!important;}
+.hero-copy {max-width:720px;}
+.herobox {max-width:680px!important;}
+.heroex {margin-top:10px;}
+.adventure-link small {display:none;}
+.adventure-link {padding:14px 18px;}
+.adventure-links {margin:14px 0 22px!important;}
+.kpis3 {grid-template-columns:repeat(3,minmax(0,1fr))!important;}
+.g2 {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;}
+.more-analysis > summary {cursor:pointer;font-weight:650;padding:2px 0;}
+.empty::before {content:"";display:block;width:44px;height:44px;margin:0 auto 10px;background:url('assets/goblin.svg') center/contain no-repeat;opacity:.9;}
+.goblin-peek {position:fixed;left:18px;bottom:0;z-index:40;width:56px;height:56px;padding:0;border:0;background:none;cursor:pointer;transform:translateY(105%);transition:transform .45s cubic-bezier(.3,1.5,.5,1);filter:drop-shadow(0 3px 6px #0006);}
+.goblin-peek.on {transform:translateY(8px) rotate(-6deg);}
+.goblin-peek img {display:block;}
+@media(max-width:700px){
+  .hero {padding:18px 16px!important;border-radius:18px!important;}
+  .g2 {grid-template-columns:1fr;}
+  .kpis3 {grid-template-columns:1fr 1fr!important;}
+  .goblin-peek {bottom:70px;left:10px;width:46px;height:46px;} .goblin-peek img {width:46px;height:46px;}
+}
+@media(max-width:560px){.g2 .card{min-width:0;}}

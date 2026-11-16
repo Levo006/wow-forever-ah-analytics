@@ -374,46 +374,19 @@ function updateCompareBadge() {
 }
 
 // ============================================================= Übersicht
-/** Täglich wechselnde Händlerweisheit für die Startseiten-Suche. */
-const HERO_FLAVOR = {
-  de: [
-    "„Zeit ist Gold, Freund – und hier siehst du, wie viel.“",
-    "„Alles muss raus! Zumindest sagt das die Angebotsmenge.“",
-    "„Der frühe Händler fängt das Schnäppchen.“",
-    "„Kauf, wenn es fällt. Schrei, wenn es steigt. So will es das Handelshaus.“",
-    "„Ein Beutel voll Gold beginnt mit einem Blick auf die Preise.“",
-    "„Wer den Markt kennt, zahlt nie drauf.“",
-  ],
-  en: [
-    "\u201cTime is money, friend - and here you see how much.\u201d",
-    "\u201cEverything must go! At least that's what the supply says.\u201d",
-    "\u201cThe early trader catches the bargain.\u201d",
-    "\u201cBuy when it falls. Cry when it rises. The auction house demands it.\u201d",
-    "\u201cA bag full of gold starts with a look at prices.\u201d",
-    "\u201cKnow the market and you'll never overpay.\u201d",
-  ],
-};
-
 /** Große Suche oben auf der Startseite (sofort sichtbar, Übersicht lädt darunter). */
 function homeSearch(house) {
   const ex = AHI18N.get() === "en" ? ["Copper Ore", "Silk Cloth", "Recipe: Elixir", "Pattern: Linen", "Tough Wolf Meat"] : ["Kupfererz", "Seidenstoff", "Rezept: Elixier", "Muster: Leinen", "Zähes Wolfsfleisch"];
-  const fl = HERO_FLAVOR[AHI18N.get()] || HERO_FLAVOR.de;
-  const flavor = fl[Math.floor(Date.now() / 864e5) % fl.length];
   return `<form class="card hero" id="heroForm" role="search">
-      <div class="hero-scene" aria-hidden="true"></div>
-      <div class="hero-copy"><div class="eyebrow"><span class="tiny-star">✦</span> ${t("DEIN HANDELSPOSTEN IN AZEROTH")}</div>
-      <h1>${t("Wissen ist Macht.")}<br><em>${t("Und manchmal Gold.")}</em></h1>
-      <p class="hero-desc">${t("Weniger raten. Besser handeln. Entdecke Preise, Marktbewegungen und die Geschichte hinter jedem Item.")}</p>
+      <div class="hero-copy"><h1>${t("Was suchst du?")}</h1>
       <div class="herobox"><input id="heroInput" type="search" name="q" autocomplete="off" placeholder="${t("Item-Name (DE/EN) oder ID")}" aria-label="${t("Item suchen")}">
         <button class="btn primary">${t("Suchen")}</button><div id="heroResults" class="ac hero-ac" hidden></div></div>
-      <div class="heroex muted small">${t("Beispiele:")} ${ex.map((q) => `<a href="#/search?q=${encodeURIComponent(q)}${house ? "&house=" + house : ""}">${esc(q)}</a>`).join(" · ")}</div>
-      <div class="heroflavor">${flavor}</div></div>
-      <div class="hero-seal" aria-hidden="true"><span>EU</span>WoW: Forever</div>
+      <div class="heroex muted small">${ex.map((q) => `<a href="#/search?q=${encodeURIComponent(q)}${house ? "&house=" + house : ""}">${esc(q)}</a>`).join(" · ")}</div></div>
     </form>
     <div class="adventure-links" aria-label="${t("Schnelleinstieg")}">
-      <a href="#/search${house ? "?house=" + house : ""}" class="adventure-link"><span class="adventure-icon">⌕</span><span><b>${t("Schatzsuche")}</b><small>${t("Dein Item. Dein Preis.")}</small></span><span class="arrow">↗</span></a>
-      <a href="#/liquidity${house ? "?house=" + house : ""}" class="adventure-link"><span class="adventure-icon">↗</span><span><b>${t("Marktkompass")}</b><small>${t("Was bewegt sich wirklich?")}</small></span><span class="arrow">↗</span></a>
-      <a href="#/categories?class=7${house ? "&house=" + house : ""}" class="adventure-link"><span class="adventure-icon">◇</span><span><b>${t("Für deine Berufe")}</b><small>${t("Handwerkswaren entdecken")}</small></span><span class="arrow">↗</span></a>
+      <a href="#/search${house ? "?house=" + house : ""}" class="adventure-link"><span class="adventure-icon">⌕</span><span><b>${t("Schatzsuche")}</b></span></a>
+      <a href="#/liquidity${house ? "?house=" + house : ""}" class="adventure-link"><span class="adventure-icon">↗</span><span><b>${t("Marktkompass")}</b></span></a>
+      <a href="#/categories?class=7${house ? "&house=" + house : ""}" class="adventure-link"><span class="adventure-icon">◇</span><span><b>${t("Für deine Berufe")}</b></span></a>
     </div>
     <div id="dash"><div class="loading">${t("Lade Marktübersicht …")}</div></div>`;
 }
@@ -431,37 +404,42 @@ async function viewDashboard(r) {
   $("#dash").innerHTML = `
     <div class="pagehead market-heading"><div><div class="eyebrow">${t("DER MARKT AUF EINEN BLICK")}</div><h1>${esc(hname(hh))}</h1></div>
       <span class="sub">${esc(scopeText(hh))} · ${t("Stand")} ${dt(d.last_ts)} (${ago(d.last_ts)})</span></div>
-    <div class="kpis">
+    <div class="kpis kpis3">
       <div class="kpi"><div class="l">${t("Beobachtete Items")}</div><div class="v">${num(k.items)}</div></div>
       <div class="kpi"><div class="l">${t("Angebotswert (Referenz × Menge)")}</div><div class="v">${money(k.market_value, { short: true })}</div></div>
-      <div class="kpi"><div class="l">${t("Auktionen")}</div><div class="v">${k.auctions == null ? "–" : compact(k.auctions)}</div></div>
-      <div class="kpi"><div class="l">${t("Median Preisänderung 24 h")}</div><div class="v">${k.comparisons_reliable ? pct(k.median_chg24) : "–"}</div><div class="d">${tf("{0} vergleichbare Items", num(k.comparable24))}${k.comparisons_reliable ? "" : " · " + t("Teilstand / veraltet")}</div></div>
+      <div class="kpi"><div class="l">${t("Median Preisänderung 24 h")}</div><div class="v">${k.comparisons_reliable ? pct(k.median_chg24) : "–"}</div></div>
     </div>
-    <p class="note">${esc(marketQualityNote(d.quality))} <a href="#/data">${t("Laufprotokoll & Quellen")}</a></p>
-    <details class="card"><summary>${t("Methodik & Marktbreite")}</summary><p>${t("Median der Preisänderungen vergleichbarer Items, kein fester Warenkorb und kein Umsatzindex. Jedes Item zählt einmal. Referenzfenster sind am Marktzeitpunkt verankert: 24 h maximal 3 Stunden älter, 7 T maximal 18 Stunden älter (Tagesmittel möglich). Fehlende Vergleichswerte werden nicht ersetzt.")}</p><p>24 h: ${tf("{0} gestiegen", num(k.up24))} · ${tf("{0} gefallen", num(k.down24))} · ${tf("{0} unverändert", num(k.comparable24 - k.up24 - k.down24))}. ${t("Unvollständige oder veraltete Marktstände erhalten kein zusammenfassendes Änderungssignal.")}</p></details>
-    <div class="grid g32 mt">
-      <div class="card"><div class="cardhead"><h2>${t("Beobachteter Angebotswert")}</h2><span class="right muted small">${t("Summe Referenzpreis × Menge; kein Umsatz")}</span></div>
-        <div class="chartbox md"><canvas id="mkt"></canvas></div></div>
-      <div class="card flush"><h2>${t("Kategorien")}</h2>${table([
-        { label: t("Kategorie"), fmt: (c) => esc(AHI18N.trClass(c.class_name)) },
-        { label: "Items", num: true, fmt: (c) => num(c.items) },
-        { label: t("Marktwert"), num: true, fmt: (c) => money(c.market_value, { short: true }) },
-      ], d.categories.slice(0, 9), { rowHref: (c) => `/categories?class=${c.class_id}&house=${h.id}` })}</div>
-    </div>
-    <div class="secthead mt"><h2><span class="section-star" aria-hidden="true">✦</span> ${t("Im Fokus")}</h2><span class="sub">${t("nur Handelswaren und Items ab Qualität ungewöhnlich · kein Grau- und Weißschrott")}</span></div>
-    <div class="grid g3">
-      <div class="card flush"><div class="cardhead" style="padding:14px 16px 0"><h2>${t("▲ Steigt")}</h2><span class="right small muted">24 h</span></div>${moversMini(d.movers.gainers)}</div>
-      <div class="card flush"><div class="cardhead" style="padding:14px 16px 0"><h2>${t("▼ Fällt")}</h2><span class="right small muted">24 h</span></div>${moversMini(d.movers.losers)}</div>
+    <div class="secthead mt"><h2><span class="section-star" aria-hidden="true">✦</span> ${t("Im Fokus")}</h2></div>
+    <div class="grid g2">
+      <div class="card flush"><div class="cardhead" style="padding:14px 16px 0"><h2>${t("▲ Steigt")}</h2><span class="right small muted">24 h</span></div>${moversMini(d.movers.gainers.slice(0, 6))}</div>
       <div class="card flush"><div class="cardhead" style="padding:14px 16px 0"><h2>${t("Günstig &amp; gefragt")}</h2><span class="right small muted" title="${t("Mindestens 15 % unter dem 7-Tage-Schnitt und mit beobachtetem Umsatz")}">${t("≥ 15 % unter Ø 7 T · mit Umsatz")}</span></div>
         ${table([{ ...COL.item, sort: null }, { label: t("Preis"), num: true, fmt: (x) => money(x.last_min) }, { label: t("Rabatt"), num: true, fmt: (x) => `<span class="chg up">−${num(x.discount, 0)} %</span>` }],
-          d.deals.deals, { rowHref: (x) => `/item/${x.item_id}?house=${x.house_id}`, empty: t("Aktuell keine günstigen Gelegenheiten mit Umsatznachweis.") })}</div>
+          d.deals.deals.slice(0, 6), { rowHref: (x) => `/item/${x.item_id}?house=${x.house_id}`, empty: t("Aktuell keine günstigen Gelegenheiten mit Umsatznachweis.") })}</div>
     </div>
-    <p class="note mt">${t("Was sich wirklich lohnt, hängt vom Umsatz ab:")} <a href="#/liquidity?house=${h.id}">${t("Zur Liquiditäts-Auswertung ›")}</a></p>`;
+    <details class="card more-analysis mt" id="moreAn"><summary>${t("Mehr Analyse")}</summary>
+      <div class="grid g32 mt">
+        <div class="card"><div class="cardhead"><h2>${t("Beobachteter Angebotswert")}</h2></div>
+          <div class="chartbox md"><canvas id="mkt"></canvas></div></div>
+        <div class="card flush"><h2>${t("Kategorien")}</h2>${table([
+          { label: t("Kategorie"), fmt: (c) => esc(AHI18N.trClass(c.class_name)) },
+          { label: "Items", num: true, fmt: (c) => num(c.items) },
+          { label: t("Marktwert"), num: true, fmt: (c) => money(c.market_value, { short: true }) },
+        ], d.categories.slice(0, 9), { rowHref: (c) => `/categories?class=${c.class_id}&house=${h.id}` })}</div>
+      </div>
+      <div class="grid g2 mt"><div class="card flush"><div class="cardhead" style="padding:14px 16px 0"><h2>${t("▼ Fällt")}</h2><span class="right small muted">24 h</span></div>${moversMini(d.movers.losers.slice(0, 6))}</div>
+        <div class="card"><p class="note">${esc(marketQualityNote(d.quality))} <a href="#/data">${t("Laufprotokoll & Quellen")}</a></p>
+        <p class="note">${t("Was sich wirklich lohnt, hängt vom Umsatz ab:")} <a href="#/liquidity?house=${h.id}">${t("Zur Liquiditäts-Auswertung ›")}</a></p></div></div>
+    </details>`;
   const s = d.market_series;
-  if (s.length > 1) {
-    timeLineChart($("#mkt"), [line(t("Marktwert"), s.map((p) => ({ x: p.ts, y: p.total_value })), "--s1", { fill: false })],
-      { span: s[s.length - 1].ts - s[0].ts, yFmt: moneyText, minY: 0 });
-  } else $("#mkt").parentElement.innerHTML = `<div class="empty">${t("Zu wenige Snapshots für einen Verlauf.")}</div>`;
+  const drawChart = () => {
+    if (s.length > 1) {
+      timeLineChart($("#mkt"), [line(t("Marktwert"), s.map((p) => ({ x: p.ts, y: p.total_value })), "--s1", { fill: false })],
+        { span: s[s.length - 1].ts - s[0].ts, yFmt: moneyText, minY: 0 });
+    } else $("#mkt").parentElement.innerHTML = `<div class="empty">${t("Zu wenige Snapshots für einen Verlauf.")}</div>`;
+  };
+  const more = $("#moreAn");
+  let drawn = false;
+  more.addEventListener("toggle", () => { if (more.open && !drawn) { drawn = true; drawChart(); } });
 }
 function moversMini(rows) {
   return table([{ ...COL.item, sort: null }, { label: t("Preis"), num: true, fmt: (x) => money(x.last_min) }, { label: "Δ", num: true, fmt: (x) => pct(x.chg24_min ?? x.chg7d_min) }],
@@ -1710,3 +1688,21 @@ function watchVersion() {
   setInterval(check, 5 * 60 * 1000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) check(); });
     }
+
+// ===== Goblin-Maskottchen: ploppt ab und zu kurz am Seitenrand auf
+(function goblinPeek() {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  if (store.get("goblin-off")) return;
+  const el = document.createElement("button");
+  el.type = "button"; el.className = "goblin-peek"; el.setAttribute("aria-hidden", "true"); el.tabIndex = -1;
+  el.innerHTML = '<img src="assets/goblin.svg" alt="" width="56" height="56">';
+  document.body.appendChild(el);
+  let timer;
+  const hide = () => el.classList.remove("on");
+  const show = () => {
+    if (!document.hidden) { el.classList.add("on"); setTimeout(hide, 3800); }
+    timer = setTimeout(show, 60000 + Math.random() * 60000);
+  };
+  el.addEventListener("click", () => { hide(); store.set("goblin-off", "1"); clearTimeout(timer); });
+  timer = setTimeout(show, 25000);
+})();
