@@ -582,10 +582,10 @@ function wowTooltip(it) {
     ${it.vendor_sell ? `<div class="sell">${t("Verkaufspreis:")} ${money(it.vendor_sell)}</div>` : ""}</div>`;
 }
 
-function originalItemPanel(it) {
+function originalItemPanel(it, withGoblin = true) {
   const binding = AHI18N.binding(it.binding);
   const fallback = wowTooltip(it) || `<div class="wtip"><div class="tn q${it.quality ?? 1}">${esc(AHI18N.dispName(it))}</div>${binding ? `<div>${binding}</div>` : ""}${it.item_level ? `<div class="cy">${t("Gegenstandsstufe")} ${it.item_level}</div>` : ""}${it.slot ? `<div>${esc(AHI18N.trSlot(it.slot))}</div>` : ""}${it.required_level ? `<div>${t("Benötigt Stufe")} ${it.required_level}</div>` : ""}<p class="cm">${t("Weitere Original-Stats werden geladen.")}</p></div>`;
-  return `<section class="original-item-panel"><div class="original-item-label"><span>${t("ORIGINAL-ITEMTEXT")}</span><button type="button" class="btn" data-inspect-item="${Number(it.id || it.item_id)}">${t("⌕ Vergrößern")}</button></div><div data-original-tooltip="${Number(it.id || it.item_id)}">${fallback}<p class="tooltip-provenance">${t("Vorhandene Blizzard-Daten · vollständiger Forever-Text wird geladen …")}</p></div></section>`;
+  return `<section class="original-item-panel">${withGoblin ? goblinScene("panel-goblin") : ""}<div class="original-item-label"><span>${t("ORIGINAL-ITEMTEXT")}</span><button type="button" class="btn" data-inspect-item="${Number(it.id || it.item_id)}">${t("⌕ Vergrößern")}</button></div><div data-original-tooltip="${Number(it.id || it.item_id)}">${fallback}<p class="tooltip-provenance">${t("Vorhandene Blizzard-Daten · vollständiger Forever-Text wird geladen …")}</p></div></section>`;
 }
 
 /** Aufklappbarer Abschnitt; Inhalt wird erst beim ersten Öffnen gerendert (Zustand wird gemerkt). */
@@ -926,7 +926,7 @@ async function viewItem(r) {
     main.innerHTML = `<div class="ihead item-banner"><div class="who">${icon(it, true)}
         <div style="min-width:0"><h1 class="q${it.quality ?? 1}">${esc(AHI18N.dispName(it))}</h1>
           <div class="en">${altName(it) ? esc(altName(it)) + " · " : ""}ID ${id} · <a href="${AHI18N.whUrl("item", id)}" target="_blank" rel="noopener">Wowhead ↗</a></div>
-          ${it.class_name || it.item_level ? `<div class="chips mt">${it.class_name ? `<span class="pill">${esc([...new Set([AHI18N.trClass(it.class_name), AHI18N.trSubclass(it.subclass_name)].filter(Boolean))].join(" › "))}</span>` : ""}${it.item_level ? `<span class="pill">${t("Stufe")} ${it.item_level}</span>` : ""}</div>` : ""}</div></div>${goblinScene("head-goblin")}</div>
+          ${it.class_name || it.item_level ? `<div class="chips mt">${it.class_name ? `<span class="pill">${esc([...new Set([AHI18N.trClass(it.class_name), AHI18N.trSubclass(it.subclass_name)].filter(Boolean))].join(" › "))}</span>` : ""}${it.item_level ? `<span class="pill">${t("Stufe")} ${it.item_level}</span>` : ""}</div>` : ""}</div></div></div>
       <div class="card"><div class="empty">${t("Für dieses Item liegt seit Beginn unserer Erfassung keine Preisbeobachtung vor. Daraus lässt sich keine sichere Aussage zur Handelbarkeit ableiten.")}</div></div>
       ${originalItemPanel(it)}
       ${catalogNote(it)}
@@ -1013,7 +1013,7 @@ async function viewItem(r) {
         <div style="min-width:0"><h1 class="q${it.quality ?? 1}">${esc(AHI18N.dispName(it))}</h1>
           <div class="en">${altName(it) ? esc(altName(it)) + " · " : ""}ID ${id} · <a href="${AHI18N.whUrl("item", id)}" target="_blank" rel="noopener">Wowhead ↗</a></div>
           ${tags ? `<div class="chiprow">${tags}</div>` : ""}</div></div>
-      ${goblinScene("head-goblin")}<div class="actions">
+      <div class="actions">
         <button class="btn" id="cmpBtn">${inCmp ? t("✓ Im Vergleich") : t("+ Vergleich")}</button>
         <a class="btn" href="#/compare?items=${[...new Set([...state.compare, id])].join(",")}${hid ? "&house=" + hid : ""}">${t("Vergleichen ›")}</a>
       </div></div>

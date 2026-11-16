@@ -25,6 +25,6 @@ for (const [, img, quotes] of entries) {
 }
 for (const name of ['merchant','coin','courier','discount','sword','potions','treasure','alchemist']) assert(seen.has(name), name);
 // Kein Kontext darf zwei Figuren gleichzeitig rendern: Aufrufstellen je Ansicht prüfen.
-const calls = [...app.matchAll(/goblinScene\("(?:hero|head)-goblin"\)/g)].length;
+const calls = [...app.matchAll(/goblinScene\("(?:hero|head|panel)-goblin"\)/g)].length;
 assert(calls >= 5, 'Goblin-Platzierungen in den Ansichten fehlen');
 console.log('Static goblin placements and translations OK');
