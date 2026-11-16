@@ -1,0 +1,70 @@
+name: Einmal-Deploy Goblin mittig
+on: workflow_dispatch
+permissions:
+  contents: write
+  actions: write
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Backup vor dem Umbau
+        run: git archive --format=tar.gz -o /tmp/before-goblin-center.tar.gz HEAD static tests
+      - uses: actions/upload-artifact@v4
+        with:
+          name: before-goblin-center
+          path: /tmp/before-goblin-center.tar.gz
+      - name: Patch sicher anwenden
+        run: |
+          set -euo pipefail
+          cat > /tmp/patch.b64 <<'B64'
+          H4sIAJvx+moC/51U227jNhB991dMWwTxjbpF8UXqotndoosF2qZAHqO0oMWRxY1ECiIduzHyW/2B/liH8qXxJkiBvlie4Zy5zxGyKICxpb
+          TAfWO5lbkv0MilYrjJS66W6OXGwOKNx55UAjdwibMiKuaeF044n4oZhEEwieMeY+xN373RaPS2/6srYPEsGk9h5D4zIIUVsG24EFItmdVN
+          El40m/SgWGhrdb3TPfXAW+pFJRUrkbtn8Bq+RCfAtqhwk4RpzdulVEnQWbsXtoPAdi2FLZO84nXTD6dBsxmHgXf5sB5HIQmD1Dlgpmylui
+          f4wQ9Mmg2wSUy/fGV1yitXlMGqSDoAKtGF0q0ke14xabFmDVdYUVnaSCu1SlqsqCcPmEqj3T9S7f5hqh+wLSq9TkopBCpyxrwOfkz86IUv
+          CLMiDMUqbRKGZ+m+P4yyTJ8XGM1cgVFM5cVBV94j64absJBCjPwhfERlsQVbIhRyuWoRKJiTdIMKeIsceHGwmETkBKzWlZUNcCUgunCapq
+          X8FVc5Qk651cqDod8b/WcFFRY2yXmV9y+DMxhBfDF1fYb9eOJuPJEbTpf9YF9yN4L/WTOcJiXrJWzZGhf30rKam3sma1qmRGmF6ddyISvq
+          RCJa3dCKcKHX/QDCiFIO3X58FwRBPHgZg/qa88ZV/loPDtmFu25EZ6lbf0bf4xLXfMN2JXZLmhZaWWbkI+4uwrZcmUK3ddJqOjrss0jgsk
+          vkqkYhef9fB2E0nVNPticZboU0TcX/3FX59NQTz1nEorHG31kaz0neF0cgr+r33DG7FPH8krgjuOCzaB6fcsfryB1tvP7mGGM+nsBoTqRB
+          AjcGW9v/hjeNJ1VerYhm+ud7WtBFcU670jtaEee8tGoQ70/MTn19v78GWipj3n27B/F6IelgTnCn3hst3UExpIOwputoZz3aW/vZSeszM8
+          y2t78/3Q2Pt5B1x5B9dQ3Zi3PIBtkg7aDPrqKTn51D9uIesoHftdXlPRjD+WdiKthvat6RAYoDBxQtIpiG012vpS1BWgME5WRsSjJzO3ju
+          WuH78IkIYAUoFcJPrnWOFOD9qmhXRQpfUCC8V0bmpQXS2H3EG4qIUP79V14ai8o4fM2rDvsbEeOj1yNGUcZCrbX4UOn8Ht6Bm1TNbV72/d
+          3jp+sPP3/+9Y9frq9/vKH37LZ/m5ns5m74wyC7S/1nwzq6ocpPUAWWlXW1/AOrYtxGQgcAAA==
+          B64
+          base64 -d /tmp/patch.b64 | gzip -d > /tmp/deploy.patch
+          echo "1e2c72733ed53a87e3ff68bd8399a78dd117c01c55957a66ca2295eabf26121c  /tmp/deploy.patch" | sha256sum -c -
+          git apply --check /tmp/deploy.patch
+          git apply --stat /tmp/deploy.patch
+          git apply /tmp/deploy.patch
+      - name: Regressionstests
+        run: |
+          python -m unittest discover -s tests
+          node tests/recipes_core.test.js
+          node tests/i18n.test.js
+          node tests/goblins.test.js
+          node --check static/app.js
+          node --check static/item-tooltip.js
+          node --check static/static-api.js
+          node --check static/i18n.js
+      - name: Geprueften Stand speichern
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add static tests
+          git commit -m "Goblin auf Itemseiten in freier Flaeche zentriert"
+          git rm .github/workflows/deploy-goblin-center.yml
+          git commit -m "Einmal-Deploy-Workflow entfernt"
+          git push
+      - name: Seite neu veroeffentlichen
+        run: gh workflow run update.yml --ref main
