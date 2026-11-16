@@ -5,6 +5,19 @@
 (function () {
   "use strict";
   const STR = {
+ "Goblin-Händler": "Goblin trader",
+ "Ah, potenzieller Kunde ...": "Ah, potential customer ...",
+ "Willste meine Waren sehen?": "Can I show ya my wares?",
+ "Cha-ching!": "Cha-ching!",
+ "Mach ich dir n Angebot!": "Do I have a deal for you!",
+ "Wenn ichs nicht hab, willstes auch nicht.": "If I ain't got it, you don't want it.",
+ "Nichts gefunden? Ich schau noch mal im Lager nach.": "Nothing found? I'll check the stockroom again.",
+ "Hab das Beste im Angebot, wo gibt!": "Got the best deals anywhere!",
+ "Für jedes Abenteuer die passenden Waren.": "The right wares for every adventure.",
+ "Für jeden Kampf den richtigen Trank.": "The right potion for every fight.",
+ "Ich erkenn einen Käufer, wenn ich einen sehe.": "I know a buyer when I see one.",
+ "Zeit ist Geld, Freund!": "Time is money, friend!",
+
  "%/Tag": "%/day",
  "(Community-Daten, nicht vollständig; NPC- und Objektnamen englisch).": "(community data, not complete; NPC and object names in English).",
  "(Suchalias)": "(search alias)",
