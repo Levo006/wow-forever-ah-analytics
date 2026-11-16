@@ -9,6 +9,7 @@ assert(!app.includes('goblin-off'));
 assert(!css.includes('goblin-peek'));
 assert(app.includes('<figure class="goblin-ambient'));
 assert(css.includes('pointer-events:none'));
+assert(/\.panel-goblin\s*\{[^}]*left:calc\(50% \+ 437px - clamp\(140px,12vw,200px\)\);[^}]*right:auto;[^}]*width:clamp\(280px,24vw,400px\)/.test(css), 'Item goblin centered in the free space with its established size');
 // Genau eine Figur pro Aufruf; jede Ansicht ruft goblinScene höchstens einmal pro Platz.
 const moodBlock = app.match(/const GOBLIN_MOODS = \[([\s\S]*?)\];/);
 assert(moodBlock, 'GOBLIN_MOODS fehlt');

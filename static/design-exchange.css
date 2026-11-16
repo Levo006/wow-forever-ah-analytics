@@ -482,7 +482,8 @@ td {padding-top:13px;padding-bottom:13px;}
 .goblin-heading .pagehead {flex:1;margin:0;}
 .head-goblin {width:clamp(170px,10.5vw,210px);flex-shrink:0;margin:0 6px -64px auto;align-self:flex-end;}
 .original-item-panel {position:relative;isolation:isolate;overflow:hidden;}
-.panel-goblin {position:absolute;right:11%;bottom:-6px;width:clamp(280px,24vw,400px);z-index:-1;}
+/* Center the figure in the open area after the 620px tooltip and 230px provenance column. */
+.panel-goblin {position:absolute;left:calc(50% + 437px - clamp(140px,12vw,200px));right:auto;bottom:-6px;width:clamp(280px,24vw,400px);z-index:-1;}
 .panel-goblin img {-webkit-mask-image:none;mask-image:none;filter:drop-shadow(0 12px 16px #0004);}
 .panel-goblin figcaption {position:absolute;z-index:1;left:2%;top:-2%;margin:0;max-width:210px;font-size:13px;transform:rotate(-2deg);}
 @media(max-width:1279px){.panel-goblin{display:none;}}
