@@ -469,28 +469,22 @@ td {padding-top:13px;padding-bottom:13px;}
 }
 @media(max-width:560px){.g2 .card{min-width:0;}}
 
-/* Statisch im Dokumentfluss. Kein Pop-up, kein Klick, keine Animation. */
-.goblin-scene {margin:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:8px;width:180px;max-width:100%;flex-shrink:0;user-select:none;pointer-events:none;}
-.goblin-scene img {display:block;width:100%;height:auto;aspect-ratio:3/2;object-fit:contain;filter:drop-shadow(0 7px 9px #0002);}
-.goblin-scene figcaption {width:fit-content;max-width:190px;padding:8px 13px;border-radius:14px 14px 4px 14px;background:var(--surface-2);border:1px solid var(--border);color:var(--accent);font-size:12px;font-weight:600;line-height:1.4;text-align:center;}
+/* Ein Goblin pro Seite: angedockt, halb hinter den Boxen, weich auslaufend. Kein Pop-up, kein Klick. */
+.goblin-ambient {margin:0;display:flex;flex-direction:column;align-items:center;user-select:none;pointer-events:none;}
+.goblin-ambient img {display:block;width:100%;height:auto;filter:drop-shadow(0 10px 12px #0003);-webkit-mask-image:linear-gradient(180deg,#000 70%,transparent 96%);mask-image:linear-gradient(180deg,#000 70%,transparent 96%);}
+.goblin-ambient figcaption {position:relative;z-index:1;width:fit-content;max-width:190px;margin-bottom:-8px;padding:7px 13px;border-radius:14px 14px 4px 14px;background:color-mix(in srgb,var(--surface-2) 76%,transparent);backdrop-filter:blur(6px);color:var(--accent);font-size:12px;font-weight:600;line-height:1.4;text-align:center;transform:rotate(-1.6deg);}
 .hero {display:flex;align-items:center;justify-content:space-between;gap:28px;}
-.hero-copy {flex:1;min-width:0;max-width:800px;}
-.hero .goblin-scene {width:170px;}
-.hero .goblin-scene figcaption {background:#203448;border-color:#435468;color:#f0d39c;}
-.goblin-inline {width:auto;flex-direction:row-reverse;justify-content:flex-start;margin:0 20px 10px;gap:14px;}
-.goblin-inline img {width:126px;}
-.goblin-heading {display:flex;align-items:center;justify-content:space-between;gap:28px;margin-bottom:18px;}
+.hero-copy {flex:1;min-width:0;max-width:800px;position:relative;z-index:1;}
+.hero-goblin {position:absolute;right:30px;bottom:0;width:196px;z-index:0;}
+.hero-goblin figcaption {background:#203448cc;color:#f0d39c;transform:rotate(-2.2deg);}
+.goblin-heading {display:flex;align-items:flex-end;justify-content:space-between;gap:28px;margin-bottom:18px;}
 .goblin-heading .pagehead {flex:1;margin:0;}
-.goblin-heading .goblin-scene {width:158px;}
-.item-banner > .goblin-scene {margin-left:auto;width:150px;}
-.goblin-empty {margin:16px auto;width:170px;}
-@media(min-width:1600px){.hero .goblin-scene{width:210px;}}
-@media(max-width:1100px){.hero-goblin-left{display:none;}.hero .goblin-scene{width:155px;}.item-banner > .goblin-scene{width:128px;}}
-@media(max-width:700px){
- .hero {flex-wrap:wrap;gap:16px;}.hero-copy{flex-basis:100%;}
- .hero .hero-goblin-right{width:100%;flex-direction:row-reverse;justify-content:flex-start;gap:14px;}
- .hero .hero-goblin-right img{width:100px;}.hero .goblin-scene figcaption{max-width:180px;font-size:11px;}
- .goblin-heading{gap:12px;}.goblin-heading .goblin-scene{width:105px;}.goblin-heading .goblin-scene figcaption{font-size:10px;padding:6px 8px;}
- .goblin-inline{margin:0 12px 10px;}.goblin-inline img{width:94px;}.goblin-inline figcaption{font-size:11px;}
- .item-banner > .goblin-scene{width:112px;margin-left:0;}.item-banner > .goblin-scene figcaption{font-size:10px;}
+.head-goblin {width:134px;flex-shrink:0;margin:-4px 6px -32px auto;align-self:flex-end;}
+.item-banner > .goblin-ambient {align-self:flex-end;margin-bottom:-36px;}
+@media(min-width:1500px){.head-goblin{margin-right:-24px;}.hero-goblin{width:226px;right:44px;}}
+@media(max-width:1100px){.head-goblin{width:112px;margin-bottom:-24px;}.hero-goblin{width:150px;right:18px;}}
+@media(max-width:900px){.goblin-ambient{display:none;}}
+@media(prefers-reduced-motion:no-preference){
+ .goblin-ambient{animation:goblin-settle .8s ease-out both;}
+ @keyframes goblin-settle{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:none;}}
 }

@@ -373,14 +373,21 @@ function updateCompareBadge() {
   b.textContent = state.compare.length;
 }
 
-// Statische Händlerfiguren: Teil des Layouts, keine Bedienelemente.
-function goblinScene(image, quote, extra = "") {
-  return `<figure class="goblin-scene ${extra}" aria-label="${t("Goblin-Händler")}"><figcaption>${esc(t(quote))}</figcaption><img src="assets/goblins/${image}.webp" alt="" width="480" height="320" loading="lazy" decoding="async"></figure>`;
-}
-function itemGoblin(it) {
-  if (Number(it.class_id) === 2 || Number(it.class_id) === 4) return goblinScene("sword", "Hab das Beste im Angebot, wo gibt!");
-  if (Number(it.class_id) === 0) return goblinScene("alchemist", "Für jeden Kampf den richtigen Trank.");
-  return goblinScene("treasure", "Ich erkenn einen Käufer, wenn ich einen sehe.");
+// Ein zufälliger Händler pro Seite, angedockt an das Layout. Kein Pop-up, kein Klick.
+const GOBLIN_MOODS = [
+  ["merchant", ["Willste meine Waren sehen?", "Wenn ichs nicht hab, willstes auch nicht."]],
+  ["coin", ["Ah, potenzieller Kunde ...", "Zeit ist Geld, Freund!"]],
+  ["courier", ["Zeit ist Geld, Freund!", "Nichts gefunden? Ich schau noch mal im Lager nach."]],
+  ["discount", ["Mach ich dir n Angebot!", "Hab das Beste im Angebot, wo gibt!"]],
+  ["sword", ["Hab das Beste im Angebot, wo gibt!", "Für jedes Abenteuer die passenden Waren."]],
+  ["potions", ["Für jedes Abenteuer die passenden Waren.", "Für jeden Kampf den richtigen Trank."]],
+  ["treasure", ["Cha-ching!", "Ich erkenn einen Käufer, wenn ich einen sehe."]],
+  ["alchemist", ["Für jeden Kampf den richtigen Trank.", "Ah, potenzieller Kunde ..."]],
+];
+const goblinPick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+function goblinScene(extra = "") {
+  const [image, quotes] = goblinPick(GOBLIN_MOODS);
+  return `<figure class="goblin-ambient ${extra}" aria-label="${t("Goblin-Händler")}"><figcaption>${esc(t(goblinPick(quotes)))}</figcaption><img src="assets/goblins/${image}.webp" alt="" width="480" height="320" loading="lazy" decoding="async"></figure>`;
 }
 
 // ============================================================= Übersicht
@@ -388,11 +395,11 @@ function itemGoblin(it) {
 function homeSearch(house) {
   const ex = AHI18N.get() === "en" ? ["Copper Ore", "Silk Cloth", "Recipe: Elixir", "Pattern: Linen", "Tough Wolf Meat"] : ["Kupfererz", "Seidenstoff", "Rezept: Elixier", "Muster: Leinen", "Zähes Wolfsfleisch"];
   return `<form class="card hero" id="heroForm" role="search">
-      ${goblinScene("coin", "Ah, potenzieller Kunde ...", "hero-goblin-left")}<div class="hero-copy"><h1>${t("Was suchst du?")}</h1>
+      <div class="hero-copy"><h1>${t("Was suchst du?")}</h1>
       <div class="herobox"><input id="heroInput" type="search" name="q" autocomplete="off" placeholder="${t("Item-Name (DE/EN) oder ID")}" aria-label="${t("Item suchen")}">
         <button class="btn primary">${t("Suchen")}</button><div id="heroResults" class="ac hero-ac" hidden></div></div>
       <div class="heroex muted small">${ex.map((q) => `<a href="#/search?q=${encodeURIComponent(q)}${house ? "&house=" + house : ""}">${esc(q)}</a>`).join(" · ")}</div></div>
-      ${goblinScene("merchant", "Willste meine Waren sehen?", "hero-goblin-right")}
+      ${goblinScene("hero-goblin")}
     </form>
     <div class="adventure-links" aria-label="${t("Schnelleinstieg")}">
       <a href="#/search${house ? "?house=" + house : ""}" class="adventure-link"><span class="adventure-icon">⌕</span><span><b>${t("Schatzsuche")}</b></span></a>
@@ -422,10 +429,10 @@ async function viewDashboard(r) {
     </div>
     <div class="secthead mt"><h2><span class="section-star" aria-hidden="true">✦</span> ${t("Im Fokus")}</h2></div>
     <div class="grid g2">
-      <div class="card flush"><div class="cardhead" style="padding:14px 16px 0"><h2>${t("▲ Steigt")}</h2><span class="right small muted">24 h</span></div>${moversMini(d.movers.gainers.slice(0, 6))}${goblinScene("treasure", "Cha-ching!", "goblin-inline")}</div>
+      <div class="card flush"><div class="cardhead" style="padding:14px 16px 0"><h2>${t("▲ Steigt")}</h2><span class="right small muted">24 h</span></div>${moversMini(d.movers.gainers.slice(0, 6))}</div>
       <div class="card flush"><div class="cardhead" style="padding:14px 16px 0"><h2>${t("Günstig &amp; gefragt")}</h2><span class="right small muted" title="${t("Mindestens 15 % unter dem 7-Tage-Schnitt und mit beobachtetem Umsatz")}">${t("≥ 15 % unter Ø 7 T · mit Umsatz")}</span></div>
         ${table([{ ...COL.item, sort: null }, { label: t("Preis"), num: true, fmt: (x) => money(x.last_min) }, { label: t("Rabatt"), num: true, fmt: (x) => `<span class="chg up">−${num(x.discount, 0)} %</span>` }],
-          d.deals.deals.slice(0, 6), { rowHref: (x) => `/item/${x.item_id}?house=${x.house_id}`, empty: t("Aktuell keine günstigen Gelegenheiten mit Umsatznachweis.") })}${goblinScene("discount", "Mach ich dir n Angebot!", "goblin-inline")}</div>
+          d.deals.deals.slice(0, 6), { rowHref: (x) => `/item/${x.item_id}?house=${x.house_id}`, empty: t("Aktuell keine günstigen Gelegenheiten mit Umsatznachweis.") })}</div>
     </div>
     <details class="card more-analysis mt" id="moreAn"><summary>${t("Mehr Analyse")}</summary>
       <div class="grid g32 mt">
@@ -471,7 +478,7 @@ async function viewSearch(r) {
   const quals = (p.quality || "").split(",").filter(Boolean);
   const gold = (v) => (v ? v / 10000 : "");
   main.innerHTML = `
-    <div class="goblin-heading"><div class="pagehead"><h1>${t("Item-Suche")}</h1><span class="sub" id="sumline"></span></div>${goblinScene("merchant", "Wenn ichs nicht hab, willstes auch nicht.")}</div>
+    <div class="goblin-heading"><div class="pagehead"><h1>${t("Item-Suche")}</h1><span class="sub" id="sumline"></span></div>${goblinScene("head-goblin")}</div>
     <form class="card filters" id="ff">
       <label class="f"><span>${t("Name / ID")}</span><input type="search" name="q" value="${esc(p.q || "")}" placeholder="${t("Deutsch oder Englisch, z. B. Silberblatt, Silverleaf, 765")}"></label>
       <label class="f"><span>${t("Klasse")}</span><select name="class"><option value="">${t("Alle")}</option>${classes.map((c) => `<option value="${c.class_id}" ${String(p.class) === String(c.class_id) ? "selected" : ""}>${esc(AHI18N.trClass(c.class_name))} (${c.items})</option>`).join("")}</select></label>
@@ -507,7 +514,7 @@ async function viewSearch(r) {
   $("#res").innerHTML = table([COL.item, COL.price, COL.median, COL.avg30, COL.qty, COL.chg24, COL.chg7d, COL.liq, COL.value, COL.spark, COL.cmp], res.items, {
     sort: p.sort, dir: p.dir, onSort: (s, d) => setParams({ sort: s, dir: d, page: 1 }),
     rowHref: (x) => `/item/${x.item_id}${x.house_id ? "?house=" + x.house_id : ""}`, empty: t("Keine Items passen zu den Filtern."),
-  }) + (!res.total ? goblinScene("courier", "Nichts gefunden? Ich schau noch mal im Lager nach.", "goblin-empty") : "") + pager(res.total, res.page, res.page_size, (pg) => setParams({ page: pg }));
+  }) + pager(res.total, res.page, res.page_size, (pg) => setParams({ page: pg }));
 }
 
 // ============================================================ Kategorien
@@ -536,7 +543,7 @@ async function viewCategories(r) {
     body = `<div class="card flush" id="catitems"><div class="loading">${t("Lade Items …")}</div></div>`;
   }
   main.innerHTML = `<div class="crumbs">${crumbs.join(" › ")}</div>
-    <div class="goblin-heading"><div class="pagehead"><h1>${esc(sub ? AHI18N.trSubclass(sub.subclass_name) : cls ? AHI18N.trClass(cls.class_name) : t("Kategorien"))}</h1></div>${goblinScene(Number(cls?.class_id) === 2 || Number(cls?.class_id) === 4 ? "sword" : "potions", Number(cls?.class_id) === 2 || Number(cls?.class_id) === 4 ? "Hab das Beste im Angebot, wo gibt!" : "Für jedes Abenteuer die passenden Waren.")}</div>${body}`;
+    <div class="goblin-heading"><div class="pagehead"><h1>${esc(sub ? AHI18N.trSubclass(sub.subclass_name) : cls ? AHI18N.trClass(cls.class_name) : t("Kategorien"))}</h1></div>${goblinScene("head-goblin")}</div>${body}`;
   if (cls) {
     const sp = { house, class: cls.class_id, sort: p.sort || "value", dir: p.dir || "desc", page: p.page || 1, page_size: 50, spark: 1 };
     if (sub) sp.subclass = sub.subclass_id ?? -1;
@@ -919,9 +926,8 @@ async function viewItem(r) {
     main.innerHTML = `<div class="ihead item-banner"><div class="who">${icon(it, true)}
         <div style="min-width:0"><h1 class="q${it.quality ?? 1}">${esc(AHI18N.dispName(it))}</h1>
           <div class="en">${altName(it) ? esc(altName(it)) + " · " : ""}ID ${id} · <a href="${AHI18N.whUrl("item", id)}" target="_blank" rel="noopener">Wowhead ↗</a></div>
-          ${it.class_name || it.item_level ? `<div class="chips mt">${it.class_name ? `<span class="pill">${esc([...new Set([AHI18N.trClass(it.class_name), AHI18N.trSubclass(it.subclass_name)].filter(Boolean))].join(" › "))}</span>` : ""}${it.item_level ? `<span class="pill">${t("Stufe")} ${it.item_level}</span>` : ""}</div>` : ""}</div></div></div>
+          ${it.class_name || it.item_level ? `<div class="chips mt">${it.class_name ? `<span class="pill">${esc([...new Set([AHI18N.trClass(it.class_name), AHI18N.trSubclass(it.subclass_name)].filter(Boolean))].join(" › "))}</span>` : ""}${it.item_level ? `<span class="pill">${t("Stufe")} ${it.item_level}</span>` : ""}</div>` : ""}</div></div>${goblinScene("head-goblin")}</div>
       <div class="card"><div class="empty">${t("Für dieses Item liegt seit Beginn unserer Erfassung keine Preisbeobachtung vor. Daraus lässt sich keine sichere Aussage zur Handelbarkeit ableiten.")}</div></div>
-      ${goblinScene("alchemist", "Für jeden Kampf den richtigen Trank.", "goblin-empty")}
       ${originalItemPanel(it)}
       ${catalogNote(it)}
       <div class="folds">${fold("rec", t("Herkunft & Verwendung"), t("Lade Rezepte und Quests …"), true)}</div>`;
@@ -1007,7 +1013,7 @@ async function viewItem(r) {
         <div style="min-width:0"><h1 class="q${it.quality ?? 1}">${esc(AHI18N.dispName(it))}</h1>
           <div class="en">${altName(it) ? esc(altName(it)) + " · " : ""}ID ${id} · <a href="${AHI18N.whUrl("item", id)}" target="_blank" rel="noopener">Wowhead ↗</a></div>
           ${tags ? `<div class="chiprow">${tags}</div>` : ""}</div></div>
-      ${itemGoblin(it)}<div class="actions">
+      ${goblinScene("head-goblin")}<div class="actions">
         <button class="btn" id="cmpBtn">${inCmp ? t("✓ Im Vergleich") : t("+ Vergleich")}</button>
         <a class="btn" href="#/compare?items=${[...new Set([...state.compare, id])].join(",")}${hid ? "&house=" + hid : ""}">${t("Vergleichen ›")}</a>
       </div></div>
@@ -1360,7 +1366,7 @@ async function viewLiquidity(r) {
   const p = { ...r.params };
   const classes = await getClasses(house);
   main.innerHTML = `
-    <div class="goblin-heading"><div class="pagehead"><h1>${t("Liquidität")}</h1><span class="sub">${tf("Wie oft Items wirklich den Besitzer wechseln · {0} · geschätzt aus Angebotsbewegungen, keine Verkaufsnachweise", esc(hname(h)))}</span></div>${goblinScene("courier", "Zeit ist Geld, Freund!")}</div>
+    <div class="goblin-heading"><div class="pagehead"><h1>${t("Liquidität")}</h1><span class="sub">${tf("Wie oft Items wirklich den Besitzer wechseln · {0} · geschätzt aus Angebotsbewegungen, keine Verkaufsnachweise", esc(hname(h)))}</span></div>${goblinScene("head-goblin")}</div>
     <div class="card filters">
       <label class="f"><span>${t("Klasse")}</span><select id="cl"><option value="">${t("Alle")}</option>${classes.map((c) => `<option value="${c.class_id}" ${String(p.class) === String(c.class_id) ? "selected" : ""}>${esc(AHI18N.trClass(c.class_name))}</option>`).join("")}</select></label>
     </div>
