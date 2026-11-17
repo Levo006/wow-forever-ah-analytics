@@ -71,6 +71,8 @@ def main(argv=None):
         if name == "questie":
             rc.add_argument("--path", help="lokale QuestieDB-Zip oder Addon-Ordner statt Download")
 
+    n = sub.add_parser("news", help="News-Feeds (Wowhead Forever, Blue Tracker) abrufen und speichern")
+
     ca = sub.add_parser("catalog", help="Buildfixierten Forever-Itemstamm prüfen und importieren")
     ca.add_argument("--refresh", action="store_true", help="Quellbytes erneut prüfen")
     sub.add_parser("refresh", help="Zusammenfassungen neu berechnen")
@@ -134,6 +136,9 @@ def main(argv=None):
             if not args.loop:
                 break
             time.sleep(interval)
+    elif args.cmd == "news":
+        from . import news
+        news.fetch_and_store(con)
     elif args.cmd == "export":
         from . import export
         out = args.out or os.path.join(config.ROOT, "docs")

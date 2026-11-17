@@ -486,6 +486,17 @@ h1 { font-weight: 700; }
   max-width: 1500px; margin: 26px auto 0; padding: 14px 20px 26px; color: var(--text-muted); font-size: 13px; border-top: 1px solid var(--border); }
 .foot a { color: var(--text-secondary); }
 .foot .badge { position: relative; top: -1px; }
+/* Dezente News-Karte (Übersicht): kuratierte Gold-Guides + Feed-News */
+.newslist { list-style: none; margin: 0; padding: 0 16px 12px; display: grid; gap: 6px; }
+.newslist li { display: flex; align-items: baseline; gap: 10px; font-size: 13px; min-width: 0; }
+.newslist a { color: var(--link); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.newslist a:hover { text-decoration: underline; }
+.news-badge { flex: none; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; padding: 1px 6px; border-radius: 6px; background: var(--surface-3); color: var(--text-secondary); }
+.news-badge.guide { background: rgba(224,176,58,.18); color: var(--accent); }
+.news-badge.blue { background: rgba(57,135,229,.18); color: var(--s1); }
+.news-meta { flex: none; margin-left: auto; color: var(--text-muted); font-size: 11px; white-space: nowrap; }
+@media (max-width: 700px) { .news-meta { display: none; } }
+
 .secthead { display: flex; align-items: baseline; gap: 12px; margin: 22px 0 12px; flex-wrap: wrap; }
 .secthead h2 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: 18px; }
 .secthead .sub { color: var(--text-muted); font-size: 13px; }

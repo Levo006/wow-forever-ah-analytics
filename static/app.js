@@ -434,6 +434,7 @@ async function viewDashboard(r) {
         ${table([{ ...COL.item, sort: null }, { label: t("Preis"), num: true, fmt: (x) => money(x.last_min) }, { label: t("Rabatt"), num: true, fmt: (x) => `<span class="chg up">−${num(x.discount, 0)} %</span>` }],
           d.deals.deals.slice(0, 6), { rowHref: (x) => `/item/${x.item_id}?house=${x.house_id}`, empty: t("Aktuell keine günstigen Gelegenheiten mit Umsatznachweis.") })}</div>
     </div>
+    <div id="newsSlot" class="mt"></div>
     <details class="card more-analysis mt" id="moreAn"><summary>${t("Mehr Analyse")}</summary>
       <div class="grid g32 mt">
         <div class="card"><div class="cardhead"><h2>${t("Beobachteter Angebotswert")}</h2></div>
@@ -455,10 +456,28 @@ async function viewDashboard(r) {
         { span: s[s.length - 1].ts - s[0].ts, yFmt: moneyText, minY: 0 });
     } else $("#mkt").parentElement.innerHTML = `<div class="empty">${t("Zu wenige Snapshots für einen Verlauf.")}</div>`;
   };
+  renderNews($("#newsSlot"));
   const more = $("#moreAn");
   let drawn = false;
   more.addEventListener("toggle", () => { if (more.open && !drawn) { drawn = true; drawChart(); } });
 }
+// Dezente News-Karte auf der Übersicht: kuratierte Gold-Guides + jüngste WoW-Forever-/Blue-News
+// (data/news.json aus dem stündlichen Export; fehlt die Datei, bleibt der Platz leer).
+async function renderNews(slot) {
+  let d;
+  try {
+    const r = await fetch("data/news.json", { cache: "no-cache" });
+    if (!r.ok) return;
+    d = await r.json();
+  } catch { return; }
+  const guides = (d.guides || []).slice(0, 3);
+  const items = (d.items || []).slice(0, 4);
+  if (!guides.length && !items.length) return;
+  const row = (it) => `<li><span class="news-badge ${it.kind === "guide" ? "guide" : it.kind === "blue" ? "blue" : ""}">${esc(it.kind === "guide" ? t("Guide") : it.kind === "blue" ? t("Blue Post") : t("News"))}</span><a href="${esc(it.url)}" target="_blank" rel="noopener noreferrer">${esc(it.title)}</a><span class="news-meta">${esc(it.source)}${it.published_ts ? " · " + ago(it.published_ts) : ""}</span></li>`;
+  slot.innerHTML = `<div class="card flush newscard"><div class="cardhead" style="padding:14px 16px 0"><h2>${t("Neuigkeiten & Gold-Guides")}</h2><span class="right small muted">${t("Externe Quellen, stündlich aktualisiert")}</span></div>
+    <ul class="newslist">${guides.map(row).join("")}${items.map(row).join("")}</ul></div>`;
+}
+
 function moversMini(rows) {
   return table([{ ...COL.item, sort: null }, { label: t("Preis"), num: true, fmt: (x) => money(x.last_min) }, { label: "Δ", num: true, fmt: (x) => pct(x.chg24_min ?? x.chg7d_min) }],
     rows, { rowHref: (x) => `/item/${x.item_id}?house=${x.house_id}`, empty: t("Keine Änderungen.") });

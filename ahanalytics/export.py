@@ -306,6 +306,11 @@ def export_site(con, out_dir: str, history_days: int = 180, snapshot_files: int 
             "SELECT ts, source, status, message FROM import_log ORDER BY id DESC LIMIT 20")],
     }
     _write(os.path.join(data_dir, "meta.json"), meta)
+    try:  # News sind ein Zusatz: ein Fehler darf den Export nicht stoppen
+        from . import news
+        _write(os.path.join(data_dir, "news.json"), news.payload(con))
+    except Exception as exc:  # noqa: BLE001
+        log(f"News-Export übersprungen: {exc}")
     stats["seconds"] = round(time.time() - t0, 1)
     size = sum(os.path.getsize(os.path.join(dp, f)) for dp, _, fs in os.walk(data_dir) for f in fs)
     stats["data_mb"] = round(size / 1048576, 1)
