@@ -1,0 +1,64 @@
+name: Einmal-Deploy Goblin Polish
+on: workflow_dispatch
+permissions:
+  contents: write
+  actions: write
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Backup static und tests als Artefakt
+        uses: actions/upload-artifact@v4
+        with:
+          name: backup-vor-goblin-polish
+          path: |
+            static
+            tests
+          retention-days: 14
+      - name: Patch anwenden
+        run: |
+          set -euo pipefail
+          base64 -d .github/goblin-payload.b64 | gunzip > /tmp/change.patch
+          echo "603acfa92c211ccff2f912cf93e40775c25be6a3c08b486138e456db6cb385b1  /tmp/change.patch" | sha256sum -c -
+          git apply --check /tmp/change.patch
+          git apply /tmp/change.patch
+      - name: Tests
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_*.py'
+          node tests/goblins.test.js
+          node tests/i18n.test.js
+          node tests/recipes_core.test.js
+          node tests/catalog.test.js
+          for f in static/app.js static/i18n.js static/item-tooltip.js static/static-api.js static/recipes-core.js; do node --check "$f"; done
+          git diff --check
+      - name: Aenderung committen und pushen
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/goblin-payload.b64
+          git add -A static tests
+          git commit -m "Goblin-Polish: schaerfere Bilder, Sprechblase mittig mit Zipfel, Enlarge raus, Stueckzahl groesser"
+          git push
+      - name: Einmal-Deploy-Workflow entfernen
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/deploy-goblin-polish.yml
+          git commit -m "Einmal-Deploy-Workflow entfernt"
+          git push
+      - name: Seite neu veroeffentlichen
+        run: gh workflow run update.yml --ref main
