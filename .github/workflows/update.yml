@@ -163,6 +163,12 @@ jobs:
           ls -la ah.sqlite.gz
           gh release upload datenbank ah.sqlite.gz --clobber
 
+      # News-Feeds (Wowhead Forever, Blue Tracker): fehlertolerant – bei Fehlern bleibt
+      # der bisherige Bestand in der Datenbank und wird weiter ausgeliefert.
+      - name: News-Feeds abrufen
+        continue-on-error: true
+        run: python run.py news
+
       - name: Website bauen
         run: python run.py publish --no-push
 
