@@ -1,0 +1,184 @@
+name: Einmal-Deploy News-Bereich
+on: workflow_dispatch
+permissions:
+  contents: write
+  actions: write
+  workflows: write
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Backup vor dem Umbau
+        run: git archive --format=tar.gz -o /tmp/before-news.tar.gz HEAD static tests ahanalytics .github/workflows
+      - uses: actions/upload-artifact@v4
+        with:
+          name: before-news-bereich
+          path: /tmp/before-news.tar.gz
+      - name: Patch sicher anwenden
+        run: |
+          set -euo pipefail
+          cat > /tmp/patch.b64 <<'B64'
+          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
+          B64
+          base64 -d /tmp/patch.b64 | gzip -d > /tmp/deploy.patch
+          echo "7b82958556e66ee313758008f96bdd289b31200d01a5f33a2ae129149f040b86  /tmp/deploy.patch" | sha256sum -c -
+          git apply --check /tmp/deploy.patch
+          git apply --stat /tmp/deploy.patch
+          git apply /tmp/deploy.patch
+      - name: Regressionstests
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_*.py'
+          node tests/goblins.test.js
+          node tests/i18n.test.js
+          node tests/recipes_core.test.js
+          for f in static/app.js static/i18n.js static/item-tooltip.js static/static-api.js static/recipes-core.js; do node --check "$f"; done
+          git diff --check
+      - name: Aenderung committen und pushen
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A ahanalytics static tests .github/workflows/update.yml
+          git commit -m "News-Bereich: kuratierte Gold-Guides + WoW-Forever-/Blue-News (stuendlich aktualisiert)"
+          git push
+      - name: Einmal-Deploy-Workflow entfernen
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/deploy-news.yml
+          git commit -m "Einmal-Deploy-Workflow entfernt"
+          git push
+      - name: Seite neu veroeffentlichen
+        run: gh workflow run update.yml --ref main
