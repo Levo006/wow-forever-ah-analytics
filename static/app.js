@@ -585,7 +585,7 @@ function wowTooltip(it) {
 function originalItemPanel(it, withGoblin = true) {
   const binding = AHI18N.binding(it.binding);
   const fallback = wowTooltip(it) || `<div class="wtip"><div class="tn q${it.quality ?? 1}">${esc(AHI18N.dispName(it))}</div>${binding ? `<div>${binding}</div>` : ""}${it.item_level ? `<div class="cy">${t("Gegenstandsstufe")} ${it.item_level}</div>` : ""}${it.slot ? `<div>${esc(AHI18N.trSlot(it.slot))}</div>` : ""}${it.required_level ? `<div>${t("Benötigt Stufe")} ${it.required_level}</div>` : ""}<p class="cm">${t("Weitere Original-Stats werden geladen.")}</p></div>`;
-  return `<section class="original-item-panel">${withGoblin ? goblinScene("panel-goblin") : ""}<div class="original-item-label"><span>${t("ORIGINAL-ITEMTEXT")}</span><button type="button" class="btn" data-inspect-item="${Number(it.id || it.item_id)}">${t("⌕ Vergrößern")}</button></div><div data-original-tooltip="${Number(it.id || it.item_id)}">${fallback}<p class="tooltip-provenance">${t("Vorhandene Blizzard-Daten · vollständiger Forever-Text wird geladen …")}</p></div></section>`;
+  return `<section class="original-item-panel">${withGoblin ? goblinScene("panel-goblin") : ""}<div class="original-item-label"><span>${t("ORIGINAL-ITEMTEXT")}</span></div><div data-original-tooltip="${Number(it.id || it.item_id)}">${fallback}<p class="tooltip-provenance">${t("Vorhandene Blizzard-Daten · vollständiger Forever-Text wird geladen …")}</p></div></section>`;
 }
 
 /** Aufklappbarer Abschnitt; Inhalt wird erst beim ersten Öffnen gerendert (Zustand wird gemerkt). */
@@ -982,7 +982,7 @@ async function viewItem(r) {
     return `<button type="button" class="hcard ${opts.total ? "total" : ""} ${on ? "on" : ""}" data-h="${hidC}">
       <div class="ht"><b>${title}</b><span>${sub}</span></div>
       <div class="hp">${listingPrice(row)}</div>
-      <div class="hm"><span>${t("Median")} ${money(row.last_median)}</span><span>${row.is_current ? compact(row.last_qty) + " " + t("Stück") : t("historisch")}</span></div>
+      <div class="hm"><span>${t("Median")} ${money(row.last_median)}</span><span class="${row.is_current ? "hq" : ""}">${row.is_current ? compact(row.last_qty) + " " + t("Stück") : t("historisch")}</span></div>
       <div class="hm"><span>${row.is_current ? "24 h " + pct(row.chg24_min) : t("zuletzt") + " " + dt(row.last_ts)}</span>${cheapest && row.house_id === cheapest.house_id && listed.length > 1 ? `<span class="best">${t("★ günstigstes")}</span>` : ""}</div>
       ${row.liq_score != null ? `<div class="hm"><span>${liqBadge(row)}</span></div>` : ""}</button>`;
   };
