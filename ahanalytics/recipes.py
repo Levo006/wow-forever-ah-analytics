@@ -359,3 +359,61 @@ def group_houses(con) -> dict[str, int]:
         if k in db.GROUPS and k not in out:
             out[k] = r["id"]
     return out
+
+
+def profession_items(con) -> dict[int, set[int]]:
+    """{Item-ID: {Beruf-ID, …}} – das Item ist Zutat oder Ergebnis eines Rezepts des Berufs.
+
+    Grundlage der Beruf-Filter in den Kategorien (Server; Spiegel in static-api.js).
+    """
+    ensure_schema(con)
+    out: dict[int, set[int]] = {}
+    for iid, pid in con.execute("SELECT item_id, profession_id FROM recipes WHERE item_id IS NOT NULL"):
+        out.setdefault(iid, set()).add(pid)
+    for iid, pid in con.execute(
+            "SELECT rr.item_id, r.profession_id FROM recipe_reagents rr JOIN recipes r ON r.id = rr.recipe_id"):
+        out.setdefault(iid, set()).add(pid)
+    return out
+
+
+def profitable_recipe_items(data: dict, factions: set[str]) -> set[int]:
+    """Rezept-Items (Klasse „Rezepte“), die mindestens ein Rezept mit positiver Spanne lehren.
+
+    AH-Modus: Verkauf des Ergebnisses zum typischen Tiefstpreis nach 5 % Gebühr minus
+    Materialkosten (nur komplett verfügbare Zutaten zum Tiefstpreis), je Stück, in einer
+    der Fraktionen. Spiegelt RecipeCore.margin (mode "ah") bzw. recipeProfitable in
+    static-api.js – beide Seiten müssen übereinstimmen.
+    """
+    cols = (data.get("recipes") or {}).get("cols") or []
+    ci = {c: i for i, c in enumerate(cols)}
+    by_id = {row[ci["id"]]: row for row in (data.get("recipes") or {}).get("rows") or []}
+    prices = data.get("prices") or {}
+
+    def price(fac: str, iid):
+        p = ((prices.get(fac) or {}).get("items") or {}).get(str(iid))
+        return p[0] if p and p[0] and p[0] > 0 else None
+
+    def profitable(row) -> bool:
+        for fac in factions:
+            item = row[ci["item"]]
+            sell = price(fac, item) if item else None
+            if not sell:
+                continue
+            qmin = row[ci["qmin"]] or 1
+            qavg = (qmin + (row[ci["qmax"]] or qmin)) / 2
+            cost, complete = 0.0, True
+            for pair in row[ci["reagents"]] or []:
+                unit = price(fac, pair[0])
+                if unit is None:
+                    complete = False
+                    break
+                cost += unit * pair[1]
+            if complete and sell * 0.95 - cost / qavg > 0:
+                return True
+        return False
+
+    out = set()
+    for iid, rids in (data.get("teaches") or {}).items():
+        if any(profitable(by_id[rid]) for rid in rids if rid in by_id):
+            out.add(int(iid))
+    return out

@@ -135,7 +135,7 @@ SUMMARY_COLS = """
   s.avg7_min, s.avg30_min, s.avg7_median, s.avg30_median, s.avg7_qty, s.cv7_min,
   s.low30_min, s.high30_min,
   i.name, i.name_en, i.quality, i.class_id, i.class_name, i.subclass_id, i.subclass_name, i.icon,
-  i.item_level, i.is_commodity, i.meta_status,
+  i.item_level, i.required_level, i.is_commodity, i.meta_status,
   i.catalog_build, i.catalog_state, i.catalog_test, i.binding, i.catalog_aliases,
   va.alias AS verified_alias,
   lq.presence AS liq_presence, lq.events AS liq_events, lq.vanish AS liq_vanish,
@@ -379,6 +379,27 @@ def search(con, params):
     quals = _ids(params, "quality")
     if quals:
         rows = [r for r in rows if r.get("quality") in quals]
+    # --- Kategorie-Filter (Spiegel in static-api.js; beide Seiten müssen übereinstimmen) ---
+    if params.get("listed") == "1":
+        rows = [r for r in rows if r.get("is_current")]
+    min_lvl, max_lvl = _int(params, "min_lvl", lo=1), _int(params, "max_lvl", lo=1)
+    # Ohne bekannte Stufen im Datenbestand (älterer Export) wirkt der Filter nicht, statt alles auszublenden.
+    if (min_lvl is not None or max_lvl is not None) and any(r.get("required_level") is not None for r in rows):
+        rows = [r for r in rows if r.get("required_level") is not None
+                and (min_lvl is None or r["required_level"] >= min_lvl)
+                and (max_lvl is None or r["required_level"] <= max_lvl)]
+    prof_ids = set(_ids(params, "prof"))
+    if prof_ids or params.get("margin") == "1":
+        from . import recipes as rc
+        if prof_ids:
+            pmap = rc.profession_items(con)
+            rows = [r for r in rows if prof_ids & pmap.get(r["item_id"], set())]
+        if params.get("margin") == "1":
+            factions = {str(r.get("faction") or "").lower() for r in rows if r.get("faction")}
+            if not factions:
+                factions = {"allianz", "horde", "neutral"}
+            keep = rc.profitable_recipe_items(rc.export_data(con, rc.group_houses(con)), factions)
+            rows = [r for r in rows if r["item_id"] in keep]
     for key, col, lower in (("min_price", "last_min", True), ("max_price", "last_min", False),
                              ("min_qty", "last_qty", True), ("max_qty", "last_qty", False),
                              ("min_avg_qty", "avg7_qty", True), ("min_chg", "chg24_min", True), ("max_chg", "chg24_min", False)):

@@ -225,6 +225,48 @@ const StaticAPI = (() => {
   const SORTS = { name: "name", price: "last_min", median: "last_median", qty: "last_qty", avg_qty: "avg7_qty", chg24: "chg24_min",
     chg7d: "chg7d_min", vol: "cv7_min", value: "market_value", quality: "quality", id: "item_id", updated: "last_ts", avg30: "avg30_min" };
 
+  // --- Kategorie-Filter: Rezeptdaten einmal laden (fehlt die Datei, z. B. Demo-Export,
+  // wirken Beruf-/Spannenfilter nicht, statt die Tabelle zu leeren). Spiegel von api.search. ---
+  let recipeFilterP = null;
+  function recipeFilters() {
+    if (!recipeFilterP) recipeFilterP = load("data/recipes.json").then((d) => {
+      const profs = d.professions || [];
+      const cols = d.recipes?.cols || [];
+      const ci = Object.fromEntries(cols.map((c, i) => [c, i]));
+      const byItem = new Map(), byId = new Map();
+      const add = (iid, pid) => { if (iid == null || pid == null) return; const s = byItem.get(iid) || new Set(); s.add(pid); byItem.set(iid, s); };
+      for (const row of d.recipes?.rows || []) {
+        byId.set(row[ci.id], row);
+        const pid = (profs[row[ci.prof]] || {}).id;
+        for (const x of row[ci.reagents] || []) if (Array.isArray(x)) add(x[0], pid);
+        add(row[ci.item], pid);
+      }
+      return { data: d, ci, byId, byItem };
+    }).catch(() => null);
+    return recipeFilterP;
+  }
+  // Spanne im AH-Modus: Verkauf nach 5 % Gebühr minus Materialkosten je Stück.
+  // Spiegel von recipes.profitable_recipe_items (Server) bzw. RecipeCore.margin (Item-Seite).
+  function recipeProfitable(rf, facs, row) {
+    const ci = rf.ci;
+    const price = (fac, iid) => { const p = rf.data.prices?.[fac]?.items?.[String(iid)]; return p && p[0] > 0 ? p[0] : null; };
+    for (const fac of facs) {
+      const item = row[ci.item];
+      const sell = item ? price(fac, item) : null;
+      if (!sell) continue;
+      const qmin = row[ci.qmin] || 1, qavg = (qmin + (row[ci.qmax] || qmin)) / 2;
+      let cost = 0, complete = true;
+      for (const x of row[ci.reagents] || []) {
+        if (!Array.isArray(x)) continue;
+        const u = price(fac, x[0]);
+        if (u == null) { complete = false; break; }
+        cost += u * x[1];
+      }
+      if (complete && sell * 0.95 - cost / qavg > 0) return true;
+    }
+    return false;
+  }
+
   async function search(params) {
     const m = await meta();
     let hs = ids(params.house);
@@ -247,6 +289,29 @@ const StaticAPI = (() => {
     }
     const quals = ids(params.quality);
     if (quals.length) rows = rows.filter((r) => quals.includes(r.quality));
+    if (params.listed === "1") rows = rows.filter((r) => r.is_current === true);
+    const minL = num(params.min_lvl), maxL = num(params.max_lvl);
+    // Ohne bekannte Stufen im Datenbestand (älterer Export) wirkt der Filter nicht.
+    if ((minL !== null && !isNaN(minL) || maxL !== null && !isNaN(maxL)) && rows.some((r) => r.required_level !== null && r.required_level !== undefined))
+      rows = rows.filter((r) => r.required_level !== null && r.required_level !== undefined
+        && (minL === null || isNaN(minL) || r.required_level >= minL)
+        && (maxL === null || isNaN(maxL) || r.required_level <= maxL));
+    const profsWanted = ids(params.prof);
+    if (profsWanted.length || params.margin === "1") {
+      const rf = await recipeFilters();
+      if (rf) {
+        if (profsWanted.length) rows = rows.filter((r) => { const s = rf.byItem.get(r.item_id); return !!s && profsWanted.some((p) => s.has(p)); });
+        if (params.margin === "1") {
+          let facs = [...new Set(rows.map((r) => String(r.faction || "").toLowerCase()).filter(Boolean))];
+          if (!facs.length) facs = ["allianz", "horde", "neutral"];
+          const teaches = rf.data.teaches || {};
+          rows = rows.filter((r) => (teaches[String(r.item_id)] || []).some((rid) => {
+            const row = rf.byId.get(rid);
+            return row && recipeProfitable(rf, facs, row);
+          }));
+        }
+      }
+    }
     const flt = [["min_price", "last_min", 1], ["max_price", "last_min", -1], ["min_qty", "last_qty", 1], ["max_qty", "last_qty", -1],
       ["min_avg_qty", "avg7_qty", 1], ["min_chg", "chg24_min", 1], ["max_chg", "chg24_min", -1]];
     for (const [k, col, sgn] of flt) {

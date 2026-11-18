@@ -70,7 +70,7 @@ SUMMARY_FIELDS = [
     "prev24_min", "prev24_median", "prev7d_min", "prev7d_median", "avg7_min", "avg30_min",
     "avg7_median", "avg30_median", "avg7_qty", "cv7_min", "low30_min", "high30_min",
     "name", "name_en", "quality", "class_id", "class_name", "subclass_id", "subclass_name", "icon",
-    "item_level", "is_commodity", "chg24_min", "chg7d_min", "chg24_median", "chg7d_median",
+    "item_level", "required_level", "is_commodity", "chg24_min", "chg7d_min", "chg24_median", "chg7d_median",
     "market_value", "spark", "market_ts", "market_complete", "is_current", "current_quantity", "availability", "aliases", "translation_missing", "catalog_build", "catalog_state", "catalog_test", "binding",
     "liq_presence", "liq_events", "liq_vanish", "liq_units", "liq_rate", "liq_score", "liq_ts",
 ]

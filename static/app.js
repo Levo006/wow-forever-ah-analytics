@@ -545,16 +545,72 @@ async function viewSearch(r) {
 }
 
 // ============================================================ Kategorien
+// Filter je Kategorie: Berufe (Item ist Zutat oder Ergebnis eines Rezepts),
+// Stufe (benötigte Stufe), Spanne (lehrt Rezept mit Gewinn); Qualität und
+// „nur gelistet“ gibt es überall. Beruf-IDs aus data/recipes.json.
+const CAT_FILTERS = {
+  0: { profs: [171, 164, 202, 333, 185, 129] },                    // Verbrauchbar
+  7: { profs: [171, 164, 202, 165, 197, 333, 185, 129, 186] },     // Handwerkswaren
+  9: { margin: true },                                             // Rezepte
+  2: { lvl: true },                                                // Waffen
+  4: { lvl: true },                                                // Rüstung
+};
+const CAT_PROF_NAMES = { 171: "Alchimie", 164: "Schmiedekunst", 202: "Ingenieurskunst", 165: "Lederverarbeitung",
+  197: "Schneiderei", 333: "Verzauberkunst", 185: "Kochkunst", 129: "Erste Hilfe", 186: "Bergbau" };
+
+function catFilterBar(cls, p, ridx) {
+  const cfg = CAT_FILTERS[cls.class_id] || {};
+  const groups = [];
+  if (cfg.profs?.length && ridx) {
+    const avail = new Set(ridx.professions || []);
+    const sel = new Set((p.prof || "").split(",").filter(Boolean));
+    const chips = cfg.profs.filter((id) => avail.has(CAT_PROF_NAMES[id])).map((id) =>
+      `<button type="button" class="${sel.has(String(id)) ? "on" : ""}" data-prof="${id}">${esc(AHI18N.trProf(CAT_PROF_NAMES[id]))}</button>`).join("");
+    if (chips) groups.push(`<div class="f"><span>${t("Beruf")}</span><div class="rchips">${chips}</div></div>`);
+  }
+  const qsel = p.quality || "";
+  const qchip = (v, label) => `<button type="button" class="${qsel === v ? "on" : ""}" data-qual="${v}">${label}</button>`;
+  groups.push(`<div class="f"><span>${t("Qualität")}</span><div class="rchips">${qchip("", t("Alle"))}${qchip("2,3,4,5", QUAL(2) + "+")}${qchip("3,4,5", QUAL(3) + "+")}${qchip("4,5", QUAL(4) + "+")}</div></div>`);
+  if (cfg.lvl) groups.push(`<div class="f"><span>${t("Stufe")}</span><div class="range"><input type="number" min="1" max="80" name="min_lvl" value="${esc(p.min_lvl || "")}" placeholder="${t("von")}">–<input type="number" min="1" max="80" name="max_lvl" value="${esc(p.max_lvl || "")}" placeholder="${t("bis")}"></div></div>`);
+  const misc = [`<button type="button" class="${p.listed === "1" ? "on" : ""}" data-listed="1">${t("Nur aktuell gelistet")}</button>`];
+  if (cfg.margin && ridx && ridx.teaches && ridx.teaches.size)
+    misc.push(`<button type="button" class="${p.margin === "1" ? "on" : ""}" data-margin="1">${t("Mit Gewinnspanne")}</button>`);
+  groups.push(`<div class="f"><span>${t("Markt")}</span><div class="rchips">${misc.join("")}</div></div>`);
+  return `<div class="card filters catfilter" id="catfilter">${groups.join("")}</div>`;
+}
+
+function wireCatFilterBar(p) {
+  const bar = $("#catfilter");
+  if (!bar) return;
+  $$("button[data-prof]", bar).forEach((b) => (b.onclick = () => {
+    const cur = new Set((p.prof || "").split(",").filter(Boolean));
+    if (cur.has(b.dataset.prof)) cur.delete(b.dataset.prof); else cur.add(b.dataset.prof);
+    setParams({ prof: [...cur].join(","), page: 1 });
+  }));
+  $$("button[data-qual]", bar).forEach((b) => (b.onclick = () => setParams({ quality: b.dataset.qual, page: 1 })));
+  const lb = $("button[data-listed]", bar);
+  if (lb) lb.onclick = () => setParams({ listed: p.listed === "1" ? "" : "1", page: 1 });
+  const mb = $("button[data-margin]", bar);
+  if (mb) mb.onclick = () => setParams({ margin: p.margin === "1" ? "" : "1", page: 1 });
+  $$("input[name=min_lvl], input[name=max_lvl]", bar).forEach((inp) => (inp.onchange = () =>
+    setParams({ min_lvl: $("input[name=min_lvl]", bar)?.value || "", max_lvl: $("input[name=max_lvl]", bar)?.value || "", page: 1 })));
+}
+
 async function viewCategories(r) {
   const house = curHouse(r.params);
   const classes = await getClasses(house);
   const p = r.params;
   const cls = classes.find((c) => String(c.class_id) === String(p.class));
   const sub = cls?.subclasses.find((s) => String(s.subclass_id) === String(p.subclass));
+  const cfg = cls ? CAT_FILTERS[cls.class_id] || {} : {};
+  let ridx = null;
+  if (cls && (cfg.profs?.length || cfg.margin)) ridx = await loadRecipes().catch(() => null);
   const crumbs = [`<a href="#/categories?house=${house}">${t("Alle Kategorien")}</a>`];
   if (cls) crumbs.push(`<a href="#/categories?house=${house}&class=${cls.class_id}">${esc(AHI18N.trClass(cls.class_name))}</a>`);
   if (sub) crumbs.push(esc(AHI18N.trSubclass(sub.subclass_name)));
   const maxv = (arr) => Math.max(1, ...arr.map((x) => x.market_value || 0));
+  // Aktive Filter beim Wechsel in eine Unterkategorie mitnehmen
+  const fq = ["prof", "quality", "listed", "min_lvl", "max_lvl", "margin"].filter((k) => p[k]).map((k) => `&${k}=${encodeURIComponent(p[k])}`).join("");
   const card = (x, href, name) => `<a class="cat" href="${href}"><div class="nm">${esc(name)}</div>
       <div class="row"><span>${num(x.items)} Items</span><span>${money(x.market_value, { short: true })}</span></div>
       <div class="bar" style="width:${(100 * (x.market_value || 0)) / card.max}%"></div></a>`;
@@ -564,21 +620,23 @@ async function viewCategories(r) {
     body = `<div class="catgrid">${classes.map((c) => card(c, `#/categories?house=${house}&class=${c.class_id}`, AHI18N.trClass(c.class_name))).join("")}</div>`;
   } else if (!sub && cls.subclasses.length > 1) {
     card.max = maxv(cls.subclasses);
-    body = `<div class="catgrid">${cls.subclasses.map((s) => card(s, `#/categories?house=${house}&class=${cls.class_id}&subclass=${s.subclass_id ?? -1}`, AHI18N.trSubclass(s.subclass_name))).join("")}</div>
-      <div class="card flush mt" id="catitems"><div class="loading">${t("Lade Items …")}</div></div>`;
+    body = `<div class="catgrid">${cls.subclasses.map((s) => card(s, `#/categories?house=${house}&class=${cls.class_id}&subclass=${s.subclass_id ?? -1}${fq}`, AHI18N.trSubclass(s.subclass_name))).join("")}</div>
+      ${catFilterBar(cls, p, ridx)}<div class="card flush" id="catitems"><div class="loading">${t("Lade Items …")}</div></div>`;
   } else {
-    body = `<div class="card flush" id="catitems"><div class="loading">${t("Lade Items …")}</div></div>`;
+    body = `${catFilterBar(cls, p, ridx)}<div class="card flush" id="catitems"><div class="loading">${t("Lade Items …")}</div></div>`;
   }
   main.innerHTML = `<div class="crumbs">${crumbs.join(" › ")}</div>
     <div class="goblin-heading"><div class="pagehead"><h1>${esc(sub ? AHI18N.trSubclass(sub.subclass_name) : cls ? AHI18N.trClass(cls.class_name) : t("Kategorien"))}</h1></div>${goblinScene("head-goblin")}</div>${body}`;
+  wireCatFilterBar(p);
   if (cls) {
     const sp = { house, class: cls.class_id, sort: p.sort || "value", dir: p.dir || "desc", page: p.page || 1, page_size: 50, spark: 1 };
     if (sub) sp.subclass = sub.subclass_id ?? -1;
     if (cls.class_id === -1) sp.class = -1;
+    for (const k of ["prof", "quality", "listed", "min_lvl", "max_lvl", "margin"]) if (p[k]) sp[k] = p[k];
     const res = await api("search", sp);
-    $("#catitems").innerHTML = `<h2>Items</h2>` + table([COL.item, COL.price, COL.median, COL.avg30, COL.qty, COL.chg24, COL.chg7d, COL.liq, COL.value, COL.spark, COL.cmp], res.items, {
+    $("#catitems").innerHTML = `<h2>Items <span class="muted small catcount">· ${num(res.total)} ${t("Treffer")}</span></h2>` + table([COL.item, COL.price, COL.median, COL.avg30, COL.qty, COL.chg24, COL.chg7d, COL.liq, COL.value, COL.spark, COL.cmp], res.items, {
       sort: sp.sort, dir: sp.dir, onSort: (s, d) => setParams({ sort: s, dir: d, page: 1 }),
-      rowHref: (x) => `/item/${x.item_id}?house=${x.house_id}`,
+      rowHref: (x) => `/item/${x.item_id}?house=${x.house_id}`, empty: t("Keine Items passen zu den Filtern."),
     }) + pager(res.total, res.page, res.page_size, (pg) => setParams({ page: pg }));
   }
 }

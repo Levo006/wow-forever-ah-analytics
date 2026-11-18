@@ -70,6 +70,17 @@ In den Sammelmärkten ist **Min der typische Tiefstpreis**: je Haus die günstig
 
 **Item-Seite:** oben drei Reiter mit dem Preis je Fraktion, darunter direkt die Preise der Fraktion gesamt und ihrer vier Verbünde (★ = günstigstes Haus; Klick zeigt den Verlauf dieses Hauses). Alles Weitere ist aufklappbar (der Zustand wird gemerkt): Kennzahlen, Angebotsmenge, Tageszeit & Wochentag, alle Auktionshäuser im Vergleich, Ausreißer, Snapshots, Item-Details mit Tooltip. Unter „Anzeige ▾“ am Chart: Kennzahlen ein-/ausblenden und **Verbünde vergleichen** (Mindestpreis aller Verbünde der Fraktion in einem Chart).
 
+## Kategorie-Filter
+
+Auf jeder Kategorieseite steht oberhalb der Item-Tabelle eine Filterleiste; aktive Filter stehen in der URL (teilbar, Zurück-Button funktioniert) und wirken in beiden Modi gleich (lokaler Server und statischer Export):
+
+* **Überall:** Qualität (mind. ungewöhnlich / rar / episch) und **„Nur aktuell gelistet"** (blendet Items ohne aktuelles Angebot aus).
+* **Handwerkswaren & Verbrauchbar:** **Beruf-Chips** – das Item ist Zutat oder Ergebnis eines Rezepts des Berufs (aus den offiziellen Rezeptdaten; Sammelberufe ohne Rezepte wie Kräuterkunde/Kürschnerei sind über die Unterkategorien Kräuter/Leder abgedeckt).
+* **Rezepte:** **„Mit Gewinnspanne"** – zeigt nur Rezept-Items, die ein Rezept lehren, dessen Produkt nach 5 % Gebühr über den aktuellen Materialkosten der Fraktion liegt (AH-Modus, wie auf der Item-Seite).
+* **Waffen & Rüstung:** **Stufen-Filter** von/bis (benötigte Stufe).
+
+Robustheit: Fehlen Rezeptdaten (Demo-Export) oder Stufenangaben (älterer Datenbestand), wirken die betroffenen Filter nicht, statt die Tabelle zu leeren; die Chips werden dann auch nicht angeboten. Server (`api.search`) und Browser (`static-api.js`) rechnen mit gespiegelter Logik (Tests: `tests/test_category_filters.py`, `tests/category_filters.test.js`).
+
 ## Herkunft & Verwendung (Beute, Händler, Quests, Rezepte, Sets)
 
 Auf jeder Item-Seite zeigt der aufklappbare Abschnitt **„Herkunft & Verwendung“**:
