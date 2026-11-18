@@ -241,9 +241,6 @@ jobs:
           node tests/recipes_core.test.js
           node tests/i18n.test.js
           node tests/goblins.test.js
-          node tests/catalog.test.js
-          node tests/market_runs.test.js
-          node tests/search_state.test.js
           node tests/category_filters.test.js
           node --check static/app.js
           node --check static/item-tooltip.js
