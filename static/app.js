@@ -411,7 +411,8 @@ function homeSearch(house) {
 
 async function viewDashboard(r) {
   const house = curHouse(r.params);
-  main.innerHTML = homeSearch(house);
+  main.innerHTML = `<div id="newsTop"></div>` + homeSearch(house);
+  renderNews($("#newsTop"));
   const input = $("#heroInput");
   attachAutocomplete(input, $("#heroResults"), house, (it) => (location.hash = `/item/${it.item_id}${it.house_id ? "?house=" + it.house_id : ""}`));
   $("#heroForm").onsubmit = (e) => { e.preventDefault(); const q = input.value.trim(); if (q) { $("#heroResults").hidden = true; go("/search", { q, house }); } };
@@ -434,7 +435,6 @@ async function viewDashboard(r) {
         ${table([{ ...COL.item, sort: null }, { label: t("Preis"), num: true, fmt: (x) => money(x.last_min) }, { label: t("Rabatt"), num: true, fmt: (x) => `<span class="chg up">−${num(x.discount, 0)} %</span>` }],
           d.deals.deals.slice(0, 6), { rowHref: (x) => `/item/${x.item_id}?house=${x.house_id}`, empty: t("Aktuell keine günstigen Gelegenheiten mit Umsatznachweis.") })}</div>
     </div>
-    <div id="newsSlot" class="mt"></div>
     <details class="card more-analysis mt" id="moreAn"><summary>${t("Mehr Analyse")}</summary>
       <div class="grid g32 mt">
         <div class="card"><div class="cardhead"><h2>${t("Beobachteter Angebotswert")}</h2></div>
@@ -456,13 +456,17 @@ async function viewDashboard(r) {
         { span: s[s.length - 1].ts - s[0].ts, yFmt: moneyText, minY: 0 });
     } else $("#mkt").parentElement.innerHTML = `<div class="empty">${t("Zu wenige Snapshots für einen Verlauf.")}</div>`;
   };
-  renderNews($("#newsSlot"));
   const more = $("#moreAn");
   let drawn = false;
   more.addEventListener("toggle", () => { if (more.open && !drawn) { drawn = true; drawChart(); } });
 }
-// Dezente News-Karte auf der Übersicht: kuratierte Gold-Guides + jüngste WoW-Forever-/Blue-News
+// Newsboard: eigener Abschnitt über der Suche – kuratierte Gold-Guides + jüngste WoW-Forever-/Blue-News
 // (data/news.json aus dem stündlichen Export; fehlt die Datei, bleibt der Platz leer).
+const NEWS_ICONS = {
+  guide: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4"/></svg>',
+  blue: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 4.5h15v11h-10l-5 4z"/></svg>',
+  news: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 5h12v14h-12z"/><path d="M16.5 8.5h3V19h-3"/><path d="M7.5 9h6M7.5 12.5h6"/></svg>',
+};
 async function renderNews(slot) {
   let d;
   try {
@@ -473,9 +477,13 @@ async function renderNews(slot) {
   const guides = (d.guides || []).slice(0, 3);
   const items = (d.items || []).slice(0, 4);
   if (!guides.length && !items.length) return;
-  const row = (it) => `<li><span class="news-badge ${it.kind === "guide" ? "guide" : it.kind === "blue" ? "blue" : ""}">${esc(it.kind === "guide" ? t("Guide") : it.kind === "blue" ? t("Blue Post") : t("News"))}</span><a href="${esc(it.url)}" target="_blank" rel="noopener noreferrer">${esc(it.title)}</a><span class="news-meta">${esc(it.source)}${it.published_ts ? " · " + ago(it.published_ts) : ""}</span></li>`;
-  slot.innerHTML = `<div class="card flush newscard"><div class="cardhead" style="padding:14px 16px 0"><h2>${t("Neuigkeiten & Gold-Guides")}</h2><span class="right small muted">${t("Externe Quellen, stündlich aktualisiert")}</span></div>
-    <ul class="newslist">${guides.map(row).join("")}${items.map(row).join("")}</ul></div>`;
+  const row = (it) => {
+    const kind = it.kind === "guide" ? "guide" : it.kind === "blue" ? "blue" : "news";
+    return `<a class="newsrow ${kind}" href="${esc(it.url)}" target="_blank" rel="noopener noreferrer"><span class="newsico">${NEWS_ICONS[kind]}</span><span class="newsrow-text"><b>${esc(it.title)}</b><small>${esc(it.source)}${it.published_ts ? " · " + ago(it.published_ts) : ""}</small></span></a>`;
+  };
+  const col = (title, list) => list.length ? `<div class="newsboard-col"><div class="newsboard-sub">${t(title)}</div>${list.map(row).join("")}</div>` : "";
+  slot.innerHTML = `<section class="newsboard"><div class="newsboard-head"><span class="newsboard-title"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4h3l5 4V6L7 10H4z"/><path d="M15.5 9.5a4 4 0 0 1 0 5"/></svg>${t("Neuigkeiten & Gold-Guides")}</span><span class="newsboard-note muted small">${t("Externe Quellen, stündlich aktualisiert")}</span></div>
+    <div class="newsboard-cols">${col("Gold-Guides", guides)}${col("Aktuelle News", items)}</div></section>`;
 }
 
 function moversMini(rows) {
@@ -1619,14 +1627,6 @@ function renderMarket() {
     b.hidden = !groupId(b.dataset.k);
     b.classList.toggle("on", !!h && h.kind === b.dataset.k);
   });
-  const single = h && (h.kind === "haus" || h.kind === "scan");
-  const hasGroups = !!(groupId("allianz") || groupId("horde") || groupId("neutral"));
-  const sel = $("#houseSel");
-  sel.innerHTML = state.houses.length
-    ? (hasGroups ? `<option value="">${t("Einzelnes AH …")}</option>` : "") + houseOptions(state.house, { markets: !hasGroups })
-    : `<option value="">${t("Keine Daten")}</option>`;
-  sel.value = single || !hasGroups ? state.house : "";
-  sel.classList.toggle("on", !!single && hasGroups);
   updateFreshness();
 }
 function setHouse(id) {
@@ -1696,7 +1696,6 @@ function initLang() {
   updateCompareBadge();
   STATIC = await StaticAPI.detect();
   try { await loadHouses(); } catch (e) { main.innerHTML = `<div class="error">${t("Server nicht erreichbar:")} ${esc(e.message)}</div>`; return; }
-  $("#houseSel").onchange = (e) => setHouse(e.target.value || groupId(houseById(state.house)?.group || "allianz") || groupId("allianz"));
   $("#market").addEventListener("click", (e) => { const b = e.target.closest("button[data-k]"); if (b) setHouse(groupId(b.dataset.k)); });
   attachAutocomplete($("#quickInput"), $("#quickResults"), null, (it) => (location.hash = `/item/${it.item_id}${it.house_id ? "?house=" + it.house_id : ""}`));
   $("#quickSearch").onsubmit = (e) => { e.preventDefault(); const q = $("#quickInput").value.trim(); if (q) { $("#quickResults").hidden = true; go("/search", { q, house: state.house }); } };
