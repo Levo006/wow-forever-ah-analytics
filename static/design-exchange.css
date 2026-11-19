@@ -211,7 +211,11 @@ td {padding-top:13px;padding-bottom:13px;}
  .twrap {max-width:100%;}
 }
 /* Tablet-Band: gleiche Verkleinerung, sonst laeuft der Platzhalter aus dem Reiter (abgeschnitten bei ~768px). */
+/* Reiter untereinander statt nebeneinander: breite Preise (z.B. 2g49s99c) passen sonst bei ~701-810px nicht in den Reiter. */
 @media(max-width:1050px) and (min-width:701px){
+ .ftab {grid-template-columns:1fr;grid-template-areas:"n" "p" "d";row-gap:2px;padding:12px 14px;}
+ .ftab .fp {text-align:left;font-size:20px;}
+ .ftab .fd {text-align:left;}
  .ftab .fp .missing-price {font-size:11px;line-height:1.45;display:block;letter-spacing:0;}
  .ftab .fp .listing-status {font-size:11px;line-height:1.45;display:block;}
 }
