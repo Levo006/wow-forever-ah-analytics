@@ -1,0 +1,122 @@
+name: Einmal-Setup Stundenarchiv
+on: workflow_dispatch
+permissions:
+  contents: write
+  actions: write
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Code-Backup vor Archiv-Ergaenzung
+        run: git archive --format=tar.gz -o /tmp/before-hourly-archive.tar.gz HEAD .github ahanalytics tests
+      - uses: actions/upload-artifact@v4
+        with:
+          name: before-hourly-archive
+          path: /tmp/before-hourly-archive.tar.gz
+      - name: Geprueften Patch anwenden
+        run: |
+          set -euo pipefail
+          cat > /tmp/patch.b64 <<'B64'
+          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
+          AcKeL/C+t/Xtse0rGqamyaRuLxfw1YCvfkPgAA
+          B64
+          base64 -d /tmp/patch.b64 | gzip -d > /tmp/archive.patch
+          echo 'fa5effe7bf8541cc4946e02a6c40a4822956360124eaeaa8962cef29e3a53e30  /tmp/archive.patch' | sha256sum -c -
+          git apply --check /tmp/archive.patch
+          git apply /tmp/archive.patch
+      - name: Regressionstests
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests
+          node tests/recipes_core.test.js
+          node tests/i18n.test.js
+          node tests/goblins.test.js
+      - name: Archiv einrichten (keine Produktionsaenderung)
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/archive_hourly.py tests/test_archive_hourly.py .github/workflows/archive-hourly.yml
+          git commit -m 'Separates begrenztes Stundenarchiv fuer Erholungs-Backtest'
+          git rm .github/workflows/setup-hourly-archive.yml
+          git commit -m 'Einmal-Setup-Workflow entfernt'
+          git push
+      - name: Erste Sicherung mit altem Stundenstand starten
+        run: gh workflow run archive-hourly.yml --ref main -f recover_backup=true
