@@ -1,0 +1,78 @@
+# Separate research archive: no collector, production writes or Pages deployment.
+# UTC days Nov 12-Dec 13 only. After Dec 14 the scheduled job is a no-op.
+# Remove this workflow to stop future exports; existing archive assets stay intact.
+name: Stundenarchiv fuer Erholungs-Backtest
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+    inputs:
+      recover_backup:
+        description: 'Einmalig: 12.11. aus bestehender Sicherheitssicherung retten'
+        type: boolean
+        default: false
+permissions:
+  contents: write
+concurrency:
+  group: hourly-research-archive
+  cancel-in-progress: false
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Begrenzten Sammelzeitraum pruefen
+        id: window
+        run: |
+          if [[ "$(date -u +%F)" < "2026-12-15" ]]; then
+            echo 'active=true' >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.window.outputs.active == 'true'
+      - uses: actions/setup-python@v5
+        if: steps.window.outputs.active == 'true'
+        with:
+          python-version: '3.12'
+      - name: Archivtests
+        if: steps.window.outputs.active == 'true'
+        run: python -m unittest discover -s tests -p test_archive_hourly.py -v
+      - name: Quellen schreibgeschuetzt exportieren
+        if: steps.window.outputs.active == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p archive source
+          tag=ah-hourly-research-2026-11
+          if ! gh release view "$tag" --json tagName > /tmp/archive-release.json; then
+            gh release create "$tag" --target "$GITHUB_SHA" --prerelease --title 'Stundenarchiv 12.11.-13.12.2026 (Backtest)' --notes 'AH-HOURLY-RESEARCH-V1: Unveraenderte beobachtete Aggregat-Stunden, kein Verkaufsnachweis. Tagesdateien enthalten Teilstand-Markierungen und Laufmanifeste. Keine Produktionsdatenbank, keine Preisstaffeln. Begrenzter Sammelzeitraum 12.11.-13.12.2026 UTC; vorhandene Dateien werden nicht ersetzt.'
+          fi
+          gh release view "$tag" --json assets --jq '.assets[].name' > /tmp/existing-assets.txt
+          export_source() {
+            local release="$1"
+            gh release download "$release" --pattern ah.sqlite.gz --dir source --clobber
+            gzip -t source/ah.sqlite.gz
+            gzip -dc source/ah.sqlite.gz > source/input.sqlite
+            chmod 444 source/input.sqlite
+            python scripts/archive_hourly.py --source source/input.sqlite --out archive --source-label "release:$release;archive-run:$GITHUB_RUN_ID"
+            chmod 644 source/input.sqlite
+            rm source/input.sqlite source/ah.sqlite.gz
+          }
+          if [ '${{ inputs.recover_backup }}' = 'true' ]; then
+            export_source ah-safety-44610840420
+          fi
+          export_source datenbank
+          # One atomic asset per day: SQLite gzip + its checksum/provenance manifest.
+          # Uploading the pair separately could leave a manifest without its data.
+          for manifest in archive/*.json; do
+            stem="${manifest%.json}"
+            name="$(basename "$stem").tar"
+            if grep -Fxq "$name" /tmp/existing-assets.txt; then
+              echo "Bereits archiviert, unveraendert: $name"
+            else
+              tar -cf "$stem.tar" -C archive "$(basename "$stem").json" "$(basename "$stem").sqlite.gz"
+              gh release upload "$tag" "$stem.tar"
+            fi
+          done
+          gh release view "$tag" --json url,assets --jq '{url,assets:[.assets[]|{name,size}]}'
