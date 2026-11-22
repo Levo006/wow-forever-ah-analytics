@@ -496,6 +496,14 @@ h1 { font-weight: 700; }
 .newsboard-title { display: inline-flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 700; letter-spacing: -.01em; color: var(--accent-2); }
 .newsboard-title svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .newsboard-note { flex: none; }
+summary.newsboard-head { cursor: pointer; list-style: none; user-select: none; }
+summary.newsboard-head::-webkit-details-marker { display: none; }
+.newsboard-side { display: inline-flex; align-items: center; gap: 10px; flex: none; }
+.news-caret { width: 18px; height: 18px; color: var(--text-muted); transition: transform .18s ease; }
+.news-caret svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+details.newsboard[open] .news-caret { transform: rotate(180deg); }
+details.newsboard:not([open]) { padding-bottom: 15px; }
+
 .newsboard-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 26px; }
 .newsboard-sub { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); margin: 4px 0 2px; }
 .newsrow { display: flex; align-items: center; gap: 11px; padding: 6px 8px; margin: 0 -8px; border-radius: 11px; text-decoration: none; color: var(--text-primary); min-width: 0; }

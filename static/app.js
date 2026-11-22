@@ -482,8 +482,9 @@ async function renderNews(slot) {
     return `<a class="newsrow ${kind}" href="${esc(it.url)}" target="_blank" rel="noopener noreferrer"><span class="newsico">${NEWS_ICONS[kind]}</span><span class="newsrow-text"><b>${esc(it.title)}</b><small>${esc(it.source)}${it.published_ts ? " · " + ago(it.published_ts) : ""}</small></span></a>`;
   };
   const col = (title, list) => list.length ? `<div class="newsboard-col"><div class="newsboard-sub">${t(title)}</div>${list.map(row).join("")}</div>` : "";
-  slot.innerHTML = `<section class="newsboard"><div class="newsboard-head"><span class="newsboard-title"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4h3l5 4V6L7 10H4z"/><path d="M15.5 9.5a4 4 0 0 1 0 5"/></svg>${t("Neuigkeiten & Gold-Guides")}</span><span class="newsboard-note muted small">${t("Externe Quellen, stündlich aktualisiert")}</span></div>
-    <div class="newsboard-cols">${col("Gold-Guides", guides)}${col("Aktuelle News", items)}</div></section>`;
+  const openAttr = matchMedia("(max-width: 760px)").matches ? "" : " open";
+  slot.innerHTML = `<details class="newsboard"${openAttr}><summary class="newsboard-head"><span class="newsboard-title"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4h3l5 4V6L7 10H4z"/><path d="M15.5 9.5a4 4 0 0 1 0 5"/></svg>${t("Neuigkeiten & Gold-Guides")}</span><span class="newsboard-side"><span class="newsboard-note muted small">${t("Externe Quellen, stündlich aktualisiert")}</span><span class="news-caret" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span></span></summary>
+    <div class="newsboard-cols">${col("Gold-Guides", guides)}${col("Aktuelle News", items)}</div></details>`;
 }
 
 function moversMini(rows) {
