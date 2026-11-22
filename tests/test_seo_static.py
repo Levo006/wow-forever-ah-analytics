@@ -10,7 +10,7 @@ import xml.etree.ElementTree as ET
 
 from ahanalytics.export import STATIC_SRC
 
-SITE_URL = "https://levo006.github.io/wow-forever-ah-analytics/"
+SITE_URL = "https://ah.forever-analytics.eu/"
 
 
 class SeoStaticTest(unittest.TestCase):

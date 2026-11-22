@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://levo006.github.io/wow-forever-ah-analytics/sitemap.xml
+Sitemap: https://ah.forever-analytics.eu/sitemap.xml
