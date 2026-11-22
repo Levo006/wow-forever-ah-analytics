@@ -1,0 +1,73 @@
+name: Einmal-Setup Apex
+on: workflow_dispatch
+permissions:
+  contents: write
+  actions: write
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Code-Backup vor Domain-Umstellung
+        run: git archive --format=tar.gz -o /tmp/before-domain.tar.gz HEAD .github static tests
+      - uses: actions/upload-artifact@v4
+        with:
+          name: before-domain
+          path: /tmp/before-domain.tar.gz
+      - name: Geprueften Patch anwenden
+        run: |
+          set -euo pipefail
+          cat > /tmp/patch.b64 <<'B64'
+          H4sIAAAAAAAC/9VWzW7bOBC++ykGOrVri5J/1k4M242RumixW2BRO+jRoKWRxI1Eakkqjvs8+w57
+          6WnzYkvSTqMkVp0cFwYEU5xvOPPNN0PFLEnA91OmgQZKU82igPEYb0mmixw2z9+13F8Y9ePRsDcg
+          5Dyh4dmIQjcMh4NBy/f9Y55a7Xb7qLeLC/B/7XT70HbPi4sWAEwK1BQ4LXDq3TDclkJqDyLBNXI9
+          9bYs1tk0xhsWoe8WHWCcaUZzX0U0x2nXmzk/mukcZx+ExBuUMP/ozznNdyYEBf/+A/PqWjPBVUYr
+          5f8hkSmE5O67hK/i6xjuUW8WV28nwd7T0+BiVJFkpfVSi2+p777zOGdRhq84Ywxu2yzzu7+rBDvw
+          mcprvUWpO/Aeaa6g4jGsROl/FsZK7f3M85xR/q0DH4WM0ZlwrLQ0NDwcbhwqlAR+E8qEmAvVAZFx
+          Y8ALzOOKp8QQ5pvccsavQWI+9SLKBWeGTQ8yicnUy7Qu1TgIaEaSfdg+vWeTYBUYD+2XeWiC/yC3
+          lKI0ae+mnkjHeldivfi4UUxjo7ndXNvq1DDHBNB8nq30CfDr1NN41P9MPgeNPM+jknkt/hcI5bgb
+          VtAUX+GIKoVaBSL1HZL8WaYHEb40xJ8J+eXxvSI4aHY8dpOs5r7bC8MTkAxZmtVH47DfDMmFnY01
+          4xjX7xfGPD5yCUixEVoRfasfxvbDu8MlEIXJkJ73CYnDuDcKR0cvgRrq0SVQe28vgW5nAG37sFfA
+          lbJ0pibKMfzSsiIV2zEELWj5S9PfBS3HcEodam9Ibu3t8wx1EnKMlNr+Qx510IGWfhj1hhtCMB72
+          zsOzo7Q8Cq/OS31jT8zIEjNyxEze2bNt+5rGNBIhoQfIIxEznk69q9UH/8x7ZwQwMXo3+gNjzdVe
+          qSbp7XZLDu4VETINlJkxBVX3ZwYhOT/Ix+Bdm9qJLqLZKbIngbWyffME8DNrcNZRRnmKicS/Zpkw
+          x+4mQe3VwaiUTEimdzOT8ST4sXKhBi7WR/XSqEzv2edaoVjvmSXlzrDctHWoXTLob3rUfNf0u2ej
+          ET6RdCN4X8HGbVfH0BUydJUEVtiPGlsfgloikkWOhdH7yvwHqmCxMmKHRIoCaFYj79bBDujlar76
+          dLlefrl0nfFptVhfffkdpnB6BpuWOGLeYAv2F+VmpMESxdKltTJZvqnMV5dNl9jVJVX4dtz6D8+c
+          1KtTCgAA
+          B64
+          base64 -d /tmp/patch.b64 | gzip -d > /tmp/domain.patch
+          echo 'ddac1f165e68c299da29d9d8957b0a55c157dfd4b20c014e3b992d730e6158a2  /tmp/domain.patch' | sha256sum -c -
+          git apply --check /tmp/domain.patch
+          git apply /tmp/domain.patch
+      - name: Regressionstests
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests
+          node tests/recipes_core.test.js
+          node tests/category_filters.test.js
+          node tests/i18n.test.js
+          node tests/goblins.test.js
+          node --check static/app.js && node --check static/static-api.js
+      - name: Domain-Dateien einspielen (keine Datenbankaenderung)
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add static/index.html static/robots.txt static/sitemap.xml tests/test_seo_static.py
+          git commit -m 'Domain: SEO-URLs auf forever-analytics.eu umgestellt'
+          git rm .github/workflows/setup-apex.yml
+          git commit -m 'Einmal-Setup-Workflow entfernt'
+          git push
+      - name: Veroeffentlichung starten
+        run: gh workflow run update.yml --ref main
