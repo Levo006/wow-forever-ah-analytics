@@ -1,0 +1,79 @@
+name: Einmal-Setup Design
+on: workflow_dispatch
+permissions:
+  contents: write
+  actions: write
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Code-Backup vor Domain-Umstellung
+        run: git archive --format=tar.gz -o /tmp/before-domain.tar.gz HEAD .github static tests
+      - uses: actions/upload-artifact@v4
+        with:
+          name: before-domain
+          path: /tmp/before-domain.tar.gz
+      - name: Geprueften Patch anwenden
+        run: |
+          set -euo pipefail
+          cat > /tmp/patch.b64 <<'B64'
+          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
+          B64
+          base64 -d /tmp/patch.b64 | gzip -d > /tmp/domain.patch
+          echo '0eddba701e939526e1511aabb62ecdac54c9b18234cb72d0adc64626cfae5d52  /tmp/domain.patch' | sha256sum -c -
+          git apply --check /tmp/domain.patch
+          git apply /tmp/domain.patch
+      - name: Regressionstests
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests
+          node tests/recipes_core.test.js
+          node tests/category_filters.test.js
+          node tests/i18n.test.js
+          node tests/goblins.test.js
+          node --check static/app.js && node --check static/static-api.js
+      - name: Domain-Dateien einspielen (keine Datenbankaenderung)
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add static/app.js static/app.css
+          git commit -m 'Mobile: News einklappbar (mobil standardmaessig zu), Suche zuerst'
+          git rm .github/workflows/setup-design.yml
+          git commit -m 'Einmal-Setup-Workflow entfernt'
+          git push
+      - name: Veroeffentlichung starten
+        run: gh workflow run update.yml --ref main
