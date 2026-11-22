@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://ah.forever-analytics.eu/sitemap.xml
+Sitemap: https://forever-analytics.eu/sitemap.xml
