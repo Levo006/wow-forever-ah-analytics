@@ -1,0 +1,73 @@
+name: Einmal-Setup Domain
+on: workflow_dispatch
+permissions:
+  contents: write
+  actions: write
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Code-Backup vor Domain-Umstellung
+        run: git archive --format=tar.gz -o /tmp/before-domain.tar.gz HEAD .github static tests
+      - uses: actions/upload-artifact@v4
+        with:
+          name: before-domain
+          path: /tmp/before-domain.tar.gz
+      - name: Geprueften Patch anwenden
+        run: |
+          set -euo pipefail
+          cat > /tmp/patch.b64 <<'B64'
+          H4sICFX5AmsCA2RvbWFpbi5wYXRjaADVVsty2zYU3esr7nCVVCJIPSzVGkmxxlEmmTYznUieLDUQ
+          eUmiJgEWAE0r39N/6Car+McCULJN22QTu6tuOCSAc3DvuS+GLIrAdWOmgXpKU80Cj/EQr0misxR2
+          T9c61SuEYx8xQEImw3AyHoyg7/vj0ajjum4TU6fb7TaynZ2Be9LrD6FbPc/OOgAwy1BT4DTDuXPF
+          sMyF1A4Egmvkeu6ULNTJPMQrFqBbffSAcaYZTV0V0BTnfWdR8WimU1y8ExKvUMLyvbvkNN0bExR8
+          +weWxaVmgquEFsr9QyJTCNHNVwmfxecp3KJerS5ez7wD02PjQlSBZLllqdm31jdfeZiyIMFn3DGF
+          att8pjd/FxH24COVl7pEqXvwFmmqoOAhbETufhTmlDrwLNOUUf6lB++FDLE6wrHQ0shwf7khVCgJ
+          /CaUMTEVqgci4eYAzzANCx4TI5hrfEsZvwSJ6dwJKBecGTUdSCRGcyfROldTz0vxSphYE5MzSbEj
+          THilKN3o4IlLE5feauwZ0u7PkdKE3DHcwgkWnlOTPJciN2Ls546Ip3qfYz0lcKeYxtbjdnNrY1bD
+          NKVF+302/j8APy+nWq/6nyXVMXOe+lHItGb/y9KnmZllNMb/xk2VQq08EbsVGfkzj4/Z+rOO/EvK
+          dp9ldRtRs4nQzj2temHthv7A938ASZDFSb25joftkFTY7lo7HOL27cocDxvGiBQ7oRXR1/q+8d+v
+          HcdIf+JPTsZmjAR+NKanw8YxUkM9GCO1dTtG+r0RdO3DDpELZeWMjZVT+KVjE1qUU/A60HHXphdk
+          NJ/CC9JGHbDk2o60J0RtkayjmqSq7d97VwcdxDoZByf+6cCINfSDwXjXKNYDC+tq1TcOck2sXJNK
+          rtkbe7dtAKa0TeIQ3wHkgQgZj+fOxead+6vzxqTFzNSCyUowp7k6pLDxuyxLcqRXRMjYU6ZLZfRO
+          Ls8np8ekMviqqu1YEMHiBSGYeRZoa+wRR5v6RwBUgCChPMZI4l+LRBhj9jOvtnQ8lEsmJNP7hdFh
+          5t19VQ54lQcPoqhRmTq1z61CsT3oTfK90b5t6xjRYOwH/UFESDQa7gb00V9UK/gQ19btKrp+FV6/
+          ii+wzP5C2agR1BKRrFLMTG1szDtQBauNKQyIpMiAJjXxrivYEb3eLDcfzrfrT+dVFX3YrLYXn36H
+          Obyot5vyaWBobarWvg4EqWmKsEaxrpzdGN9fFebPz4pA7Nc5Vfh62vkOXIEgk9cKAAA=
+          B64
+          base64 -d /tmp/patch.b64 | gzip -d > /tmp/domain.patch
+          echo '4e877d52b172b53aca3bc8702381a788f413892f425c623d821354a9813f3f60  /tmp/domain.patch' | sha256sum -c -
+          git apply --check /tmp/domain.patch
+          git apply /tmp/domain.patch
+      - name: Regressionstests
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests
+          node tests/recipes_core.test.js
+          node tests/category_filters.test.js
+          node tests/i18n.test.js
+          node tests/goblins.test.js
+          node --check static/app.js && node --check static/static-api.js
+      - name: Domain-Dateien einspielen (keine Datenbankaenderung)
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add static/index.html static/robots.txt static/sitemap.xml tests/test_seo_static.py
+          git commit -m 'Domain: SEO-URLs auf ah.forever-analytics.eu umgestellt'
+          git rm .github/workflows/setup-domain.yml
+          git commit -m 'Einmal-Setup-Workflow entfernt'
+          git push
+      - name: Veroeffentlichung starten
+        run: gh workflow run update.yml --ref main
