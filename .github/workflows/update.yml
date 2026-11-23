@@ -146,6 +146,10 @@ jobs:
         continue-on-error: true
         run: python run.py collect --no-metadata
 
+      - name: Getrennte Regelsatz-Stunden vor Verdichtung archivieren (V2)
+        timeout-minutes: 10
+        run: bash scripts/archive_rulesets.sh
+
       - name: Verdichten
         run: python run.py compact --vacuum
 
