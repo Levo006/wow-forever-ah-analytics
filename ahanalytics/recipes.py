@@ -352,12 +352,16 @@ def price_table(con, group_houses, item_ids) -> dict:
 
 
 def group_houses(con) -> dict[str, int]:
-    """Fraktions-Sammelhäuser (allianz/horde/neutral) → Haus-ID."""
+    """Prices keyed by ruleset + faction, with Normal aliases for old clients."""
+    from . import rulesets
     out = {}
-    for r in con.execute("SELECT id, source, ext_id FROM houses"):
-        k = db.house_kind(r["source"], r["ext_id"])
-        if k in db.GROUPS and k not in out:
-            out[k] = r["id"]
+    for r in con.execute("SELECT id,source,ext_id FROM houses"):
+        ident = rulesets.identity(r["ext_id"]) if r["source"] == "battlenet" else None
+        if ident:
+            key, _, _, fac = ident
+            faction = db.group_for_faction(fac)
+            out[f"{key}:{faction}"] = r["id"]
+            if key == "normal": out[faction] = r["id"]
     return out
 
 

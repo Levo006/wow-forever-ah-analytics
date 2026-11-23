@@ -25,6 +25,8 @@ import os
 import re
 import time
 
+from .rulesets import RULESETS, FACTIONS
+
 BASE = "https://forever-analytics.eu"
 SITEMAP_CHUNK = 10_000
 
@@ -34,9 +36,8 @@ BIND_DE = {1: "Wird beim Aufheben gebunden", 2: "Wird beim Anlegen gebunden", 3:
 BIND_EN = {1: "Binds when picked up", 2: "Binds when equipped", 3: "Binds when used", 4: "Quest item"}
 
 # Sammelhäuser je Fraktion (ext_id) für die Preisübersicht: ext_id -> (de, en)
-AGG_HOUSES = (("eu-allianz", "Allianz", "Alliance"),
-              ("eu-horde", "Horde", "Horde"),
-              ("eu-neutral", "Neutral", "Neutral"))
+AGG_HOUSES = tuple((f"eu-{num}", f"{key}:{fac}", fac)
+                   for key, (_, _, ids) in RULESETS.items() for fac, num in zip(FACTIONS, ids))
 
 _BOOT_HINT = (
     "<script>try{var m=location.pathname.match(/\\/(de\\/)?item\\/(\\d+)\\/?$/);"
@@ -173,16 +174,15 @@ def _details_lines(details_json, limit=12) -> list[str]:
 def _price_rows(prices: dict, lang: str) -> tuple[str, int | None]:
     """Tabellenzeilen je Fraktion + jüngster Stand. prices: faction_de -> summary dict."""
     rows, latest = [], None
-    for fac_de, fac_en in (("Allianz", "Alliance"), ("Horde", "Horde"), ("Neutral", "Neutral")):
-        p = prices.get(fac_de)
-        if not p:
-            continue
-        latest = max(latest or 0, p.get("last_ts") or 0) or None
-        label = fac_en if lang == "en" else fac_de
-        mn, md, qty = money_text(p.get("last_min")), money_text(p.get("last_median")), p.get("last_qty")
-        rows.append(
-            f"<tr><td>{esc(label)}</td><td class=\"n\">{esc(mn or '–')}</td>"
-            f"<td class=\"n\">{esc(md or '–')}</td><td class=\"n\">{qty if qty is not None else '–'}</td></tr>")
+    for key, (de, en, _) in RULESETS.items():
+        for fac in FACTIONS:
+            p = prices.get(f"{key}:{fac}")
+            if not p: continue
+            latest = max(latest or 0, p.get("last_ts") or 0) or None
+            faction = {"Allianz":"Alliance", "Neutral":"Blackwater Raiders"}.get(fac,fac) if lang=="en" else ("Schwarzmeerräuber" if fac=="Neutral" else fac)
+            label = (en if lang=="en" else de) + " · " + faction
+            mn, md, qty = money_text(p.get("last_min")), money_text(p.get("last_median")), p.get("last_qty")
+            rows.append(f'<tr><td>{esc(label)}</td><td class="n">{esc(mn or "–")}</td><td class="n">{esc(md or "–")}</td><td class="n">{qty if qty is not None else "–"}</td></tr>')
     return "".join(rows), latest
 
 
@@ -191,24 +191,24 @@ def _desc_and_title(it: dict, prices: dict, lang: str) -> tuple[str, str]:
     name = name or f"Item #{it['id']}"
     cls = it.get("class_name") or ""
     if lang == "en":
-        title = f"{name} – Price & History | Forever AH-Analytics"
+        title = f"{name} – Prices by Ruleset | Forever AH-Analytics"
         if prices:
-            parts = [f"{fac_en} {money_text(prices[fac_de].get('last_min'))}"
+            parts = [f"{fac_en} {money_text(prices['normal:' + fac_de].get('last_min'))}"
                      for fac_de, fac_en in (("Allianz", "Alliance"), ("Horde", "Horde"), ("Neutral", "Neutral"))
-                     if prices.get(fac_de) and prices[fac_de].get("last_min") is not None]
-            desc = (f"{name} auction house price in WoW: Forever – current low: " + ", ".join(parts) +
-                    ". Price history, median and supply, updated hourly.")
+                     if prices.get("normal:" + fac_de) and prices['normal:' + fac_de].get("last_min") is not None]
+            desc = (f"{name} auction house prices in WoW: Forever – Normal ruleset: " + ", ".join(parts) +
+                    ". Separate PvP, Roleplay and Roleplay-PvP prices on this page. Updated hourly.")
         else:
             desc = (f"{name} ({cls}) in WoW: Forever – item details, auction house prices "
                     f"and price history as soon as it is listed.")
     else:
-        title = f"{name} – Preis & Verlauf | Forever AH-Analytics"
+        title = f"{name} – Preise je Regelsatz | Forever AH-Analytics"
         if prices:
-            parts = [f"{fac_de} {money_text(prices[fac_de].get('last_min'))}"
+            parts = [f"{fac_de} {money_text(prices['normal:' + fac_de].get('last_min'))}"
                      for fac_de in ("Allianz", "Horde", "Neutral")
-                     if prices.get(fac_de) and prices[fac_de].get("last_min") is not None]
-            desc = (f"{name}: aktueller Auktionshaus-Preis in WoW: Forever – Mindestpreis: " + ", ".join(parts) +
-                    ". Preisverlauf, Median und Angebotsmenge, stündlich aktualisiert.")
+                     if prices.get("normal:" + fac_de) and prices['normal:' + fac_de].get("last_min") is not None]
+            desc = (f"{name}: Auktionshaus-Preise in WoW: Forever – Regelsatz Normal: " + ", ".join(parts) +
+                    ". PvP, Rollenspiel und Rollenspiel-PvP separat auf dieser Seite. Stündlich aktualisiert.")
         else:
             desc = (f"{name} ({cls}) in WoW: Forever – Item-Details, Auktionshaus-Preise "
                     f"und Verlauf, sobald gelistet.")
@@ -247,9 +247,9 @@ def _body(it: dict, prices: dict, lang: str, maps: dict) -> str:
 
     rows, latest = _price_rows(prices, lang)
     if rows:
-        head = (f"<tr><th>{'Faction' if en else 'Fraktion'}</th><th class=\"n\">{'Low' if en else 'Min'}</th>"
+        head = (f"<tr><th>{'Ruleset · Faction' if en else 'Regelsatz · Fraktion'}</th><th class=\"n\">{'Low' if en else 'Min'}</th>"
                 f"<th class=\"n\">{'Median' if en else 'Median'}</th><th class=\"n\">{'Supply' if en else 'Menge'}</th></tr>")
-        price_html = f"<table>{head}{rows}</table>"
+        price_html = f'<p>{"Separate markets for each ruleset. Trading is only possible within your own ruleset." if en else "Getrennte Märkte je Regelsatz. Handel nur innerhalb desselben Regelsatzes."}</p><table>{head}{rows}</table>'
         stand = time.strftime("%d.%m.%Y, %H:%M", time.localtime(latest)) if latest else ""
         price_html += (f'<p class="ipp-stand">{"Prices as of" if en else "Preise vom"} {stand} · '
                        f'{"updated hourly from the Battle.net API" if en else "stündlich aus der Battle.net API"}</p>')
@@ -289,7 +289,7 @@ def export_item_pages(con, out_dir: str, static_src: str, log=print) -> dict:
     prices_by_item: dict[int, dict] = {}
     if agg_ids:
         q = (f"SELECT item_id, house_id, last_min, last_median, last_qty, last_ts FROM item_summary "
-             f"WHERE house_id IN ({','.join(str(i) for i in agg_ids)})")
+             f"WHERE house_id IN ({','.join(str(i) for i in agg_ids)}) AND last_ts=(SELECT MAX(ts) FROM snapshots WHERE snapshots.house_id=item_summary.house_id)")
         for r in con.execute(q):
             prices_by_item.setdefault(r[0], {})[agg_ids[r[1]]] = {
                 "last_min": r[2], "last_median": r[3], "last_qty": r[4], "last_ts": r[5]}

@@ -8,7 +8,7 @@ vm.runInContext(fs.readFileSync(path.join(root,'static-api.js'),'utf8'),context)
  const actual=(await api.request('overview',{house})).kpis,expected=JSON.parse(fs.readFileSync(path.join(root,'expected.json'),'utf8'));
  for(const key of ['median_chg24','median_chg7d','comparable24','comparable7d','up24','down24','comparisons_reliable','quantity'])assert.equal(actual[key],expected[key],key);
  const row=(await api.request('search',{house,q:'1'})).items[0];
- assert.equal(row.last_lowest,5500);assert.equal(row.price_basis,'robust_reference');
+ assert.equal(row.last_lowest,5550);assert.equal(row.price_basis,'lowest_ask');
  assert.equal((await api.request('status')).market_runs[0].status,'complete');
  console.log('Manifest / price / overview parity OK');
 })().catch(e=>{console.error(e);process.exitCode=1;});

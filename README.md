@@ -335,3 +335,20 @@ auf `sitemap-items-en-*.xml` und `sitemap-items-de-*.xml` (EN zuerst – Englisc
 Englische Tooltips (`details_en`) kommen aus derselben Battle.net-Abfrage wie die deutschen,
 werden aber erst seit dem Item-Seiten-Start gesammelt (`run.py en-details`, stuendlich 3.000 Stueck) –
 bis dahin zeigen englische Seiten die Fakten ohne Tooltip-Zeilen.
+
+### EU-Regelsätze (23.11.2026)
+
+Die API listet dieselben regionalen Haus-IDs unter jedem Regelsatz-Pfad.
+Preise werden ausschließlich nach einzelnen Regelsatz-/Fraktionsmärkten angezeigt:
+Normal 111/114/117, PvP 110/113/116, Rollenspiel 119/120/121,
+Rollenspiel-PvP 123/124/125 (je Allianz/Horde/Schwarzmeerräuber).
+Normal ist Standard. Frühere Sammelmarkt-Links werden auf Normal derselben Fraktion
+umgeleitet; alte Mischreihen bleiben nur zur Sicherung in der Datenbank und werden
+nicht mehr fortgeschrieben oder veröffentlicht. Rezeptkosten sind ebenfalls getrennt.
+
+112/115/118 sind derzeit erwartet inaktiv. Eine Zuordnung zu Hardcore ist nur eine
+Vermutung und muss beim Start anhand realer Angebote geprüft werden. Falls Angebote
+erscheinen, erfasst der Collector sie wieder, veröffentlicht sie aber erst nach
+bestätigter Zuordnung. Netzwerkfehler werden auch dort nicht als inaktiv umgedeutet.
+Grundlagen: https://wowfah.com/ , https://mhuijskens.com/WoWForever/Api/ ,
+https://blizzard.pinta.land/forever/auctions/ .

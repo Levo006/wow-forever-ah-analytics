@@ -149,7 +149,7 @@ class ExportTest(unittest.TestCase):
     def setUp(self):
         self.con = db.connect(":memory:")
         recipes.update(self.con, fake_client(), log=QUIET)
-        self.al = db.upsert_group_house(self.con, "battlenet", "eu", "allianz")
+        self.al = db.upsert_house(self.con, "battlenet", "eu-111", "Normal Allianz", faction="Allianz", region="eu")
         T = 1_790_000_000
         db.write_snapshot(self.con, self.al, T - 5 * 86400, "t", {3576: {"min": 50, "quantity": 1}})
         db.write_snapshot(self.con, self.al, T, "t", {2770: {"min": 100, "median": 110, "quantity": 50},

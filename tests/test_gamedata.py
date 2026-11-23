@@ -10,7 +10,7 @@ import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ahanalytics import api, db, export, gamedata  # noqa: E402
+from ahanalytics import recipes, api, db, export, gamedata  # noqa: E402
 from ahanalytics.sources import battlenet  # noqa: E402
 from test_ingest import FakeResponse  # noqa: E402
 
@@ -128,7 +128,7 @@ class StoreExportTest(unittest.TestCase):
             gamedata.CHUNK = old
 
     def test_export(self):
-        al = db.upsert_group_house(self.con, "battlenet", "eu", "allianz")
+        al = db.upsert_house(self.con, "battlenet", "eu-111", "Normal Allianz", faction="Allianz", region="eu")
         db.write_snapshot(self.con, al, 1_790_000_000, "t", {6070: {"min": 250, "quantity": 2}})
         db.refresh_summary(self.con)
         d = gamedata.export_data(self.con, {"allianz": al})
@@ -138,7 +138,7 @@ class StoreExportTest(unittest.TestCase):
         self.assertEqual(d["sets"]["rows"][0][2], [15066, 15067])
         self.assertEqual(d["items"]["6070"][3], 1)
         self.assertEqual(d["prices"]["allianz"]["items"]["6070"][0], 250)
-        self.assertEqual(api.quests(self.con, {}), gamedata.export_data(self.con, {"allianz": al}))
+        self.assertEqual(api.quests(self.con, {}), gamedata.export_data(self.con, recipes.group_houses(self.con)))
         out = tempfile.mkdtemp()
         try:
             export.export_site(self.con, out, log=QUIET)

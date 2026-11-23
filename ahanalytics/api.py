@@ -5,7 +5,7 @@ import json
 import os
 import time
 
-from . import db, metrics, itemnames
+from . import db, metrics, itemnames, rulesets
 from . import liquidity as liquidity_
 from .itemmeta import CLASS_NAMES, QUALITY_NAMES
 
@@ -98,13 +98,8 @@ def house_latest(con, house_id):
 
 
 def _default_house(con):
-    # bevorzugt: Sammelmarkt Allianz mit aktuellen Daten
-    for (hid, src, ext) in con.execute(
-            "SELECT h.id, h.source, h.ext_id FROM houses h WHERE EXISTS "
-            "(SELECT 1 FROM snapshots s WHERE s.house_id=h.id) ORDER BY h.id"):
-        if db.house_kind(src, ext) == "allianz":
-            return hid
-    return _default_house_fallback(con)
+    normal = rulesets.normal_house(con)
+    return normal if normal is not None else _default_house_fallback(con)
 
 
 def _default_house_fallback(con):
@@ -123,8 +118,14 @@ def _resolve_house(con, params):
         hid = _default_house(con)
     if hid is None:
         raise NotFound("Keine Daten vorhanden – bitte zuerst Daten importieren.")
-    if not con.execute("SELECT 1 FROM houses WHERE id=?", (hid,)).fetchone():
+    row = con.execute("SELECT * FROM houses WHERE id=?", (hid,)).fetchone()
+    if not row:
         raise NotFound(f"Auktionshaus {hid} unbekannt")
+    if db.house_kind(row["source"], row["ext_id"]) in db.GROUPS:
+        target = rulesets.normal_house(con, row["faction"])
+        if target is not None:
+            hid = target
+
     return hid
 
 
@@ -207,7 +208,9 @@ def houses(con, params):
                   (SELECT COUNT(*) FROM item_summary x WHERE x.house_id = h.id) items
            FROM houses h LEFT JOIN snapshots s ON s.house_id = h.id
            GROUP BY h.id ORDER BY h.region, h.faction, h.name""").fetchall()
-    return {"houses": decorate_houses([dict(r) for r in rows]), "default": _default_house(con)}
+    return {"houses": decorate_houses([dict(r) for r in rows]), "default": _default_house(con),
+            "legacy_aliases": {str(r["id"]):rulesets.normal_house(con,r["faction"]) for r in rows
+                               if db.house_kind(r["source"],r["ext_id"]) in db.GROUPS}}
 
 
 _HOUSE_CACHE: dict = {}
@@ -221,50 +224,27 @@ def _house_info(con) -> dict:
 
 
 def decorate_houses(hs: list[dict]) -> list[dict]:
-    """Ergänzt kind (allianz|horde|neutral|haus|scan), verbund (A, B, …), group (Sammelmarkt
-    der eigenen Fraktion) und lesbare Bezeichnungen.
-
-    Die Battle.net-Häuser von Forever kommen in Dreiergruppen (Allianz/Horde/Neutral
-    eines Server-Verbunds): 110/113/116, 111/114/117, 112/115/118, danach 119–121,
-    123–125 usw. Die Buchstaben werden nur unter den Verbünden mit Daten vergeben.
-    """
-    def vkey(h):
-        try:
-            n = int(str(h["ext_id"]).rsplit("-", 1)[-1])
-        except ValueError:
-            return None
-        if 110 <= n <= 118:
-            return (n - 110) % 3
-        if n >= 119:
-            return 3 + (n - 119) // 4
-        return None
-
+    """Only distinct, playable markets. Never expose cross-ruleset pools."""
+    visible = []
     for h in hs:
         h["kind"] = db.house_kind(h.get("source", ""), h.get("ext_id", ""))
-    keys = sorted({vkey(h) for h in hs if h["kind"] == "haus" and h.get("snapshots") and vkey(h) is not None})
-    letters = {k: chr(65 + i) for i, k in enumerate(keys)}
-    for h in hs:
-        k = h["kind"]
-        if k in ("allianz", "horde"):
-            h["label"], h["short"] = f"{h['faction']} · alle Verbünde", h["faction"]
-        elif k == "neutral":
-            h["label"], h["short"] = "Neutral · Schwarzmeerräuber", "Neutral"
-        elif k == "legacy":
-            h["label"] = h["short"] = h["name"]
-        elif k == "scan":
-            h["label"], h["short"] = f"Eigene Scans · {h['name']}", "Eigene Scans"
+        if h["kind"] in (*db.GROUPS, "legacy") and h.get("source")=="battlenet":
+            continue
+        ident = rulesets.identity(h.get("ext_id")) if h.get("source") == "battlenet" else None
+        if h["kind"] == "haus" and h.get("ext_id") in {"eu-112","eu-115","eu-118"}:
+            continue
+        if ident:
+            key, de, en, fac = ident
+            h.update(ruleset_key=key, ruleset_label=de, ruleset_label_en=en,
+                     verbund=de, group=db.group_for_faction(fac), faction=fac,
+                     label=f"{de} · {fac}", short=f"{de} · {fac}")
         else:
-            v = letters.get(vkey(h))
-            h["verbund"] = v
-            num = str(h["ext_id"]).rsplit("-", 1)[-1]
-            fac = h.get("faction") or "?"
-            h["label"] = f"{fac} · Verbund {v} (#{num})" if v else h["name"]
-            h["short"] = f"{fac} {v}" if v else h["name"]
-            h["group"] = db.group_for_faction(fac) if h.get("source") == "battlenet" else None
-    order = {"allianz": 0, "horde": 1, "neutral": 2, "haus": 3, "scan": 4, "legacy": 5}
-    fo = {"Allianz": 0, "Horde": 1, "Neutral": 2}
-    hs.sort(key=lambda h: (order[h["kind"]], h.get("verbund") or "", fo.get(h.get("faction"), 9), h["name"]))
-    return hs
+            h.update(label=h["name"], short=h["name"])
+        visible.append(h)
+    order = {key:i for i,key in enumerate(rulesets.RULESETS)}
+    visible.sort(key=lambda h:(order.get(h.get("ruleset_key"),9),
+                              rulesets.FACTIONS.index(h["faction"]) if h.get("faction") in rulesets.FACTIONS else 9))
+    return visible
 
 
 def overview(con, params):
@@ -348,6 +328,11 @@ SEARCH_SORTS = {
 
 def search(con, params):
     """Globaler Itemindex, ausgewählte Märkte liefern nur Preisbeobachtungen."""
+    params = dict(params)
+    if not params.get("house"):
+        params["house"] = _default_house(con)
+    elif len(_ids(params,"house")) == 1:
+        params["house"] = _resolve_house(con,params)
     where, args = _house_filter(params)
     base = SUMMARY_FROM + (" WHERE " + " AND ".join(where) if where else "")
     rows = [_item_row(r) for r in con.execute(f"SELECT {SUMMARY_COLS} {base}", args)]
@@ -398,7 +383,9 @@ def search(con, params):
             factions = {str(r.get("faction") or "").lower() for r in rows if r.get("faction")}
             if not factions:
                 factions = {"allianz", "horde", "neutral"}
-            keep = rc.profitable_recipe_items(rc.export_data(con, rc.group_houses(con)), factions)
+            market = _house_info(con).get(_resolve_house(con,params),{})
+            rule = market.get("ruleset_key", "normal")
+            keep = rc.profitable_recipe_items(rc.export_data(con, rc.group_houses(con)), {f"{rule}:{f}" for f in factions})
             rows = [r for r in rows if r["item_id"] in keep]
     for key, col, lower in (("min_price", "last_min", True), ("max_price", "last_min", False),
                              ("min_qty", "last_qty", True), ("max_qty", "last_qty", False),
@@ -466,12 +453,15 @@ def item(con, item_id, params):
             meta["details"] = json.loads(meta["details"])
         except ValueError:
             meta["details"] = None
+    if meta.get("details_en"):
+        try: meta["details_en"] = json.loads(meta["details_en"])
+        except ValueError: meta["details_en"] = None
     meta.pop("details_v", None)
-    hs = [_item_row(r) for r in rows]
     info = _house_info(con)
+    hs = [_item_row(r) for r in rows if r["house_id"] in info]
     for h in hs:
         d = info.get(h["house_id"], {})
-        for k in ("kind", "label", "short", "verbund", "group"):
+        for k in ("kind", "label", "short", "verbund", "group", "ruleset_key", "ruleset_label", "ruleset_label_en", "faction"):
             h[k] = d.get(k)
     liq: dict = {}
     for r in con.execute(

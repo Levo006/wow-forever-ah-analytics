@@ -811,3 +811,5 @@ h3 { letter-spacing: .09em; color: var(--text-muted); }
 .g3 .cardhead h2 { font-size: 15.5px; }
 
 @media (max-width: 600px) { .hero { padding: 18px; border-radius: 14px; } .hero h1 { font-size: 21px; } .pagehead h1 { font-size: 22px; } }
+
+.ruleset-control{display:flex;align-items:center;gap:6px;font-size:.8rem}.ruleset-control select{max-width:175px;padding:7px;border:1px solid var(--grid);border-radius:7px;background:var(--surface-1);color:var(--text)}.hcards:empty{display:none}@media(max-width:600px){.ruleset-control{width:100%}.ruleset-control select{flex:1;max-width:none}}

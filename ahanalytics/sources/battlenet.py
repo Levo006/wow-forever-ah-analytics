@@ -213,7 +213,7 @@ def collect(con, client: BattleNetClient, ruleset=None, only_houses=None,
     res = ImportResult(SOURCE)
     manifest = {"version": 1, "started_at": now, "region": client.region,
                 "namespace": client.ns("dynamic"), "ruleset": ruleset,
-                "ruleset_scope": "selected_only_not_cross_ruleset_verified",
+                "ruleset_scope": "region_house_ids_mapped_to_rulesets",
                 "limits": {"max_source_age_s": 10800, "max_skew_s": 600, "future_s": 600},
                 "only_houses": list(only_houses or []), "expected_houses": [],
                 "endpoints": [], "groups": [], "errors": []}
@@ -237,11 +237,15 @@ def collect(con, client: BattleNetClient, ruleset=None, only_houses=None,
             if missing:
                 raise ValueError(f"Angeforderte Häuser fehlen: {sorted(missing)}")
             houses = [h for h in houses if h["id"] in wanted]
+        # Dormant EU houses are not assumed empty. Re-enable automatically if
+        # auctions appear; verify the Hardcore assignment at launch.
+        from ..rulesets import INACTIVE_EU
+        manifest["expected_inactive_houses"] = sorted(INACTIVE_EU) if client.region == "eu" else []
         manifest["expected_houses"] = [h["id"] for h in houses]
         known = {int(row[0].split("-")[-1]) for row in con.execute(
             "SELECT ext_id FROM houses WHERE source=? AND region=?", (SOURCE, client.region))
             if row[0].split("-")[-1].isdigit()}
-        disappeared = known - set(manifest["expected_houses"]) if not only_houses else set()
+        disappeared = known - set(manifest["expected_houses"]) - (INACTIVE_EU if client.region == "eu" else set()) if not only_houses else set()
         if disappeared:
             manifest["errors"].append(f"Bekannte Häuser fehlen im Verzeichnis: {sorted(disappeared)}")
         staged = []
@@ -303,6 +307,9 @@ def collect(con, client: BattleNetClient, ruleset=None, only_houses=None,
                     if isinstance(exc,ApiError):
                         entry["http_status"] = exc.status
             times = [e["source_ts"] for e in entries if e.get("auction_count") and e.get("source_ts")]
+            inactive = client.region == "eu" and h["id"] in INACTIVE_EU and not data and all(e.get("http_status")==200 and e.get("auction_count",0)==0 for e in entries)
+            if inactive:
+                for e in entries: e["status"] = "expected_inactive"
             valid = all(e["status"] in ("ok","empty") for e in entries)
             if times and max(times)-min(times)>600:
                 valid = False
@@ -336,40 +343,12 @@ def collect(con, client: BattleNetClient, ruleset=None, only_houses=None,
                     con.execute("UPDATE snapshots SET complete=1,run_id=? WHERE house_id=? AND ts=?",(rid,hid,h["ts"]))
                 db.set_meta(con,f"complete:{hid}","1")
                 log(f"Haus {h['id']}: {len(stats)} Items; Endpunkte geprüft")
-            if not only_houses:
-                for key in db.GROUPS:
-                    members = [h for h in staged if db.group_for_faction(h["faction"])==key]
-                    valid = [h for h in members if h["valid"]]
-                    times = [t for h in valid for t in h["times"]]
-                    complete = len(valid)==len(members) and bool(members) and not disappeared
-                    synced = not times or max(times)-min(times)<=600
-                    group = {"key":key,"expected":len(members),"valid":len(valid),"complete":complete and synced,
-                             "source_min_ts":min(times) if times else None,"source_max_ts":max(times) if times else None}
-                    manifest["groups"].append(group)
-                    if not valid or not synced:
-                        group["activation"] = "retained_previous"
-                        continue
-                    gid = db.upsert_group_house(con,SOURCE,client.region,key)
-                    ts = (max(times) if times else now)//60*60
-                    digest = hashlib.sha256("|".join(sorted(h["payload_hash"] for h in valid)).encode()).hexdigest()
-                    prior = con.execute("SELECT payload_hash FROM snapshots WHERE house_id=? AND ts=?",(gid,ts)).fetchone()
-                    if prior and prior[0]:
-                        group["activation"] = "unchanged" if prior[0]==digest else "retained_previous_content_conflict"
-                        # Do not upgrade an older partial snapshot without rewriting the pool.
-                        continue
-                    pools = [row for h in valid for row in h["listings"]]
-                    stats,ladders = aggregate_listings(pools)
-                    mins = []
-                    for h in valid:
-                        ss,_ = aggregate_listings(h["listings"])
-                        mins.append({i:(s["p10"],s["quantity"]) for i,s in ss.items()})
-                    db.apply_typical_min(stats,mins)
-                    sid = db.write_snapshot(con,gid,ts,SOURCE,stats,ladders)
-                    con.execute("UPDATE snapshots SET complete=?,run_id=?,source_min_ts=?,source_max_ts=?,payload_hash=? WHERE id=?",
-                                (int(group["complete"]),rid,group["source_min_ts"],group["source_max_ts"],digest,sid))
-                    db.set_meta(con,f"complete:{gid}",int(group["complete"]))
-                    group.update(activation="complete" if group["complete"] else "partial",house_id=gid,ts=ts)
-                    touched.append(gid)
+            # Each active house is exactly one ruleset/faction economy. No pooling.
+            for h in staged:
+                if h["valid"]:
+                    manifest["groups"].append({"key":str(h["id"]), "expected":1, "valid":1,
+                                              "complete":True, "activation":"complete",
+                                              "house_id":h["db_id"], "ts":h["ts"]})
             commodity_items = {i for h in staged if h["valid"] for i in h["commodity_ids"]}
             con.executemany("UPDATE items SET is_commodity=1 WHERE id=?", ((i,) for i in commodity_items))
             if touched:
@@ -377,7 +356,7 @@ def collect(con, client: BattleNetClient, ruleset=None, only_houses=None,
                 db.refresh_summary(con,touched)
                 from .. import liquidity
                 liquidity.update_liquidity(con,touched,log=log)
-            status = "complete" if all(h["valid"] for h in staged) and not manifest["errors"] and not only_houses and all(g["complete"] and g.get("activation")!="retained_previous_content_conflict" for g in manifest["groups"] if g["expected"]) else "partial"
+            status = "complete" if all(h["valid"] or all(e["status"]=="expected_inactive" for e in h["entries"]) for h in staged) and not manifest["errors"] and not only_houses and all(g["complete"] and g.get("activation")!="retained_previous_content_conflict" for g in manifest["groups"] if g["expected"]) else "partial"
             if not any(h["valid"] for h in staged): status="rejected"
             finish(status)
             db.bump_data_version(con)

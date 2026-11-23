@@ -71,17 +71,15 @@ class GroupBackfillTest(unittest.TestCase):
         db.build_group_snapshots(self.con, self.neutral, log=QUIET)
         db.refresh_summary(self.con)
         hs = api.houses(self.con, {})
-        kinds = [h["kind"] for h in hs["houses"]]
-        self.assertEqual(kinds[:3], ["allianz", "horde", "neutral"])
-        self.assertEqual(hs["default"], self.alle)            # Standard: Allianz
-        by = {h["ext_id"]: h for h in hs["houses"]}
-        self.assertEqual((by["eu-110"]["verbund"], by["eu-111"]["verbund"]), ("A", "B"))
-        self.assertEqual(by["eu-116"]["verbund"], "A")
-        self.assertEqual(by["eu-110"]["short"], "Allianz A")
-        self.assertEqual((by["eu-110"]["group"], by["eu-116"]["group"]), ("allianz", "neutral"))
-        self.assertEqual(by["eu-allianz"]["short"], "Allianz")
-        info = api.item(self.con, 1, {})
-        self.assertEqual({h["kind"] for h in info["houses"]}, {"allianz", "neutral", "haus"})
+        self.assertTrue(all(h["kind"]=="haus" for h in hs["houses"]))
+        by = {h["ext_id"]:h for h in hs["houses"]}
+        self.assertEqual(hs["default"],by["eu-111"]["id"])
+        self.assertEqual(by["eu-110"]["ruleset_key"],"pvp")
+        self.assertEqual(by["eu-111"]["ruleset_key"],"normal")
+        self.assertEqual(by["eu-116"]["group"],"neutral")
+        self.assertNotIn("eu-allianz",by)
+        info=api.item(self.con,1,{})
+        self.assertEqual({h["kind"] for h in info["houses"]},{"haus"})
 
     def test_legacy_group_removed(self):
         old = db.upsert_house(self.con, "battlenet", "eu-alle", "Alle Auktionshäuser", region="eu", faction="Alle")
@@ -121,18 +119,16 @@ class CollectGroupsTest(unittest.TestCase):
     def test_pools(self):
         battlenet.collect(self.con, self.client, now=1794308400, fetch_metadata=False, log=QUIET)
         g = {r["ext_id"]: r["id"] for r in self.con.execute("SELECT * FROM houses")}
-        alle = self.con.execute("SELECT * FROM prices WHERE house_id=?", (g["eu-allianz"],)).fetchone()
-        self.assertEqual(alle["quantity"], 501)
-        self.assertEqual(alle["min"], 100)      # typischer Tiefstpreis, nicht das 5c-Lockangebot
-        self.assertEqual(alle["median"], 100)   # exakt aus allen Einzelauktionen
-        neu = self.con.execute("SELECT * FROM prices WHERE house_id=?", (g["eu-neutral"],)).fetchone()
-        self.assertEqual((neu["min"], neu["quantity"]), (400, 20))
-        res = battlenet.collect(self.con, self.client, now=1794308400, fetch_metadata=False, log=QUIET)
-        self.assertEqual(res.snapshots, 0)      # gleicher Stand: nichts doppelt
-        self.assertEqual(self.con.execute("SELECT COUNT(*) FROM snapshots WHERE house_id=?",
-                                          (g["eu-allianz"],)).fetchone()[0], 1)
-        horde = self.con.execute("SELECT * FROM prices WHERE house_id=?", (g["eu-horde"],)).fetchone()
-        self.assertEqual((horde["min"], horde["quantity"]), (110, 300))
+        self.assertNotIn("eu-allianz",g)
+        self.assertNotIn("eu-horde",g)
+        row=self.con.execute("SELECT * FROM prices WHERE house_id=?",(g["eu-110"],)).fetchone()
+        self.assertEqual(row["quantity"],501)
+        self.assertEqual(row["min"],5)
+        neu=self.con.execute("SELECT * FROM prices WHERE house_id=?",(g["eu-116"],)).fetchone()
+        self.assertEqual((neu["min"],neu["quantity"]),(400,20))
+        res=battlenet.collect(self.con,self.client,now=1794308400,fetch_metadata=False,log=QUIET)
+        self.assertEqual(res.snapshots,0)
+
 
 
 class ExportTiersTest(unittest.TestCase):

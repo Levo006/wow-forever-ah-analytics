@@ -30,7 +30,7 @@ import re
 import shutil
 import time
 
-from . import api, catalog, db, gamedata, itempages, origins, recipes
+from . import api, catalog, db, gamedata, itempages, origins, recipes, rulesets
 
 ASSETS = ("app.css", "design-exchange.css", "i18n.js", "static-api.js", "recipes-core.js", "app.js", "item-tooltip.js")
 
@@ -305,6 +305,9 @@ def export_site(con, out_dir: str, history_days: int = 180, snapshot_files: int 
         "repo_url": repo_url,
         "houses": [{k: v for k, v in h.items() if k != "latest"} for h in houses],
         "default": api._default_house(con),
+        "legacy_aliases": {str(r["id"]): rulesets.normal_house(con, r["faction"])
+                           for r in con.execute("SELECT id,source,ext_id,faction FROM houses")
+                           if db.house_kind(r["source"],r["ext_id"]) in db.GROUPS},
         "counts": {"houses": len(houses), "items": len(item_ids),
                    "snapshots": sum(h["snapshots"] for h in houses), "recipes": stats["recipes"],
                    "quests": stats["quests"], "sets": stats["sets"], "sources": stats["sources"],

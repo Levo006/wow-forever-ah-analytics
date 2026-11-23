@@ -45,7 +45,8 @@ const StaticAPI = (() => {
 
   async function house(id) {
     const m = await meta();
-    const hid = id ? Number(id) : m.default;
+    let hid = id ? Number(id) : m.default;
+    if (!m.houses.some(x=>x.id===hid) && m.legacy_aliases?.[String(hid)]) hid = m.legacy_aliases[String(hid)];
     const h = m.houses.find((x) => x.id === hid);
     if (!h) throw new HttpError(m.houses.length ? T("Auktionshaus unbekannt") + ` ${id}` : T("Keine Daten vorhanden."));
     return h;
@@ -247,9 +248,9 @@ const StaticAPI = (() => {
   }
   // Spanne im AH-Modus: Verkauf nach 5 % Gebühr minus Materialkosten je Stück.
   // Spiegel von recipes.profitable_recipe_items (Server) bzw. RecipeCore.margin (Item-Seite).
-  function recipeProfitable(rf, facs, row) {
+  function recipeProfitable(rf, facs, row, ruleset="normal") {
     const ci = rf.ci;
-    const price = (fac, iid) => { const p = rf.data.prices?.[fac]?.items?.[String(iid)]; return p && p[0] > 0 ? p[0] : null; };
+    const price = (fac, iid) => { const p = rf.data.prices?.[`${ruleset}:${fac}`]?.items?.[String(iid)]; return p && p[0] > 0 ? p[0] : null; };
     for (const fac of facs) {
       const item = row[ci.item];
       const sell = item ? price(fac, item) : null;
@@ -269,7 +270,8 @@ const StaticAPI = (() => {
 
   async function search(params) {
     const m = await meta();
-    let hs = ids(params.house);
+    let hs = ids(params.house).map(id=>m.legacy_aliases?.[String(id)] || id);
+    if (!hs.length) hs = [m.default];
     if (!hs.length) hs = m.houses.filter((h) => (!params.region || h.region === params.region) && (!params.faction || h.faction === params.faction)
       && (!params.source || h.source === params.source)).map((h) => h.id);
     else hs = hs.filter((id) => m.houses.some((h) => h.id === id && (!params.region || h.region === params.region) && (!params.faction || h.faction === params.faction)));
@@ -307,7 +309,7 @@ const StaticAPI = (() => {
           const teaches = rf.data.teaches || {};
           rows = rows.filter((r) => (teaches[String(r.item_id)] || []).some((rid) => {
             const row = rf.byId.get(rid);
-            return row && recipeProfitable(rf, facs, row);
+            return row && recipeProfitable(rf, facs, row, m.houses.find(h=>h.id===hs[0])?.ruleset_key || "normal");
           }));
         }
       }
@@ -407,7 +409,7 @@ const StaticAPI = (() => {
         const h = m.houses.find((x) => x.id === r.house_id) || {};
         return { ...r, item_id: f.item.id, name: f.item.name, name_en: f.item.name_en, quality: f.item.quality, icon: f.item.icon,
           house_name: h.name, region: h.region, faction: h.faction, granularity: h.granularity,
-          kind: h.kind, label: h.label, short: h.short, verbund: h.verbund, group: h.group };
+          kind: h.kind, label: h.label, short: h.short, verbund: h.verbund, group: h.group, ruleset_key: h.ruleset_key, ruleset_label: h.ruleset_label, ruleset_label_en: h.ruleset_label_en, faction: h.faction };
       });
     }
     return f._houses;
@@ -528,7 +530,7 @@ const StaticAPI = (() => {
 
   const routes = [
     [/^status$/, () => status()],
-    [/^houses$/, async () => { const m = await meta(); return { houses: m.houses, default: m.default }; }],
+    [/^houses$/, async () => { const m = await meta(); return { houses: m.houses, default: m.default, legacy_aliases: m.legacy_aliases }; }],
     [/^overview$/, (m, p) => overview(p)],
     [/^classes$/, (m, p) => classes(p)],
     [/^search$/, (m, p) => search(p)],

@@ -46,7 +46,7 @@ function buildRoot(withRecipes) {
       [3, 2, 0, "Kupfer verhütten", 2840, 1, 1, [[2770, 1]]],
     ] },
     items: {},
-    prices: { allianz: { house_id: 1, items: {
+    prices: { "normal:allianz": { house_id: 1, items: {
       "2770": [100, 100, 50], "2840": [300, 300, 20], "9001": [10000, 10000, 3], "9002": [50, 50, 5] } } },
     teaches: { "8001": [1], "8002": [2] },
   });

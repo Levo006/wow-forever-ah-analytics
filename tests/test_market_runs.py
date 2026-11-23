@@ -44,9 +44,9 @@ class MarketRunsTest(unittest.TestCase):
         self.collect();m=self.manifest()
         self.assertEqual(m['status'],'complete');self.assertEqual(len(m['endpoints']),4)
         self.assertEqual(m['expected_houses'],[110,111]);self.assertTrue(all(len(e['sha256'])==64 for e in m['endpoints']))
-        r=api.item(self.con,1,{})['houses'];g=next(x for x in r if x['kind']=='allianz')
-        self.assertTrue(g['market_complete']);self.assertEqual(g['last_lowest'],5500)
-        self.assertEqual(g['price_basis'],'robust_reference')
+        r=api.item(self.con,1,{})['houses'];g=next(x for x in r if x['house_id']==self.house('eu-111'))
+        self.assertTrue(g['market_complete']);self.assertEqual(g['last_lowest'],5550)
+        self.assertEqual(g['price_basis'],'lowest_ask')
     def test_unknown_array_is_not_empty_and_no_house_overwrite(self):
         self.collect();hid=self.house('eu-111');old=self.con.execute('SELECT * FROM prices WHERE house_id=?',(hid,)).fetchall()
         self.client.data[self.base]=({'id':111},{'Last-Modified':formatdate(NOW+60,usegmt=True)})
@@ -59,7 +59,7 @@ class MarketRunsTest(unittest.TestCase):
         with patch('ahanalytics.sources.battlenet.time.time',return_value=NOW+120):
             battlenet.collect(self.con,self.client,fetch_metadata=False,log=QUIET,now=NOW+120)
         self.assertEqual(self.manifest()['status'],'complete')
-        row=api.search(self.con,{'q':'1','house':str(self.house('eu-allianz'))})['items'][0]
+        row=api.search(self.con,{'q':'1','house':str(self.house('eu-111'))})['items'][0]
         self.assertFalse(row['is_current']);self.assertEqual(row['current_quantity'],0)
     def test_endpoint_failures_keep_full_evidence(self):
         self.client.data[self.base]=battlenet.ApiError(404,self.base)
@@ -86,7 +86,7 @@ class MarketRunsTest(unittest.TestCase):
         self.collect();count=self.con.execute('SELECT COUNT(*) FROM prices').fetchone()[0]
         self.collect();self.assertEqual(self.con.execute('SELECT COUNT(*) FROM prices').fetchone()[0],count)
         self.assertEqual(len(api.market_runs(self.con)),2)
-        self.assertTrue(any(g['activation']=='unchanged' for g in self.manifest()['groups']))
+        self.assertTrue(all(g['expected']==1 for g in self.manifest()['groups']))
     def test_same_source_time_changed_payload_rejected(self):
         self.collect();self.client.data[self.base][0]['auctions'][0]['buyout']=1
         self.collect();self.assertIn('gleicher Quellzeit',next(e for e in self.manifest()['endpoints'] if e['path']==self.base)['error'])
@@ -116,7 +116,7 @@ class MarketRunsTest(unittest.TestCase):
         with self.assertRaises(battlenet.ApiError):battlenet._retry_delay({'Retry-After':'500'},0)
     def test_static_manifest_and_analytics_parity(self):
         self.collect()
-        hid=self.house('eu-allianz')
+        hid=self.house('eu-111')
         with tempfile.TemporaryDirectory() as tmp:
             export.export_site(self.con,tmp,log=QUIET)
             meta=json.loads((Path(tmp)/'data/meta.json').read_text())

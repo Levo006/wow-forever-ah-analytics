@@ -5,6 +5,15 @@
 (function () {
   "use strict";
   const STR = {
+ "Regelsatz": "Ruleset",
+ "Regelsätze": "Rulesets",
+ "Regelsätze vergleichen": "Compare rulesets",
+ "Handel nur innerhalb desselben Regelsatzes.": "Trading is only possible within your own ruleset.",
+ "Allianz im gewählten Regelsatz": "Alliance on the selected ruleset",
+ "Horde im gewählten Regelsatz": "Horde on the selected ruleset",
+ "Preise sind nach Regelsatz und Fraktion getrennt. Fehlende Antworten gelten nicht als leere Märkte.": "Prices are separate for each ruleset and faction. Missing responses do not mean an empty market.",
+ "erwartet inaktiv": "expected inactive",
+
  "Goblin-Händler": "Goblin trader",
  "Ah, potenzieller Kunde ...": "Ah, potential customer ...",
  "Willste meine Waren sehen?": "Can I show ya my wares?",
@@ -49,7 +58,7 @@
  "Alle {0} Quests anzeigen": "Show all {0} quests",
  "Alle {0} Treffer anzeigen ›": "Show all {0} results ›",
  "Alle {0} anzeigen": "Show all {0}",
- "Alle {0}-Auktionshäuser aller Server-Verbünde zusammengefasst": "All {0} auction houses across every server cluster combined",
+ "Alle {0}-Auktionshäuser aller Server-Regelsätze zusammengefasst": "All {0} auction houses across every server ruleset combined",
  "Alles": "All",
  "Alles aufklappen": "Expand all",
  "Allianz": "Alliance",
@@ -114,7 +123,7 @@
  "Einzelne Snapshots": "Individual snapshots",
  "Einzelnes AH …": "Single AH …",
  "Einzelnes Auktionshaus": "Single auction house",
- "Einzelnes Auktionshaus · {0} · Verbund {1}": "Single auction house · {0} · cluster {1}",
+ "Einzelnes Auktionshaus · {0} · Regelsatz {1}": "Single auction house · {0} · ruleset {1}",
  "Englischer Name": "English name",
  "Entfernen": "Remove",
  "Enthalten in": "Contained in",
@@ -187,7 +196,7 @@
  "Items im gesamten Suchindex": "items in the full search index",
  "Itemstamm": "Item catalog",
  "Itemstamm & Abdeckung": "Item catalog & coverage",
- "Je Fraktion (Allianz, Horde, Neutral) werden die Auktionshäuser aller Server-Verbünde gebündelt; jedes einzelne Haus bleibt zusätzlich sichtbar.": "For each faction (Alliance, Horde, Neutral) the auction houses of all server clusters are bundled; each individual house also stays visible.",
+ "Jeder Regelsatz hat eigene Preise je Fraktion. Es werden keine Preise zwischen Regelsätzen gemischt.": "For each faction (Alliance, Horde, Neutral) the auction houses of all server rulesets are bundled; each individual house also stays visible.",
  "Jeder erfolgreiche Abruf speichert Inhaltshash, Last-Modified, ETag (falls geliefert), Quellzeit und Zählungen. Gleiche Quellzeit erzeugt keinen doppelten Snapshot. Fehlerhafte Hauspaare werden nicht übernommen; alle Marktschreibvorgänge eines Laufs sind atomar.": "Every successful fetch stores content hash, Last-Modified, ETag (if provided), source time and counts. Identical source time does not create a duplicate snapshot. Faulty house pairs are not adopted; all market writes of a run are atomic.",
  "Kategorie": "Category",
  "Kategorie unbekannt": "category unknown",
@@ -229,7 +238,7 @@
  "Lehrt Rezept": "Teaches recipe",
  "Letzte Preisbeobachtung:": "Last price observation:",
  "Letzter Datenpunkt:": "Last data point:",
- "Letzter Gesamtlauf: {0}. Mengen und Werte beschreiben nur beobachtete Angebote, keinen Umsatz. Sammelmärkte sind Referenzen über mehrere Verbünde, kein einzelnes kaufbares Auktionshaus.": "Last full run: {0}. Quantities and values describe only observed listings, not sales. Combined markets are references across multiple clusters, not a single buyable auction house.",
+ "Letzter Gesamtlauf: {0}. Mengen und Werte beschreiben beobachtete Angebote, keinen Umsatz. Preise gelten nur für den gewählten Regelsatz.": "Last full run: {0}. Quantities and values describe only observed listings, not sales. Combined markets are references across multiple rulesets, not a single buyable auction house.",
  "Lineare Regression auf ln(Preis) über {0}": "Linear regression on ln(price) over {0}",
  "Liquidität": "Liquidity",
  "Markt": "Market",
@@ -257,7 +266,7 @@
  "Neu laden": "Reload",
  "Neue Version der Website verfügbar.": "A new version of the site is available.",
  "Neutral": "Neutral",
- "Neutrale Auktionshäuser (Beutebucht, Gadgetzan, Everlook) aller Verbünde": "Neutral auction houses (Booty Bay, Gadgetzan, Everlook) across all clusters",
+ "Neutrale Auktionshäuser (Beutebucht, Gadgetzan, Everlook) aller Regelsätze": "Neutral auction houses (Booty Bay, Gadgetzan, Everlook) across all rulesets",
  "Neutrale Auktionshäuser (Schwarzmeerräuber: Beutebucht, Gadgetzan, Everlook)": "Neutral auction houses (Blackwater Raiders: Booty Bay, Gadgetzan, Everlook)",
  "Nicht im statischen Export enthalten.": "Not included in the static export.",
  "Nicht in der gepinnten Client-Basistabelle; bisherige Metadaten bleiben erhalten": "Not in the pinned client base table; existing metadata is kept",
@@ -302,18 +311,18 @@
  "Rabatt": "Discount",
  "Referenz": "Reference",
  "Referenzpreis": "Reference price",
- "Referenzpreis aller Verbünde dieser Fraktion in einem Chart": "Reference price of all clusters of this faction in one chart",
- "Referenzpreis im Vergleich zum Fraktions-Gesamtpreis": "Reference price compared to the faction-wide price",
- "Referenzpreis je Verbund · Klick auf einen Eintrag in der Legende blendet ihn aus": "Reference price per cluster · clicking a legend entry hides it",
+ "Referenzpreis aller Regelsätze dieser Fraktion in einem Chart": "Reference price of all rulesets of this faction in one chart",
+ "Preis im Vergleich zum gewählten Regelsatz": "Reference price compared to the faction-wide price",
+ "Referenzpreis je Regelsatz · Klick auf einen Eintrag in der Legende blendet ihn aus": "Reference price per ruleset · clicking a legend entry hides it",
  "Referenzpreis × angebotene Menge": "Reference price × listed quantity",
  "Referenzpreis:": "Reference price:",
  "Region": "Region",
- "Sammelmarkt-Angebote sind nicht automatisch im eigenen Verbund kaufbar.": "Listings on the combined market are not automatically buyable in your own cluster.",
+ "Handel nur innerhalb desselben Regelsatzes.": "Listings on the combined market are not automatically buyable in your own ruleset.",
  "Schatzsuche": "Treasure hunt",
  "Schließen": "Close",
  "Schnelleinstieg": "Quick start",
  "Schwankung": "Volatility",
- "Schwarzmeerräuber": "Steamwheedle",
+ "Schwarzmeerräuber": "Blackwater Raiders",
  "Seite nicht gefunden.": "Page not found.",
  "Selbst herstellen ist günstiger als kaufen": "Crafting it yourself is cheaper than buying",
  "Server nicht erreichbar:": "Server unreachable:",
@@ -368,10 +377,10 @@
  "Unterklasse": "Subclass",
  "Unvollständige oder veraltete Marktstände erhalten kein zusammenfassendes Änderungssignal.": "Incomplete or stale market states get no summary change signal.",
  "Variationskoeffizient des Referenzpreises (7 Tage)": "Coefficient of variation of the reference price (7 days)",
- "Verbund": "Cluster",
- "Verbundvergleich": "Cluster comparison",
- "Verbundvergleich · Snapshots · Ausreißer": "Cluster comparison · snapshots · outliers",
- "Verbünde": "Clusters",
+ "Regelsatz": "Ruleset",
+ "Regelsätze vergleichen": "Ruleset comparison",
+ "Regelsätze vergleichen · Snapshots · Ausreißer": "Ruleset comparison · snapshots · outliers",
+ "Regelsätze": "Rulesets",
  "Vergleich": "Comparison",
  "Vergleichen ›": "Compare ›",
  "Verkaufspreis:": "Sell price:",
@@ -422,7 +431,7 @@
  "ab 2 Tagen Daten": "from 2 days of data",
  "ab Level": "requires level",
  "aktuelles Angebot": "current listing",
- "alle Verbünde": "all clusters",
+ "alle Regelsätze": "all rulesets",
  "bei Benutzung gebunden": "binds on use",
  "beim Anlegen gebunden": "binds on equip",
  "beim Aufheben gebunden": "binds on pickup",
@@ -457,7 +466,7 @@
  "lehrt": "teaches",
  "lesbar benannte Clientitems importiert": "readably named client items imported",
  "letzter Snapshot": "last snapshot",
- "liefert die abgefragten Auktionshaus-Endpunkte des ausgewählten Rulesets (Battle.net API).": "provides the queried auction house endpoints of the selected ruleset (Battle.net API).",
+ "liefert die EU-Auktionshäuser (Battle.net API), zugeordnet zu Regelsatz und Fraktion.": "provides the queried auction house endpoints of the selected ruleset (Battle.net API).",
  "läuft": "running",
  "mengengewichteter Median der hausweisen P10-Preise, kein günstigstes Angebot": "quantity-weighted median of the per-house P10 prices, not the cheapest listing",
  "mittlerer Umsatz": "medium turnover",
@@ -484,7 +493,7 @@
  "vor {0} Min.": "{0} min ago",
  "vor {0} Std.": "{0} h ago",
  "vor {0} Tagen": "{0} days ago",
- "vs. Fraktion": "vs. faction",
+ "vs. Auswahl": "vs. faction",
  "weitere": "more",
  "wenig Umsatz": "low turnover",
  "zuletzt": "last",
@@ -642,11 +651,12 @@
     whUrl: (kind, id) => `https://www.wowhead.com/forever/${en() ? "" : "de/"}${kind}=${id}`,
     houseName(h) {
       if (!h) return "";
+      if (h.ruleset_key) return `${en()?h.ruleset_label_en:h.ruleset_label} · ${en()?(FAC_EN[h.group] || h.faction):(h.faction==="Neutral"?"Schwarzmeerräuber":h.faction)}`;
       if (!en()) return h.label || h.name || "";
-      if (h.kind === "allianz" || h.kind === "horde") return `${FAC_EN[h.kind]} · all clusters`;
+      if (h.kind === "allianz" || h.kind === "horde") return `${FAC_EN[h.kind]} · all rulesets`;
       let s = h.label || h.name || "";
-      return s.replace("Allianz", "Alliance").replace("alle Verbünde", "all clusters")
-        .replace("Schwarzmeerräuber", "Blackwater Raiders").replace("Verbund", "Cluster")
+      return s.replace("Allianz", "Alliance").replace("alle Regelsätze", "all rulesets")
+        .replace("Schwarzmeerräuber", "Blackwater Raiders").replace("Regelsatz", "Ruleset")
         .replace("Eigene Scans", "Own scans");
     },
     houseShort(h) {

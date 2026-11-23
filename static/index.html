@@ -31,10 +31,11 @@
       <a href="#/liquidity" data-route="liquidity"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10m8 10V4m8 16v-7M2 21h20"/></svg><span data-i18n="Liquidität">Liquidität</span></a>
     </nav>
     <div class="topctl">
+      <label class="ruleset-control"><span data-i18n="Regelsatz">Regelsatz</span><select id="rulesetSelect" aria-label="Regelsatz"><option>Normal</option></select></label>
       <div class="market" id="market" role="group" aria-label="Markt">
-        <button type="button" data-k="allianz" data-i18n="Alle Allianz-Auktionshäuser zusammengefasst" data-i18n-attr="title" title="Alle Allianz-Auktionshäuser zusammengefasst"><span class="fac Allianz"></span><span data-i18n="Allianz">Allianz</span></button>
-        <button type="button" data-k="horde" data-i18n="Alle Horde-Auktionshäuser zusammengefasst" data-i18n-attr="title" title="Alle Horde-Auktionshäuser zusammengefasst"><span class="fac Horde"></span><span data-i18n="Horde">Horde</span></button>
-        <button type="button" data-k="neutral" data-i18n="Neutrale Auktionshäuser (Schwarzmeerräuber: Beutebucht, Gadgetzan, Everlook)" data-i18n-attr="title" title="Neutrale Auktionshäuser (Schwarzmeerräuber: Beutebucht, Gadgetzan, Everlook)"><span class="fac Neutral"></span><span data-i18n="Neutral">Neutral</span></button>
+        <button type="button" data-k="allianz" data-i18n="Allianz im gewählten Regelsatz" data-i18n-attr="title" title="Allianz im gewählten Regelsatz"><span class="fac Allianz"></span><span data-i18n="Allianz">Allianz</span></button>
+        <button type="button" data-k="horde" data-i18n="Horde im gewählten Regelsatz" data-i18n-attr="title" title="Horde im gewählten Regelsatz"><span class="fac Horde"></span><span data-i18n="Horde">Horde</span></button>
+        <button type="button" data-k="neutral" data-i18n="Neutrale Auktionshäuser (Schwarzmeerräuber: Beutebucht, Gadgetzan, Everlook)" data-i18n-attr="title" title="Neutrale Auktionshäuser (Schwarzmeerräuber: Beutebucht, Gadgetzan, Everlook)"><span class="fac Neutral"></span><span data-i18n="Schwarzmeerräuber">Schwarzmeerräuber</span></button>
       </div>
       <a id="fresh" class="pill fresh" href="#/data" hidden></a>
       <form id="quickSearch" class="quick" role="search">

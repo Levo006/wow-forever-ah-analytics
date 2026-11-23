@@ -19,8 +19,8 @@ ITEM_2770 = {
     "details_en": json.dumps({"lines": [{"t": "An English detail"}], "stackable": True, "equippable": False}),
 }
 PRICES = {
-    "Allianz": {"last_min": 110, "last_median": 144, "last_qty": 17528, "last_ts": 1795429320},
-    "Horde": {"last_min": 259, "last_median": 260, "last_qty": 12196, "last_ts": 1795429320},
+    "normal:Allianz": {"last_min": 110, "last_median": 144, "last_qty": 17528, "last_ts": 1795429320},
+    "normal:Horde": {"last_min": 259, "last_median": 260, "last_qty": 12196, "last_ts": 1795429320},
 }
 
 
@@ -52,7 +52,7 @@ class ItemPageRenderTest(unittest.TestCase):
     def test_en_page(self):
         html = _render("en")
         self.assertIn('<html lang="en"', html)
-        self.assertIn("<title>Copper Ore – Price &amp; History | Forever AH-Analytics</title>", html)
+        self.assertIn("<title>Copper Ore – Prices by Ruleset | Forever AH-Analytics</title>", html)
         self.assertIn('<link rel="canonical" href="https://forever-analytics.eu/item/2770/">', html)
         self.assertIn('hreflang="en"', html)
         self.assertIn('hreflang="de" href="https://forever-analytics.eu/de/item/2770/"', html)
@@ -73,7 +73,7 @@ class ItemPageRenderTest(unittest.TestCase):
     def test_de_page(self):
         html = _render("de")
         self.assertIn('<html lang="de"', html)
-        self.assertIn("<title>Kupfererz – Preis &amp; Verlauf | Forever AH-Analytics</title>", html)
+        self.assertIn("<title>Kupfererz – Preise je Regelsatz | Forever AH-Analytics</title>", html)
         self.assertIn('<link rel="canonical" href="https://forever-analytics.eu/de/item/2770/">', html)
         self.assertIn('hreflang="en" href="https://forever-analytics.eu/item/2770/"', html)
         self.assertIn("Kupfererz", html)
@@ -129,12 +129,14 @@ def _mini_db(path):
                    required_level INTEGER, slot TEXT, details TEXT, details_en TEXT, binding INTEGER)""")
     con.execute("""CREATE TABLE item_summary (house_id INTEGER, item_id INTEGER, last_min INTEGER,
                    last_median INTEGER, last_qty INTEGER, last_ts INTEGER)""")
-    con.execute("INSERT INTO houses VALUES (797, 'battlenet', 'eu-allianz', 'Allianz')")
-    con.execute("INSERT INTO houses VALUES (798, 'battlenet', 'eu-horde', 'Horde')")
+    con.execute("INSERT INTO houses VALUES (797, 'battlenet', 'eu-111', 'Allianz')")
+    con.execute("INSERT INTO houses VALUES (798, 'battlenet', 'eu-114', 'Horde')")
     con.execute("INSERT INTO items VALUES (1, 'Kupfererz', 'Copper Ore', 1, 'Handwerkswaren', 'Metall & Stein', 'inv_x', 10, 0, NULL, NULL, NULL, NULL)")
     con.execute("INSERT INTO items VALUES (2, 'Teufelseisenerz', 'Fel Iron Ore', 1, 'Handwerkswaren', 'Metall & Stein', 'inv_y', 60, 0, NULL, NULL, NULL, NULL)")
     con.execute("INSERT INTO item_summary VALUES (797, 1, 110, 144, 100, 1795429320)")
     con.execute("INSERT INTO item_summary VALUES (798, 1, 259, 260, 50, 1795429320)")
+    con.execute("CREATE TABLE snapshots (house_id INTEGER, ts INTEGER)")
+    con.executemany("INSERT INTO snapshots VALUES (?,1795429320)", [(797,),(798,)])
     con.commit()
     return con
 

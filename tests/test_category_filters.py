@@ -13,7 +13,7 @@ class CategoryFiltersTest(unittest.TestCase):
     def setUp(self):
         self.con = db.connect(":memory:")
         recipes.ensure_schema(self.con)
-        self.h = db.upsert_house(self.con, "battlenet", "eu-allianz", "Allianz", faction="Allianz")
+        self.h = db.upsert_house(self.con, "battlenet", "eu-111", "Normal Allianz", faction="Allianz")
         self.ts = int(time.time()) // 3600 * 3600
         for iid, name, en, q, cid, sub, lvl in (
                 (2770, "Kupfererz", "Copper Ore", 1, 7, 7, None),

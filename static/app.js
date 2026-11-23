@@ -148,6 +148,7 @@ const REDIRECTS = { movers: "/", deals: "/" };
 async function route() {
   const r = parseHash();
   state.route = r;
+  if (r.params.house) r.params.house = resolveHouseId(r.params.house);
   if (r.params.house && houseById(r.params.house) && String(r.params.house) !== String(state.house)) {
     state.house = String(r.params.house); store.set("house", state.house);
     classCache = {};
@@ -169,28 +170,27 @@ async function route() {
   }
 }
 function viewNotFound() { main.innerHTML = `<div class="empty">${t("Seite nicht gefunden.")}</div>`; }
-const curHouse = (p) => p?.house || state.house || "";
+const curHouse = (p) => resolveHouseId(p?.house || state.house || "");
 const houseById = (id) => state.houses.find((h) => String(h.id) === String(id));
 const hname = (h) => (h ? AHI18N.houseName(h) : "");
-const groupId = (k) => state.houses.find((h) => h.kind === k)?.id;
-/** <option>s mit Gruppen: Märkte, Verbund A, B, …, eigene Scans. */
+const rulesetKey = () => houseById(state.house)?.ruleset_key || "normal";
+const ruleName = (h) => h ? (AHI18N.get() === "en" ? h.ruleset_label_en : h.ruleset_label) || "Normal" : "Normal";
+let legacyAliases = {};
+const resolveHouseId = (id) => legacyAliases[String(id)] || id;
+const groupId = (k) => state.houses.find((h) => h.group === k && h.ruleset_key === rulesetKey())?.id;
+/** <option>s mit Gruppen: Märkte, Regelsatz A, B, …, eigene Scans. */
 function houseOptions(selected, { markets = true } = {}) {
   const groups = [];
-  if (markets) groups.push([t("Gesamt je Fraktion"), state.houses.filter((h) => ["allianz", "horde", "neutral"].includes(h.kind)), hname]);
-  const byV = {};
-  for (const h of state.houses.filter((h) => !h.kind || h.kind === "haus")) (byV[h.verbund ? t("Verbund") + " " + h.verbund : t("Auktionshäuser")] ||= []).push(h);
-  for (const hs of Object.values(byV)) hs.sort((a, b) => ["Allianz", "Horde", "Neutral"].indexOf(a.faction) - ["Allianz", "Horde", "Neutral"].indexOf(b.faction));
-  for (const [g, hs] of Object.entries(byV).sort()) groups.push([g, hs, (h) => h.verbund ? `${AHI18N.faction(h.faction)} #${String(h.ext_id).split("-").pop()}` : AHI18N.houseName(h)]);
-  groups.push([t("Eigene Scans"), state.houses.filter((h) => h.kind === "scan"), (h) => h.name]);
-  return groups.filter(([, hs]) => hs.length).map(([g, hs, lab]) => `<optgroup label="${esc(g)}">${hs.map((h) =>
-    `<option value="${h.id}" ${String(h.id) === String(selected) ? "selected" : ""}>${esc(lab(h))}</option>`).join("")}</optgroup>`).join("");
+  for (const key of ["normal", "pvp", "rp", "rppvp"]) {
+    const hs = state.houses.filter(h=>h.ruleset_key===key);
+    if (hs.length) groups.push([ruleName(hs[0]), hs]);
+  }
+  return groups.map(([label, hs])=>`<optgroup label="${esc(label)}">${hs.map(h=>`<option value="${h.id}" ${String(h.id)===String(selected)?"selected":""}>${esc(AHI18N.faction(h.faction))}</option>`).join("")}</optgroup>`).join("");
 }
+
 function scopeText(h) {
   if (!h) return "";
-  if (h.kind === "allianz" || h.kind === "horde") return tf("Alle {0}-Auktionshäuser aller Server-Verbünde zusammengefasst", AHI18N.faction(h.faction));
-  if (h.kind === "neutral") return t("Neutrale Auktionshäuser (Beutebucht, Gadgetzan, Everlook) aller Verbünde");
-  if (h.kind === "scan") return t("Eigene Auctionator-Scans (Tageswerte)");
-  return h.verbund ? tf("Einzelnes Auktionshaus · {0} · Verbund {1}", AHI18N.faction(h.faction), h.verbund) : t("Einzelnes Auktionshaus");
+  return `${ruleName(h)} · ${AHI18N.faction(h.faction)} · ${t("Handel nur innerhalb desselben Regelsatzes.")}`;
 }
 
 // ================================================================ Charts
@@ -644,12 +644,12 @@ async function viewCategories(r) {
 
 // ================================================================= Item
 const FACTIONS = [
-  { k: "allianz", name: "Allianz", fac: "Allianz", sub: "alle Verbünde" },
-  { k: "horde", name: "Horde", fac: "Horde", sub: "alle Verbünde" },
+  { k: "allianz", name: "Allianz", fac: "Allianz", sub: "alle Regelsätze" },
+  { k: "horde", name: "Horde", fac: "Horde", sub: "alle Regelsätze" },
   { k: "neutral", name: "Neutral", fac: "Neutral", sub: "Schwarzmeerräuber" },
 ];
-const facName = (f) => AHI18N.faction(f.name);
-const facSub = (f) => f.k === "neutral" ? t("Schwarzmeerräuber") : t("alle Verbünde");
+const facName = (f) => f.k === "neutral" ? t("Schwarzmeerräuber") : AHI18N.faction(f.name);
+const facSub = (f) => f.k === "neutral" ? t("Schwarzmeerräuber") : ruleName(houseById(state.house));
 /** Der Name in der jeweils anderen Sprache (für die Unterzeile), sonst null. */
 function altName(it) {
   if (AHI18N.get() === "en") return it.name && it.name_en && it.name !== it.name_en ? it.name : null;
@@ -658,7 +658,7 @@ function altName(it) {
 const GROUP_KINDS = FACTIONS.map((f) => f.k);
 
 function wowTooltip(it) {
-  const d = it.details;
+  const d = AHI18N.get() === "en" ? it.details_en : it.details;
   const lines = (d && d.lines) || [];
   if (!lines.length && !it.vendor_sell) return "";
   const col = { w: "", g: "cg", y: "cy", b: "cb", m: "cm" };
@@ -746,6 +746,10 @@ function recipeSummary(idx, id, qidx = null, sv = null) {
 function renderRecipes(el, id, fk) {
   return Promise.all([loadGame(), loadSources(id)]).then(([[idx, qidx], sv]) => {
     const fac = FACTIONS.find((f) => f.k === fk) || FACTIONS[0];
+    // Each render gets its own price view. Never mutate the shared recipe cache.
+    const priceKey = `${rulesetKey()}:${fk}`;
+    idx = {...idx, prices: {...idx.prices, [fk]: idx.prices[priceKey] || {items:{}}}};
+    qidx = {...qidx, prices: {...qidx.prices, [fk]: qidx.prices[priceKey] || {items:{}}}};
     const hid = groupId(fk);
     const uses = RecipeCore.usedIn(idx, id), made = RecipeCore.madeBy(idx, id);
     const quests = RecipeCore.rewardedBy(qidx, id, fk), sets = RecipeCore.setsOf(qidx, id);
@@ -920,7 +924,7 @@ function renderRecipes(el, id, fk) {
             .map(([k, l, n]) => `<button type="button" class="${k === prof ? "on" : ""}" data-p="${esc(k)}">${esc(l)} <span>${n}</span></button>`).join("")}</div>
           <label class="small" title="${t("Zutaten, die sich günstiger selbst herstellen lassen, mit Herstellkosten statt AH-Preis rechnen")}"><input type="checkbox" id="rbest" ${best ? "checked" : ""}> ${t("günstigster Weg (selbst herstellen)")}</label>
         </div>` : ""}
-        <div class="muted small rnote"><span class="fac ${fac.fac}"></span>${t("Preise:")} ${esc(facName(fac))} ${t("gesamt")} · ${t("robuste Kaufreferenz")}${profs.length ? " · " + t("Spanne nach 5 % AH-Gebühr") : ""}</div>
+        <div class="muted small rnote"><span class="fac ${fac.fac}"></span>${t("Preise:")} ${esc(ruleName(houseById(state.house)))} · ${esc(facName(fac))}${profs.length ? " · " + t("Spanne nach 5 % AH-Gebühr") : ""}</div>
         ${teach.length ? `<h3>${t("Lehrt Rezept")} <span class="muted small">${t("Materialkosten und Spanne beim Herstellen")}</span></h3><div class="rcards">${teach.map(madeCard).join("")}</div>` : ""}
         ${dropHtml()}${objHtml()}${vendorHtml()}${boxHtml("in")}${questHtml()}
         ${mk.length ? `<h3>${t("Hergestellt aus")}</h3><div class="rcards">${mk.map(madeCard).join("")}</div>` : ""}
@@ -1028,9 +1032,9 @@ async function viewItem(r) {
   let house = info.houses.find((h) => String(h.house_id) === want);
   let fk = house ? (GROUP_KINDS.includes(house.kind) ? house.kind : house.group) : (wantH && GROUP_KINDS.includes(wantH.kind) ? wantH.kind : wantH?.group);
   if (!fk) fk = "allianz";
-  if (!house) house = info.houses.find((h) => h.kind === fk) || null;
+  if (!house) house = null;
   const fac = FACTIONS.find((f) => f.k === fk);
-  const groupRow = (k) => info.houses.find((h) => h.kind === k);
+  const groupRow = (k) => info.houses.find((h) => h.group === k && h.ruleset_key === rulesetKey());
   const total = groupRow(fk);
   // Häuser der Fraktion, auch ohne Angebot (dann „keine Preisbeobachtung“)
   const allSingles = state.houses.filter((h) => h.kind === "haus" && h.group === fk).sort((a, b) => (a.verbund || "").localeCompare(b.verbund || ""));
@@ -1060,7 +1064,7 @@ async function viewItem(r) {
       ${g ? `<span class="fd">${g.is_current ? pct(g.chg24_min) : t("historisch")}</span>` : ""}</button>`;
   }).join("");
 
-  // Karten: Gesamt + Verbünde
+  // Karten: Gesamt + Regelsätze
   const card = (row, title, sub, opts = {}) => {
     const hidC = row ? row.house_id : opts.hid;
     const on = hidC && hidC === hid;
@@ -1072,12 +1076,11 @@ async function viewItem(r) {
       <div class="hm"><span>${row.is_current ? "24 h " + pct(row.chg24_min) : t("zuletzt") + " " + dt(row.last_ts)}</span>${cheapest && row.house_id === cheapest.house_id && listed.length > 1 ? `<span class="best">${t("★ günstigstes")}</span>` : ""}</div>
       ${row.liq_score != null ? `<div class="hm"><span>${liqBadge(row)}</span></div>` : ""}</button>`;
   };
-  const cards = card(total, `${facName(fac)} ${t("gesamt")}`, t("robuste Kaufreferenz"), { total: true, hid: groupId(fk) }) +
-    allSingles.map((h) => card(rowOf(h.id), `${t("Verbund")} ${h.verbund || "?"}`, `#${String(h.ext_id).split("-").pop()}`, { hid: h.id })).join("");
+  const cards = ""; // Ruleset selection lives above the faction selector, not duplicate cards.
 
   // Hinweise
   const hints = [];
-  const priceMethod = house ? `${house.market_complete ? t("Vollständiger Snapshot") : t("Teilstand / Vollständigkeit nicht belegt")}. ${house.last_ts < Date.now()/1000-10800 ? t("Quellstand älter als 3 Stunden.") + " " : ""}${t("Referenzpreis:")} ${house.price_basis==="robust_reference" ? t("mengengewichteter Median der hausweisen P10-Preise, kein günstigstes Angebot") : t("günstigstes beobachtetes Stückangebot")}. ${t("Günstigstes separat beobachtetes Angebot:")} ${house.last_lowest == null ? t("für diesen historischen Stand nicht gesondert gespeichert") : moneyText(house.last_lowest)}. ${t("Sammelmarkt-Angebote sind nicht automatisch im eigenen Verbund kaufbar.")}` : "";
+  const priceMethod = house ? `${house.market_complete ? t("Vollständiger Snapshot") : t("Teilstand / Vollständigkeit nicht belegt")}. ${house.last_ts < Date.now()/1000-10800 ? t("Quellstand älter als 3 Stunden.") + " " : ""}${t("Referenzpreis:")} ${house.price_basis==="robust_reference" ? t("mengengewichteter Median der hausweisen P10-Preise, kein günstigstes Angebot") : t("günstigstes beobachtetes Stückangebot")}. ${t("Günstigstes separat beobachtetes Angebot:")} ${house.last_lowest == null ? t("für diesen historischen Stand nicht gesondert gespeichert") : moneyText(house.last_lowest)}. ${t("Handel nur innerhalb desselben Regelsatzes.")}` : "";
   if (house && !house.is_current) hints.push(`${listingNote(house)}. ${t("Letzte Preisbeobachtung:")} ${dt(house.last_ts)}. ${t("Die Historie bleibt sichtbar.")}`);
   if (it.translation_missing && AHI18N.get() === "de") hints.push(`Deutscher Forever-Name noch nicht bestätigt.${it.aliases?.length ? " Suchalias: " + it.aliases.join(", ") + "." : " Anzeige mit englischem Fallback."}`);
   if (house?.is_current && house.last_ts >= Date.now() / 1000 - 3 * 3600 && it.vendor_sell && house.last_min && house.last_min < it.vendor_sell)
@@ -1085,7 +1088,7 @@ async function viewItem(r) {
   if (house?.is_current && house.last_ts >= Date.now() / 1000 - 3 * 3600 && house.avg7_min && house.last_min && house.last_min < house.avg7_min * 0.85)
     hints.push(tf("▼ Gerade {0} % unter dem 7-Tage-Schnitt.", num((1 - house.last_min / house.avg7_min) * 100, 0)));
 
-  const selName = !house ? facName(fac) : GROUP_KINDS.includes(house.kind) ? `${facName(fac)} ${t("gesamt")}` : `${facName(fac)} · ${t("Verbund")} ${house.verbund || "?"}`;
+  const selName = !house ? facName(fac) : GROUP_KINDS.includes(house.kind) ? `${facName(fac)} ${t("gesamt")}` : `${ruleName(house)} · ${facName(fac)}`;
   const daily = house?.granularity === "day";
   const ranges = daily ? ["7d", "30d", "90d", "all"] : ["24h", "7d", "30d", "all"];
   if (!ranges.includes(p.range)) p.range = daily ? "30d" : "7d";
@@ -1116,7 +1119,7 @@ async function viewItem(r) {
           <div class="tgl" id="tog">
             ${[["median", t("Median")], ["lowest", t("Günstigstes")]].map(([k, l]) => `<button type="button" data-k="${k}" class="${shown.has(k) ? "on" : ""}">${l}</button>`).join("")}
             <button type="button" data-k="out" class="${p.out !== "0" ? "on" : ""}" title="${t("Ungewöhnliche Preispunkte markieren")}">${t("Ausreißer")}</button>
-            <button type="button" data-k="cmp" class="${overlay ? "on" : ""}" title="${t("Referenzpreis aller Verbünde dieser Fraktion in einem Chart")}">${t("Verbünde")}</button>
+            <button type="button" data-k="cmp" class="${overlay ? "on" : ""}" title="${t("Referenzpreis aller Regelsätze dieser Fraktion in einem Chart")}">${t("Regelsätze")}</button>
           </div>
           <div class="seg" id="rng">${ranges.map((x) => `<button data-r="${x}" class="${x === p.range ? "on" : ""}">${x === "all" ? t("Alles") : x.replace("d", " T").replace("h", " h")}</button>`).join("")}</div>
         </div></div>
@@ -1127,8 +1130,8 @@ async function viewItem(r) {
       ${fold("rec", t("Herkunft & Verwendung"), t("Lade Rezepte und Quests …"), true)}
       ${fold("liq", t("Umsatz & Liquidität"), house.liq_score != null ? `Score ${num(house.liq_score)} · ${tf("{0} Signale / 7 T", num(house.liq_events))}` : t("noch keine Daten"), true)}
       ${fold("kpi", t("Kennzahlen & Muster"), house.avg7_min ? `Ø 7 T ${money(house.avg7_min)} · 7 T ${pct(house.chg7d_min)}` : "")}
-      <details class="expert-analysis"><summary>${t("Analyse-Details")} <span>${t("Verbundvergleich · Snapshots · Ausreißer")}</span></summary><div class="expert-analysis-body">
-      ${fold("all", t("Verbundvergleich"), `${info.houses.filter((h) => h.kind === "haus").length} ${t("Häuser")}`)}
+      <details class="expert-analysis"><summary>${t("Analyse-Details")} <span>${t("Regelsätze vergleichen · Snapshots · Ausreißer")}</span></summary><div class="expert-analysis-body">
+      ${fold("all", t("Regelsätze vergleichen"), `${info.houses.filter((h) => h.kind === "haus").length} ${t("Häuser")}`)}
       ${fold("raw", t("Snapshots & Ausreißer"), t("Preispunkte prüfen"))}</div></details>
       ${fold("info", t("Item-Details"), it.details?.lines?.length ? t("Tooltip wie im Spiel") : "")}
     </div>` : `<div class="card"><div class="empty">${t("Keine Preisbeobachtung im gewählten Markt.")}</div></div>
@@ -1145,14 +1148,14 @@ async function viewItem(r) {
     const rows = info.houses.filter((h) => GROUP_KINDS.includes(h.kind) || h.kind === "haus")
       .sort((a, b) => (GROUP_KINDS.indexOf(a.group || a.kind) - GROUP_KINDS.indexOf(b.group || b.kind)) || ((GROUP_KINDS.includes(b.kind) ? 1 : 0) - (GROUP_KINDS.includes(a.kind) ? 1 : 0)) || (a.verbund || "").localeCompare(b.verbund || ""));
     const ref = (h) => groupRow(h.group || h.kind);
-    el.innerHTML = table([
-      { label: t("Auktionshaus"), fmt: (h) => GROUP_KINDS.includes(h.kind) ? `<b><span class="fac ${esc(h.faction)}"></span>${esc(AHI18N.faction(h.faction))} ${t("gesamt")}</b>` : `<span class="fac ${esc(h.faction)}"></span>${esc(AHI18N.faction(h.faction))} · ${t("Verbund")} ${esc(h.verbund || "?")}` },
+    el.innerHTML = `<p class="note">${t("Handel nur innerhalb desselben Regelsatzes.")}</p>` + table([
+      { label: t("Auktionshaus"), fmt: (h) => GROUP_KINDS.includes(h.kind) ? `<b><span class="fac ${esc(h.faction)}"></span>${esc(AHI18N.faction(h.faction))} ${t("gesamt")}</b>` : `<span class="fac ${esc(h.faction)}"></span>${esc(AHI18N.faction(h.faction))} · ${esc(ruleName(h))}` },
       { label: t("Referenz"), num: true, fmt: (h) => listingPrice(h) },
       { label: t("Median"), num: true, fmt: (h) => money(h.last_median) },
       { label: t("Ø 7 T"), num: true, fmt: (h) => money(h.avg7_min) },
       { label: t("Stück"), num: true, fmt: (h) => h.is_current ? num(h.last_qty) : "–" },
       { label: "Δ 24 h", num: true, fmt: (h) => pct(h.chg24_min) },
-      { label: t("vs. Fraktion"), num: true, title: t("Referenzpreis im Vergleich zum Fraktions-Gesamtpreis"), fmt: (h) => GROUP_KINDS.includes(h.kind) || !ref(h)?.last_min ? '<span class="muted">—</span>' : pct((h.last_min / ref(h).last_min - 1) * 100, 0) },
+      { label: t("vs. Auswahl"), num: true, title: t("Preis im Vergleich zum gewählten Regelsatz"), fmt: (h) => GROUP_KINDS.includes(h.kind) || !ref(h)?.last_min ? '<span class="muted">—</span>' : pct((h.last_min / ref(h).last_min - 1) * 100, 0) },
     ], rows, { rowHref: (h) => `/item/${id}?house=${h.house_id}&range=${p.range}` });
   };
   const infoBox = (el) => {
@@ -1187,12 +1190,12 @@ async function viewItem(r) {
   const pts = hist.points;
   const span = pts.length ? pts[pts.length - 1].ts - pts[0].ts : 86400;
 
-  // Preis-Chart (optional: alle Verbünde der Fraktion überlagert)
+  // Preis-Chart (optional: alle Regelsätze der Fraktion überlagert)
   const ds = [];
   if (overlay) {
-    const members = [total, ...allSingles.map((h) => rowOf(h.id))].filter(Boolean);
+    const members = allSingles.map((h) => rowOf(h.id)).filter(Boolean);
     const series = await Promise.all(members.map((m) => api(`item/${id}/history`, { house: m.house_id, range: p.range, max_points: 400 })));
-    members.forEach((m, i) => ds.push(line(GROUP_KINDS.includes(m.kind) ? `${facName(fac)} ${t("gesamt")}` : `${t("Verbund")} ${m.verbund}`,
+    members.forEach((m, i) => ds.push(line(GROUP_KINDS.includes(m.kind) ? `${facName(fac)} ${t("gesamt")}` : ruleName(m),
       series[i].points.map((x) => ({ x: x.ts, y: x.min, ts: x.ts })), SERIES[i], GROUP_KINDS.includes(m.kind) ? { borderWidth: 3 } : { borderWidth: 1.6 })));
   } else {
     for (const [k, l, c] of [["min", t("Referenz"), "--s1"], ["lowest", t("Günstigstes Angebot"), "--s6"], ["median", t("Median"), "--s2"]]) {
@@ -1206,7 +1209,7 @@ async function viewItem(r) {
         backgroundColor: css("--s8"), borderColor: css("--surface-1"), borderWidth: 2, pointStyle: "triangle" });
     }
   }
-  $("#pcnote").textContent = overlay ? t("Referenzpreis je Verbund · Klick auf einen Eintrag in der Legende blendet ihn aus") : tf("{0} Reihenpunkte · ältere Punkte teils gemittelt; Lücken werden nicht überbrückt · Klick öffnet den Snapshot", hist.raw_points);
+  $("#pcnote").textContent = overlay ? t("Referenzpreis je Regelsatz · Klick auf einen Eintrag in der Legende blendet ihn aus") : tf("{0} Reihenpunkte · ältere Punkte teils gemittelt; Lücken werden nicht überbrückt · Klick öffnet den Snapshot", hist.raw_points);
   if (pts.length < 2) $("#pc").parentElement.innerHTML = `<div class="empty">${pts.length ? t("Erst ein Datenpunkt – der Verlauf füllt sich stündlich.") : t("Keine Preisdaten im Zeitraum.")}</div>`;
   else if (!ds.length) $("#pc").parentElement.innerHTML = `<div class="empty">${t("Keine Kennzahl ausgewählt – über die Schalter oben einblenden.")}</div>`;
   else timeLineChart($("#pc"), ds, { span, onClick: overlay ? undefined : (pt) => (location.hash = `/snapshot/${hid}/${pt.ts}?item=${id}`) });
@@ -1496,13 +1499,13 @@ function marketRunCard(runs) {
   if (!run) return `<div class="card mt"><h2>${t("Markt-Laufprotokoll")}</h2><p class="note">${t("Noch kein Lauf mit neuem Prüfmanifest. Ältere Snapshots haben keinen nachträglichen Vollständigkeitsnachweis.")}</p></div>`;
   const states = {complete:t("vollständig geprüft"),partial:t("teilweise geprüft"),rejected:t("nicht freigegeben"),running:t("läuft")};
   return `<div class="card mt"><h2>${t("Markt-Laufprotokoll")}</h2>
-    <p><b>${tf("Lauf {0}: {1}", num(run.id), esc(states[run.status] || run.status))}</b> · ${dt(run.started_at)} · Region ${esc(run.region)} · Ruleset ${esc(run.ruleset)}</p>
-    <p class="note">${t("Erfasst wird nur dieses Ruleset. Gleiche Märkte in anderen Rulesets sind nicht nachgewiesen. Fehlende Antworten gelten nicht als leere Märkte. Teilstände beweisen keine Angebotsabwesenheit.")}</p>
-    <p>${tf("{0} / {1} Endpunkte geprüft. Quellstände mit Angeboten dürfen höchstens 3 Stunden alt sein und innerhalb eines Hauses oder Sammelmarkts höchstens 10 Minuten auseinanderliegen.", num(run.endpoints?.filter(e=>["ok","empty"].includes(e.status)).length), num(run.endpoints?.length))}</p>
+    <p><b>${tf("Lauf {0}: {1}", num(run.id), esc(states[run.status] || run.status))}</b> · ${dt(run.started_at)} · Region ${esc(run.region)}</p>
+    <p class="note">${t("Preise sind nach Regelsatz und Fraktion getrennt. Fehlende Antworten gelten nicht als leere Märkte.")}</p>
+    <p>${tf("{0} / {1} Endpunkte geprüft. Quellstände mit Angeboten dürfen höchstens 3 Stunden alt sein und innerhalb eines Hauses oder Sammelmarkts höchstens 10 Minuten auseinanderliegen.", num(run.endpoints?.filter(e=>["ok","empty","expected_inactive"].includes(e.status)).length), num(run.endpoints?.length))}</p>
     ${(run.errors || []).map(e=>`<p class="note">${esc(e)}</p>`).join("")}
     <details><summary>${t("Häuser, Endpunkte & Prüfsummen")}</summary>${table([
       {label:t("Haus / Endpunkt"),fmt:e=>`${num(e.house)} · ${esc(e.endpoint)}`},
-      {label:t("Ergebnis"),fmt:e=>esc(e.error || (e.status==="empty" ? t("bestätigt leer") : e.status==="ok" ? t("geprüft") : t("Fehler")))},
+      {label:t("Ergebnis"),fmt:e=>esc((e.status==="expected_inactive" ? t("erwartet inaktiv") : e.error) || (e.status==="empty" ? t("bestätigt leer") : e.status==="ok" ? t("geprüft") : t("Fehler")))},
       {label:t("Quellstand"),fmt:e=>dt(e.source_ts)},
       {label:t("Auktionen"),num:true,fmt:e=>e.auction_count==null ? "–" : num(e.auction_count)},
       {label:"SHA-256",fmt:e=>`<code title="${esc(e.sha256 || "")}">${esc((e.sha256 || "–").slice(0,12))}</code>`}
@@ -1513,14 +1516,14 @@ function marketRunCard(runs) {
 function marketQualityNote(q) {
   if (!q?.ts) return t("Kein geprüfter Marktstand vorhanden.");
   const age = Date.now()/1000-q.ts;
-  return `${q.complete ? t("Vollständiger Snapshot") : t("Teilstand / Vollständigkeit nicht belegt")}${age>10800 ? " · " + t("älter als 3 Stunden") : ""}. ${tf("Letzter Gesamtlauf: {0}. Mengen und Werte beschreiben nur beobachtete Angebote, keinen Umsatz. Sammelmärkte sind Referenzen über mehrere Verbünde, kein einzelnes kaufbares Auktionshaus.", q.latest_run_status || t("ohne Manifest"))}`;
+  return `${q.complete ? t("Vollständiger Snapshot") : t("Teilstand / Vollständigkeit nicht belegt")}${age>10800 ? " · " + t("älter als 3 Stunden") : ""}. ${tf("Letzter Gesamtlauf: {0}. Mengen und Werte beschreiben beobachtete Angebote, keinen Umsatz. Preise gelten nur für den gewählten Regelsatz.", q.latest_run_status || t("ohne Manifest"))}`;
 }
 
 function dataFlowCard() {
   return `<div class="card mt"><h2>${t("Woher kommen die Preise?")}</h2>
     <ol class="flow">
-      <li><b>Blizzard</b> ${t("liefert die abgefragten Auktionshaus-Endpunkte des ausgewählten Rulesets (Battle.net API).")}</li>
-      <li><b>${t("Zusammenfassen:")}</b> ${t("Je Fraktion (Allianz, Horde, Neutral) werden die Auktionshäuser aller Server-Verbünde gebündelt; jedes einzelne Haus bleibt zusätzlich sichtbar.")}</li>
+      <li><b>Blizzard</b> ${t("liefert die EU-Auktionshäuser (Battle.net API), zugeordnet zu Regelsatz und Fraktion.")}</li>
+      <li><b>${t("Zusammenfassen:")}</b> ${t("Jeder Regelsatz hat eigene Preise je Fraktion. Es werden keine Preise zwischen Regelsätzen gemischt.")}</li>
       <li><b>${t("Veröffentlichen:")}</b> ${t("Die Seite wird danach automatisch neu gebaut. Quellzeit und Veröffentlichung werden getrennt ausgewiesen; die Laufzeit ist keine Frischegarantie.")}</li>
     </ol>
   </div>`;
@@ -1676,15 +1679,28 @@ function attachAutocomplete(input, box, house, onPick, opts = {}) {
 // =================================================================== Start
 async function loadHouses() {
   const d = await api("houses");
+  legacyAliases = d.legacy_aliases || {};
+  state.house = resolveHouseId(state.house);
   state.houses = d.houses.filter((h) => h.snapshots > 0);
   if (!state.house || !houseById(state.house)) state.house = d.default ? String(d.default) : "";
   renderMarket();
 }
 function renderMarket() {
   const h = houseById(state.house);
+  const sel = $("#rulesetSelect");
+  if (sel) {
+    sel.innerHTML = ["normal","pvp","rp","rppvp"].map(key=>{
+      const r = state.houses.find(x=>x.ruleset_key===key);
+      return r ? `<option value="${key}" ${key===rulesetKey()?"selected":""}>${esc(ruleName(r))}</option>` : "";
+    }).join("");
+    sel.onchange = () => {
+      const target = state.houses.find(x=>x.ruleset_key===sel.value && x.group===(h?.group || "allianz"));
+      if (target) setHouse(target.id);
+    };
+  }
   $$("#market button").forEach((b) => {
     b.hidden = !groupId(b.dataset.k);
-    b.classList.toggle("on", !!h && h.kind === b.dataset.k);
+    b.classList.toggle("on", !!h && h.group === b.dataset.k);
   });
   updateFreshness();
 }
