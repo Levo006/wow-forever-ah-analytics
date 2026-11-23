@@ -204,6 +204,13 @@ jobs:
         timeout-minutes: 10
         run: python run.py classic-aliases --limit 150
 
+      # Englische Tooltips für die englischen Item-Seiten: Battle.net (all_locales),
+      # gedrosselt in Portionen – bei Fehlern bleibt der bisherige Bestand.
+      - name: Englische Item-Tooltips ergänzen (Battle.net, gedrosselt)
+        continue-on-error: true
+        timeout-minutes: 8
+        run: python run.py en-details --limit 3000
+
       - name: Metadatenstand zusätzlich sichern
         if: ${{ !cancelled() && steps.restore.outcome == 'success' && steps.collect.outcome != 'skipped' }}
         run: |
