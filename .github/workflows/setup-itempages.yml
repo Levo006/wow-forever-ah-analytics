@@ -286,7 +286,7 @@ jobs:
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add ahanalytics/itempages.py ahanalytics/export.py ahanalytics/db.py ahanalytics/__main__.py ahanalytics/sources/battlenet.py static/app.js static/i18n.js tests/test_itempages.py .github/workflows/update.yml README.md
+          git add ahanalytics/itempages.py ahanalytics/export.py ahanalytics/db.py ahanalytics/__main__.py ahanalytics/sources/battlenet.py static/app.js static/i18n.js tests/test_itempages.py README.md
           git commit -m 'Echte Item-URLs: EN /item/<id>/ (Haupt, x-default) + DE /de/item/<id>/, 51k statische Seiten, Sitemap-Index; EN-Tooltips aus Battle.net (en-details, gedrosselt); Sprach-Default nach Browser'
           git rm .github/workflows/setup-itempages.yml
           git commit -m 'Einmal-Setup-Workflow entfernt'
