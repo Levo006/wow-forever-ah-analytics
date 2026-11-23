@@ -561,8 +561,19 @@
   const QTYPE_EN = { "Schlachtzug": "Raid", "Legendär": "Legendary" };
   const OUTLIER_EN = { "Spitze": "Spike", "Einbruch": "Drop" };
 
-  let lang = "de";
-  try { const s = localStorage.getItem("ah.lang"); if (s === "en" || s === "de") lang = s; } catch (e) {}
+  // Sprache: gespeicherte Wahl > Landing-Hinweis der Item-URL (/de/… vs /item/…) > Browser-Sprache.
+  // Englisch ist der größere Markt, darum ist EN (nicht DE) der Fallback.
+  let lang = "en";
+  try {
+    const s = localStorage.getItem("ah.lang");
+    if (s === "en" || s === "de") lang = s;
+    else {
+      const b = sessionStorage.getItem("ah.bootlang");
+      sessionStorage.removeItem("ah.bootlang");
+      if (b === "en" || b === "de") lang = b;
+      else lang = String(navigator.language || "").toLowerCase().startsWith("de") ? "de" : "en";
+    }
+  } catch (e) {}
   const listeners = [];
   const en = () => lang === "en";
   const t = (s) => (en() ? (STR[s] ?? s) : s);

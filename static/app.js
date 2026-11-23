@@ -1749,6 +1749,13 @@ function initLang() {
 }
 
 (async function init() {
+  // Echte Item-URLs (/item/<id>/ = EN, /de/item/<id>/ = DE) vor dem ersten relativen Fetch
+  // auf die Hash-Route abbilden; die statisch gerenderte Seite bleibt bis zur Route sichtbar.
+  const bootItem = location.pathname.match(/\/(de\/)?item\/(\d+)\/?$/);
+  if (bootItem && !location.hash) {
+    const root = location.pathname.replace(/\/(de\/)?item\/\d+\/?$/, "/");
+    history.replaceState(null, "", root + "#/item/" + bootItem[2]);
+  }
   initTheme();
   initLang();
   applyStaticStrings();

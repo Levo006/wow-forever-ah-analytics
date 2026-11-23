@@ -52,6 +52,9 @@ def main(argv=None):
     ca = sub.add_parser("classic-aliases", help="Belegte deutsche Aliase aus Wowhead Classic ergänzen (gedrosselt)")
     ca.add_argument("--limit", type=int, default=200, help="höchstens so viele Items pro Lauf prüfen")
 
+    ed = sub.add_parser("en-details", help="Englische Item-Tooltips von Battle.net ergänzen (gedrosselt)")
+    ed.add_argument("--limit", type=int, default=3000, help="höchstens so viele Items pro Lauf laden")
+
     pb = sub.add_parser("publish", help="Website exportieren und auf GitHub Pages (Zweig gh-pages) veröffentlichen")
     pb.add_argument("--no-push", action="store_true", help="nur nach site/ exportieren, nicht hochladen")
 
@@ -174,6 +177,13 @@ def main(argv=None):
     elif args.cmd == "classic-aliases":
         from .sources import wowhead
         wowhead.fetch_classic_aliases(con, limit=args.limit)
+    elif args.cmd == "en-details":
+        from .sources import battlenet
+        bn = cfg["battlenet"]
+        client = battlenet.BattleNetClient(bn["client_id"], bn["client_secret"],
+                                           region=(bn.get("regions") or ["eu"])[0],
+                                           locale=bn.get("locale", "de_DE"))
+        battlenet.fetch_english_details(con, client, limit=args.limit)
     elif args.cmd == "publish":
         from .publish import publish
         publish(con, cfg, push=not args.no_push)

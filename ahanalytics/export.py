@@ -30,7 +30,7 @@ import re
 import shutil
 import time
 
-from . import api, catalog, db, gamedata, origins, recipes
+from . import api, catalog, db, gamedata, itempages, origins, recipes
 
 ASSETS = ("app.css", "design-exchange.css", "i18n.js", "static-api.js", "recipes-core.js", "app.js", "item-tooltip.js")
 
@@ -285,6 +285,13 @@ def export_site(con, out_dir: str, history_days: int = 180, snapshot_files: int 
     stats["catalog"] = sum(not r["has_history"] for r in cat)
     if cat:
         _write(os.path.join(data_dir, "catalog.json"), _columnar(CATALOG_FIELDS, cat))
+
+    # Echte, indexierbare Item-URLs (EN: /item/<id>/, DE: /de/item/<id>/) + Sitemaps.
+    # Braucht die oben bereits versionierte index.html als Shell.
+    try:
+        stats["item_pages"] = itempages.export_item_pages(con, out_dir, STATIC_SRC, log=log)
+    except Exception as exc:  # noqa: BLE001 - Item-Seiten sind ein Zusatz, der Datenexport zählt
+        log(f"Item-Seiten-Export übersprungen: {exc}")
 
     meta = {
         "generated_at": int(time.time()),

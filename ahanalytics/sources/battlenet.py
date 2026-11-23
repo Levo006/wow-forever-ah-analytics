@@ -421,15 +421,21 @@ def parse_item(payload: dict, locale="de_DE") -> dict:
     inv = payload.get("inventory_type") or {}
     if inv.get("type") and inv.get("type") != "NON_EQUIP":
         out["slot"] = _loc(inv.get("name"), locale)
-    lines = tooltip_lines(payload.get("preview_item") or {}, locale)
-    if payload.get("max_count") == 1 and not any(l["t"].startswith("Einzigartig") for l in lines):
-        lines.insert(0, {"t": "Einzigartig", "c": "w"})
-    out["details"] = json.dumps({"lines": lines, "stackable": payload.get("is_stackable"),
-                                 "equippable": payload.get("is_equippable")},
-                                ensure_ascii=False, separators=(",", ":"))
+    out["details"] = parse_details(payload, locale)
     if isinstance(payload.get("name"), dict):
         out["name_en"] = _loc(payload["name"], "en_US")
     return out
+
+
+def parse_details(payload: dict, locale="de_DE") -> str:
+    """Tooltip-Zeilen + Flags als JSON-String, in der angegebenen Sprache."""
+    lines = tooltip_lines(payload.get("preview_item") or {}, locale)
+    unique_word = "Einzigartig" if locale.startswith("de") else "Unique"
+    if payload.get("max_count") == 1 and not any(l["t"].startswith(unique_word) for l in lines):
+        lines.insert(0, {"t": unique_word, "c": "w"})
+    return json.dumps({"lines": lines, "stackable": payload.get("is_stackable"),
+                       "equippable": payload.get("is_equippable")},
+                      ensure_ascii=False, separators=(",", ":"))
 
 
 def tooltip_lines(pi: dict, locale="de_DE") -> list[dict]:
@@ -475,6 +481,47 @@ def tooltip_lines(pi: dict, locale="de_DE") -> list[dict]:
     if desc:
         out.append({"t": f"„{desc}“", "c": "y"})
     return out[:40]
+
+
+def fetch_english_details(con, client: BattleNetClient, limit=3000, recheck_days=7,
+                          workers=8, log=print) -> int:
+    """Englische Tooltip-Zeilen (details_en) für Items mit deutschen Details.
+
+    Dieselbe Battle.net-Abfrage wie bei den deutschen Metadaten (all_locales),
+    nur mit en_US ausgewertet – für die englischen statischen Item-Seiten.
+    Items, die Battle.net nicht kennt (404), werden 7 Tage nicht erneut gefragt.
+    """
+    cutoff = int(time.time()) - recheck_days * 86400
+    rows = con.execute(
+        """SELECT id FROM items
+           WHERE details IS NOT NULL AND details_en IS NULL AND COALESCE(details_en_checked, 0) < ?
+           ORDER BY id LIMIT ?""", (cutoff, limit)).fetchall()
+    if not rows:
+        return 0
+    log(f"Lade englische Tooltips von Battle.net für {len(rows)} Items …")
+
+    def one(row):
+        iid = row[0]
+        try:
+            item, _ = client.get(f"/data/wow/item/{iid}", "static", all_locales=True)
+        except ApiError as exc:
+            return iid, None, exc.status
+        return iid, item, 200
+
+    ok = 0
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        results = list(pool.map(one, rows))
+    now = int(time.time())
+    with db.transaction(con):
+        for iid, item, _code in results:
+            con.execute("UPDATE items SET details_en_checked=? WHERE id=?", (now, iid))
+            if not item:
+                continue
+            con.execute("UPDATE items SET details_en=? WHERE id=?",
+                        (parse_details(item, "en_US"), iid))
+            ok += 1
+    log(f"Englische Tooltips: {ok} von {len(rows)} Items geladen, {len(rows) - ok} dort unbekannt")
+    return ok
 
 
 def fetch_item_metadata(con, client: BattleNetClient, limit=4000, recheck_days=7,

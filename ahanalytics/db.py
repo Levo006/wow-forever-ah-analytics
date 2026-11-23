@@ -230,7 +230,7 @@ def _migrate(con):
     if "bn_checked" not in cols:
         con.execute("ALTER TABLE items ADD COLUMN bn_checked INTEGER")
     for col, typ in (("required_level", "INTEGER"), ("slot", "TEXT"), ("details", "TEXT"),
-                     ("details_v", "INTEGER")):
+                     ("details_v", "INTEGER"), ("details_en", "TEXT"), ("details_en_checked", "INTEGER")):
         if col not in cols:
             con.execute(f"ALTER TABLE items ADD COLUMN {col} {typ}")
 

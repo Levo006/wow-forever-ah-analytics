@@ -317,3 +317,21 @@ Jeder Battle.net-Lauf speichert ein dauerhaftes `market_runs`-Manifest: ausgewä
 Neue Tagesverdichtungen speichern echte Beobachtungszahl und Extrema der Referenzreihe. Alte Tagespunkte ohne Stichprobennachweis bleiben `n=null`, nicht 24. Historische Reihen enthalten teils Tagesmittel; ein Reihentief ist kein garantiertes Angebotstief. Chartlücken über mehr als das 2,5-Fache des typischen Schritts (mindestens 3 Stunden) werden sichtbar getrennt. Daten-/Methodikdetails sind einklappbar.
 
 Die geprüfte Datenbank wird vor dem Seitenbau und vor langsamer Metadatenpflege gesichert. Abruffehler bleiben im Workflow sichtbar; der letzte brauchbare Preisstand samt Fehlerprotokoll kann trotzdem veröffentlicht werden. Die bestehende Taktsteuerung wurde in diesem Schritt nicht verändert.
+
+---
+
+## Echte Item-URLs (SEO)
+
+Jedes Item hat zwei eigene, von Google indexierbare Seiten, stuendlich neu erzeugt:
+
+* **Englisch (Haupt-URL):** `https://forever-analytics.eu/item/<id>/` – z. B. `/item/2770/` = Copper Ore
+* **Deutsch:** `https://forever-analytics.eu/de/item/<id>/` – z. B. `/de/item/2770/` = Kupfererz
+
+Die Seiten zeigen ohne JavaScript Name, Icon, Klasse, aktuelle Fraktionspreise und Tooltip-Details;
+mit JavaScript oeffnet sich die normale interaktive Item-Ansicht (alte `#/item/<id>`-Links funktionieren
+unveraendert weiter). canonical + hreflang (de/en/x-default) sind gesetzt; `sitemap.xml` ist ein Index
+auf `sitemap-items-en-*.xml` und `sitemap-items-de-*.xml` (EN zuerst – Englisch ist der groessere Markt).
+
+Englische Tooltips (`details_en`) kommen aus derselben Battle.net-Abfrage wie die deutschen,
+werden aber erst seit dem Item-Seiten-Start gesammelt (`run.py en-details`, stuendlich 3.000 Stueck) –
+bis dahin zeigen englische Seiten die Fakten ohne Tooltip-Zeilen.
