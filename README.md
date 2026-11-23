@@ -352,3 +352,16 @@ erscheinen, erfasst der Collector sie wieder, veröffentlicht sie aber erst nach
 bestätigter Zuordnung. Netzwerkfehler werden auch dort nicht als inaktiv umgedeutet.
 Grundlagen: https://wowfah.com/ , https://mhuijskens.com/WoWForever/Api/ ,
 https://blizzard.pinta.land/forever/auctions/ .
+
+### Getrenntes Stundenarchiv V2
+
+`scripts/archive_rulesets.sh` läuft nach dem Collector und zwingend vor `compact`.
+Schlägt die Sicherung fehl, wird nicht verdichtet. Nur geschlossene UTC-Tage bis
+13.12.2026 werden exportiert, unveränderliche Tages-TARs im separaten Release
+`ah-rulesets-hourly-v2-2026-11`. Kein Anfügen an V1, keine gemischten Märkte.
+Alle 12 bekannten aktiven EU-Häuser werden mit beobachteten Preisen, Snapshots,
+Vollständigkeitsmarkierungen und Laufmanifesten gesichert. Fehlende Beobachtungen
+sind keine Nullpreise; Coverage pro Haus steht im Manifest. Nach 14.12. kein Export.
+Die ursprünglichen V1-Aggregatarchive bleiben unverändert und sind keine
+Validierung für die Regelsatz-Auswertung. Historische Rettungsdateien können
+Teil-Tage enthalten und müssen über die Coverage im Manifest gefiltert werden.
