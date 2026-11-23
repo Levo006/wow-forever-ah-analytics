@@ -19,3 +19,13 @@ class FrontendAssetTest(unittest.TestCase):
             _stamp_index(d,'abc123')
             self.assertIn('design-exchange.css?v=abc123',p.read_text())
             self.assertIn('item-tooltip.js?v=abc123',p.read_text())
+
+class DirectItemNavigationTest(unittest.TestCase):
+    def test_inline_tooltips_do_not_intercept_item_links(self):
+        root=Path(__file__).resolve().parents[1]/'static'
+        script=(root/'item-tooltip.js').read_text()
+        self.assertNotIn('preventDefault',script)
+        self.assertNotIn('showModal',script)
+        self.assertNotIn('item-inspector',(root/'design-exchange.css').read_text())
+        self.assertIn('data-original-tooltip',script)
+        self.assertIn('sanitize',script)
