@@ -1,4 +1,4 @@
-name: Einmal-Setup Direkte Item-Links
+name: Einmal-Setup Regelsatz-Archiv V2
 on: workflow_dispatch
 permissions:
   contents: write
@@ -18,7 +18,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Code-Backup vor Direkte Item-Links-Umstellung
+      - name: Code-Backup vor V2-Archiv
         run: git archive --format=tar.gz -o /tmp/before-archivev2.tar.gz HEAD .github static tests ahanalytics README.md
       - uses: actions/upload-artifact@v4
         with:
@@ -116,7 +116,7 @@ jobs:
           node tests/i18n.test.js
           node tests/goblins.test.js
           node --check static/app.js && node --check static/static-api.js && node --check static/i18n.js
-      - name: Direkte Item-Links-Code einspielen (keine Datenbankaenderung)
+      - name: V2-Archiv-Code einspielen
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
@@ -125,6 +125,7 @@ jobs:
           git commit -m 'V2-Archiv fuer getrennte Regelsatz-Stunden'
           git rm .github/workflows/setup-archivev2.yml
           git commit -m 'Einmal-Setup-Workflow entfernt'
+          git pull --rebase origin main
           git push
       - name: Veroeffentlichung starten
         run: gh workflow run update.yml --ref main
