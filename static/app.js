@@ -713,7 +713,7 @@ function originalItemPanel(it, withGoblin = true) {
 /** Aufklappbarer Abschnitt; Inhalt wird erst beim ersten Öffnen gerendert (Zustand wird gemerkt). */
 function fold(key, title, summary = "", openByDefault = false) {
   const open = store.get("fold." + key, openByDefault);
-  return `<details class="fold" data-fold="${key}" ${open ? "open" : ""}><summary><span class="ft">${title}</span>${summary ? `<span class="fs">${summary}</span>` : ""}<span class="chev" aria-hidden="true">›</span></summary><div class="fb" id="fb-${key}"></div></details>`;
+  return `<details class="fold" ${key === "rec" ? 'id="item-recipes"' : ""} data-fold="${key}" ${open ? "open" : ""}><summary><span class="ft">${title}</span>${summary ? `<span class="fs">${summary}</span>` : ""}<span class="chev" aria-hidden="true">›</span></summary><div class="fb" id="fb-${key}"></div></details>`;
 }
 function wireFolds(renderers) {
   $$("details.fold").forEach((d) => {
@@ -758,24 +758,10 @@ function recipeSummary(idx, id, qidx = null, sv = null) {
   const teach = RecipeCore.teaches(idx, id);
   if (!uses.length && !made.length && !quests.length && !sets.length && !sv && !teach.length) return t("keine Herkunft oder Verwendung bekannt");
   const parts = [];
-  if (teach.length) parts.push(`${t("lehrt")} ${teach.map((r) => `${AHI18N.trProf(r.prof)}: ${r.name}`).join(", ")}`);
-  const pl = (n, one, many, eOne, eMany) => AHI18N.get() === "en" ? `${num(n)} ${n === 1 ? eOne : eMany}` : `${num(n)} ${n === 1 ? one : many}`;
-  if (sv?.dropsTotal) parts.push(`${t("Beute von")} ${pl(sv.dropsTotal, "Gegner", "Gegnern", "enemy", "enemies")}`);
-  if (sv?.objects.length) parts.push(`${t("Fundort:")} ${sv.objects.slice(0, 2).map((o) => o.name).join(", ")}${sv.objects.length > 2 ? " …" : ""}`);
-  if (sv?.vendorsTotal) parts.push(pl(sv.vendorsTotal, "Händler", "Händler", "vendor", "vendors"));
-  if (sv?.containers.length) parts.push(`${t("in")} ${pl(sv.containers.length, "Behälter", "Behältern", "container", "containers")}`);
-  if (sv?.contents.length) parts.push(`${t("enthält")} ${pl(sv.contents.length, "Item", "Items", "item", "items")}`);
-  if (sv?.starts.length) parts.push(t("startet eine Quest"));
-  if (sv?.quests.length) parts.push(tf("für {0} benötigt", pl(sv.quests.length, "Quest", "Quests", "quest", "quests")));
-  if (quests.length) parts.push(tf("Belohnung aus {0}", pl(quests.length, "Quest", "Quests", "quest", "quests")));
-  if (sets.length) parts.push(`${t("Set:")} ${sets.map((s) => s.name).join(", ")}`);
-  if (made.length) parts.push(`${t("herstellbar")} · ${[...new Set(made.map((r) => AHI18N.trProf(r.prof)))].join(", ")}`);
-  if (uses.length) {
-    const profs = [...new Set(uses.map((r) => AHI18N.trProf(r.prof)))];
-    parts.push(tf("Zutat in {0} · {1}{2}", pl(uses.length, "Rezept", "Rezepten", "recipe", "recipes"), profs.slice(0, 3).join(", "), profs.length > 3 ? ` +${profs.length - 3}` : ""));
-    const down = RecipeCore.countTree(RecipeCore.usesTree(idx, id, { maxDepth: 4, maxNodes: 1500 })).items;
-    if (down > uses.length) parts.push(tf("daraus {0} Items", num(down)));
-  }
+  if (teach.length) parts.push(tf("{0} gelehrte Rezepte", num(teach.length)));
+  if (made.length) parts.push(t("herstellbar"));
+  if (uses.length) parts.push(tf("Zutat in {0} Rezepten", num(uses.length)));
+  if (sv || quests.length || sets.length) parts.push(t("Herkunft & Details"));
   return parts.join(" · ");
 }
 
@@ -794,7 +780,7 @@ function renderRecipes(el, id, fk) {
       el.innerHTML = `<div class="empty">${t("Für dieses Item sind keine Herkunft (Beute, Händler, Quests, Rezepte) und keine Verwendung bekannt.")}</div>`;
       return;
     }
-    let questsAll = false, dropsAll = false, needAll = false;
+    let questsAll = false, dropsAll = false, needAll = false, originsOpen = false;
     const profs = RecipeCore.professionsFor(idx, id);
     let prof = store.get("rec.prof", "");
     if (prof && !profs.some((p) => p.prof === prof)) prof = "";
@@ -810,6 +796,7 @@ function renderRecipes(el, id, fk) {
       if (noPage) return `<a class="item" href="${AHI18N.whUrl("item", iid)}" target="_blank" rel="noopener" title="${t("Hier ohne eigene Seite – bei Wowhead öffnen")}">${itemLabel({ id: iid, name: nm, quality: it.quality, icon: it.icon }, false).replace(/^<span class="item">|<\/span>$/g, "")} ↗</a>`;
       return itemLabel({ id: iid, name: nm, quality: it.quality, icon: it.icon, house_id: hid });
     };
+    const recipeName = r => AHI18N.get() === "en" && r.item ? AHI18N.dispName(info(r.item)) : r.name;
     const resultCell = (r) => r.item ? label(r.item) : `<span class="item"><span class="ico bq1">✦</span><span title="${esc(r.name)}">${esc(r.name)}</span></span>`;
     const yieldTxt = (r) => (r.qmin === r.qmax ? num(r.qmin) : `${num(r.qmin)}–${num(r.qmax)}`) + "×";
     const noPrice = (title = t("Derzeit kein Angebot im AH (evtl. Händlerware)")) => `<span class="miss" title="${esc(title)}">${t("kein Preis")}</span>`;
@@ -865,7 +852,7 @@ function renderRecipes(el, id, fk) {
         const p = RecipeCore.price(idx, fk, b);
         return `${label(b)} <span>${p ? money(p.min) : noPrice(t("Derzeit kein Angebot im AH"))}</span>`; }).join(" · ")}</div>` : "";
       return `<div class="rcard">
-        <div class="rcardh"><b>${esc(r.name)}</b><span class="muted small">${esc(AHI18N.trProf(r.prof))}${r.cat ? " · " + esc(AHI18N.trCat(r.cat)) : ""} · ${t("ergibt")} ${yieldTxt(r)}</span></div>${bookHtml}
+        <div class="rcardh"><b>${esc(recipeName(r))}</b><span class="muted small">${esc(AHI18N.trProf(r.prof))}${r.cat ? " · " + esc(AHI18N.trCat(r.cat)) : ""} · ${t("ergibt")} ${yieldTxt(r)}</span></div>${bookHtml}
         <div class="tscroll"><table class="t rt"><thead><tr><th>${t("Zutat")}</th><th class="n">${t("Menge")}</th><th class="n">${t("Stückpreis")}</th><th class="n">${t("Summe")}</th></tr></thead>
           <tbody data-kind="made">${madeRows(r, 0, [id])}</tbody></table></div>
         <div class="rfoot">
@@ -960,16 +947,16 @@ function renderRecipes(el, id, fk) {
             .map(([k, l, n]) => `<button type="button" class="${k === prof ? "on" : ""}" data-p="${esc(k)}">${esc(l)} <span>${n}</span></button>`).join("")}</div>
           <label class="small" title="${t("Zutaten, die sich günstiger selbst herstellen lassen, mit Herstellkosten statt AH-Preis rechnen")}"><input type="checkbox" id="rbest" ${best ? "checked" : ""}> ${t("günstigster Weg (selbst herstellen)")}</label>
         </div>` : ""}
-        <div class="muted small rnote"><span class="fac ${fac.fac}"></span>${t("Preise:")} ${esc(ruleName(houseById(state.house)))} · ${esc(facName(fac))}${profs.length ? " · " + t("Spanne nach 5 % AH-Gebühr") : ""}</div>
+        <div class="muted small rnote"><span class="fac ${fac.fac}"></span>${t("Preise:")} ${esc(ruleName(houseById(state.house)))} · ${esc(facName(fac))}${profs.length ? " · " + t("Spanne nach 5 % AH-Gebühr, ohne Verkaufsgarantie") : ""}</div>
         ${teach.length ? `<h3>${t("Lehrt Rezept")} <span class="muted small">${t("Materialkosten und Spanne beim Herstellen")}</span></h3><div class="rcards">${teach.map(madeCard).join("")}</div>` : ""}
-        ${dropHtml()}${objHtml()}${vendorHtml()}${boxHtml("in")}${questHtml()}
         ${mk.length ? `<h3>${t("Hergestellt aus")}</h3><div class="rcards">${mk.map(madeCard).join("")}</div>` : ""}
-        ${needHtml()}${setHtml()}${boxHtml("out")}
         ${u.length ? `<div class="rhead"><h3>${t("Verwendet in · daraus wird …")}</h3><button type="button" class="btn small" id="rexp">${t("Alles aufklappen")}</button></div>
           ${[...byProf.entries()].map(([pn, rs]) => `<div class="rprof"><h4>${esc(AHI18N.trProf(pn))} <span class="muted small">${tf("{0} Rezepte", rs.length)}</span></h4>
             <div class="tscroll"><table class="t rt">${useHead}<tbody data-kind="use">${rs.map((r) => useRow(r, id, 0, [id])).join("")}</tbody></table></div></div>`).join("")}` : ""}
         ${prof && !u.length && !mk.length ? `<div class="empty">${t("Keine Rezepte für diesen Beruf.")}</div>` : ""}
-        ${srcNote()}`;
+        ${sv || quests.length || sets.length ? `<details class="recipe-origins" ${originsOpen ? "open" : ""}><summary>${t("Fundorte, Quests & weitere Details")}</summary>${dropHtml()}${objHtml()}${vendorHtml()}${boxHtml("in")}${questHtml()}${needHtml()}${setHtml()}${boxHtml("out")}${srcNote()}</details>` : ""}`;
+      const origins = $(".recipe-origins", el);
+      if (origins) origins.ontoggle = () => { originsOpen = origins.open; };
       AHI18N.hydrateQuestTitles(el);
     };
 
@@ -1056,7 +1043,7 @@ async function viewItem(r) {
       <div class="card"><div class="empty">${t("Für dieses Item liegt seit Beginn unserer Erfassung keine Preisbeobachtung vor. Daraus lässt sich keine sichere Aussage zur Handelbarkeit ableiten.")}</div></div>
       ${originalItemPanel(it)}
       ${catalogNote(it)}
-      <div class="folds">${fold("rec", t("Herkunft & Verwendung"), t("Lade Rezepte und Quests …"), true)}</div>`;
+      <div class="folds">${fold("rec", t("Rezepte & Verwendung"), t("Lade Rezepte und Quests …"), true)}</div>`;
     wireFolds({ rec: (el) => renderRecipes(el, id, fk0) });
     setRecipeSummary(id);
     return;
@@ -1143,11 +1130,15 @@ async function viewItem(r) {
         <button class="btn" id="cmpBtn">${inCmp ? t("✓ Im Vergleich") : t("+ Vergleich")}</button>
         <a class="btn" href="#/compare?items=${[...new Set([...state.compare, id])].join(",")}${hid ? "&house=" + hid : ""}">${t("Vergleichen ›")}</a>
       </div></div>
+    <section class="item-price-summary card" aria-label="${t("Aktueller Marktstand")}">
+      <div><span class="small muted">${esc(ruleName(houseById(state.house)))} · ${facName(fac)}</span><div class="item-current-price">${house ? listingPrice(house) : "–"}</div><span class="small muted">${t("Referenzpreis")}</span></div>
+      <div><span class="small muted">${t("Menge")}</span><b>${house?.is_current ? num(house.last_qty) : "–"}</b><span class="small muted">${house?.last_ts ? ago(house.last_ts) : t("Keine Preisbeobachtung im gewählten Markt.")}</span></div>
+      <a class="btn" href="#item-recipes" id="recipeJump">${t("Rezepte & Verwendung")} ↓</a>
+    </section>
     ${originalItemPanel(it)}
-    ${catalogNote(it)}
     <div class="ftabs" role="tablist" id="ftabs">${tabs}</div>
     <div class="hcards" id="hcards">${cards}</div>
-    ${house ? `<div class="hint">${house.market_complete ? t("Vollständiger Snapshot") : t("Teilstand / Vollständigkeit nicht belegt")} · ${t("Günstigstes beobachtetes Angebot:")} ${house.last_lowest==null ? t("nicht gesondert gespeichert") : money(house.last_lowest)}${house.last_ts < Date.now()/1000-10800 ? " · " + t("veraltet") : ""}</div><details class="card"><summary>${t("Preisbegriffe & Datenqualität")}</summary><p>${priceMethod}</p><p>${t("Ältere Reihenpunkte sind teils Mittelwerte. Ein Tief der Referenzreihe ist kein garantiertes Angebotstief. Angebotene Menge ist weder Absatz noch Liquidität.")}</p></details>` : ""}
+    ${house ? `<div class="item-market-note muted small">${house.market_complete ? t("Vollständiger Snapshot") : t("Teilstand / Vollständigkeit nicht belegt")} · ${t("Günstigstes beobachtetes Angebot:")} ${house.last_lowest==null ? t("nicht gesondert gespeichert") : money(house.last_lowest)}${house.last_ts < Date.now()/1000-10800 ? " · " + t("veraltet") : ""}</div><details class="card item-quality"><summary>${t("Preisbegriffe & Datenqualität")}</summary>${catalogNote(it)}<p>${priceMethod}</p><p>${t("Ältere Reihenpunkte sind teils Mittelwerte. Ein Tief der Referenzreihe ist kein garantiertes Angebotstief. Angebotene Menge ist weder Absatz noch Liquidität.")}</p></details>` : ""}
     ${hints.map((h) => `<div class="hint">${h}</div>`).join("")}
     ${house ? `
     <div class="card">
@@ -1164,15 +1155,17 @@ async function viewItem(r) {
       <div class="muted small" id="pcnote" style="margin-top:6px"></div>
     </div>
     <div class="folds">
-      ${fold("rec", t("Herkunft & Verwendung"), t("Lade Rezepte und Quests …"), true)}
-      ${fold("liq", t("Umsatz & Liquidität"), house.liq_score != null ? `Score ${num(house.liq_score)} · ${tf("{0} Signale / 7 T", num(house.liq_events))}` : t("noch keine Daten"), true)}
+      ${fold("rec", t("Rezepte & Verwendung"), t("Lade Rezepte und Quests …"), true)}
+      ${fold("liq", t("Angebotssignale"), house.liq_score != null ? `Score ${num(house.liq_score)} · ${tf("{0} Signale / 7 T", num(house.liq_events))}` : t("noch keine Daten"), false)}
       ${fold("kpi", t("Kennzahlen & Muster"), house.avg7_min ? `Ø 7 T ${money(house.avg7_min)} · 7 T ${pct(house.chg7d_min)}` : "")}
       <details class="expert-analysis"><summary>${t("Analyse-Details")} <span>${t("Regelsätze vergleichen · Snapshots · Ausreißer")}</span></summary><div class="expert-analysis-body">
       ${fold("all", t("Regelsätze vergleichen"), `${info.houses.filter((h) => h.kind === "haus").length} ${t("Häuser")}`)}
       ${fold("raw", t("Snapshots & Ausreißer"), t("Preispunkte prüfen"))}</div></details>
       ${fold("info", t("Item-Details"), it.details?.lines?.length ? t("Tooltip wie im Spiel") : "")}
     </div>` : `<div class="card"><div class="empty">${t("Keine Preisbeobachtung im gewählten Markt.")}</div></div>
-    <div class="folds">${fold("rec", t("Herkunft & Verwendung"), t("Lade Rezepte und Quests …"), true)}${fold("all", t("Alle Auktionshäuser im Vergleich"), "")}${fold("info", t("Item-Details"), "")}</div>`}`;
+    <div class="folds">${fold("rec", t("Rezepte & Verwendung"), t("Lade Rezepte und Quests …"), true)}${fold("all", t("Alle Auktionshäuser im Vergleich"), "")}${fold("info", t("Item-Details"), "")}</div>`}`;
+  const recipeJump = $("#recipeJump");
+  recipeJump.onclick = e => { e.preventDefault(); const target = $('details[data-fold="rec"]'); if (target) { target.open = true; target.scrollIntoView({behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block:"start"}); } };
   setRecipeSummary(id);
   const recFold = (el) => renderRecipes(el, id, fk);
 

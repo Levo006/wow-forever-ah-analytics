@@ -5,6 +5,14 @@
 (function () {
   "use strict";
   const STR = {
+ "{0} gelehrte Rezepte": "{0} taught recipes",
+ "Zutat in {0} Rezepten": "Ingredient in {0} recipes",
+ "Herkunft & Details": "Sources & details",
+ "Aktueller Marktstand": "Current market snapshot",
+ "Rezepte & Verwendung": "Recipes & uses",
+ "Fundorte, Quests & weitere Details": "Sources, quests & more details",
+ "Spanne nach 5 % AH-Gebühr, ohne Verkaufsgarantie": "Margin after 5% AH fee, no sales guarantee",
+
  "Wie wird ausgewaehlt?": "How are items selected?",
  "Verbrauchbares (ohne Sonstiges) und Handwerkswaren mit aktuellem vollstaendigem Marktstand: ab 1 Silber, 5 Stueck, 24 Beobachtungen, 5 Angebotssignale und 50 % Praesenz. Extreme Aenderungen ueber 100 % und Rabatte ueber 75 % werden hier ausgeblendet, nicht gekappt. Originalwerte bleiben am Item. Keine Kaufempfehlung oder Verkaufsgarantie.": "Consumables (excluding miscellaneous) and trade goods with recent, complete market snapshots: at least 1 silver, 5 units, 24 observations, 5 listing signals and 50% presence. Changes above 100% and discounts above 75% are hidden here, not capped. Original values stay on the item page. Not a buy recommendation or sales guarantee.",
  "Angebotssignale": "Listing signals",

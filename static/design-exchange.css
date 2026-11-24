@@ -522,3 +522,14 @@ td {padding-top:13px;padding-bottom:13px;}
 }
 
 .focus-method{margin:-4px 0 14px;}.focus-method summary{cursor:pointer;}.focus-method p{line-height:1.6;max-width:900px;}
+
+/* Item essentials first; deeper source lists stay optional. */
+.item-price-summary{display:flex;align-items:center;gap:24px;margin:0 0 16px;}
+.item-price-summary>div{display:flex;flex-direction:column;gap:5px;min-width:0;}
+.item-price-summary>div:nth-child(2){margin-left:auto;}
+.item-price-summary b{font-size:20px;}.item-current-price{font-size:28px;font-weight:700;}
+.item-current-price .listing-status{display:block;font-size:12px;}
+.item-market-note{margin:10px 0;}.item-quality{margin-bottom:14px;}.item-quality summary,.recipe-origins summary{cursor:pointer;font-weight:600;}
+.recipe-origins{border-top:1px solid var(--border);margin-top:18px;padding-top:16px;}
+#item-recipes{scroll-margin-top:120px;}
+@media(max-width:700px){.item-price-summary{flex-wrap:wrap;gap:16px;}.item-price-summary .btn{width:100%;text-align:center;}.item-current-price{font-size:25px;}#item-recipes{scroll-margin-top:20px;}}
