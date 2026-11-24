@@ -332,6 +332,11 @@ const StaticAPI = (() => {
     return { total: pg.total, page: pg.page, page_size: pg.page_size, items: pg.slice };
   }
 
+  // Conservative editorial selection for the homepage, not a sales/recovery prediction.
+  function focusEligible(r) {
+    return (r.class_id === 7 || (r.class_id === 0 && r.subclass_id !== 8)) && r.last_min >= 100 && r.last_qty >= 5 && r.points >= 24 && r.market_complete &&
+      r.last_ts >= Date.now()/1000-10800 && r.liq_events >= 5 && r.liq_presence >= .5 && r.liq_score >= 30;
+  }
   async function movers(params) {
     const h = await house(params.house);
     const window = params.window || "24h", metric = params.metric || "min";
@@ -342,6 +347,7 @@ const StaticAPI = (() => {
     if (mp) rows = rows.filter((r) => (r.last_min ?? 0) >= mp);
     if (params.class !== undefined && params.class !== "") rows = rows.filter((r) => r.class_id === Number(params.class));
     if (params.relevant === "1") rows = rows.filter(isRelevant);
+    if (params.focus === "1") rows = rows.filter(r => focusEligible(r) && Math.abs(r[col]) <= 100);
     const limit = Math.min(200, num(params.limit) || 25);
     return { house_id: h.id, window, metric, column: col,
       gainers: sortRows(rows.filter((r) => r[col] > 0), col, "desc").slice(0, limit),
@@ -373,6 +379,7 @@ const StaticAPI = (() => {
     const lm = num(params.liq_min);
     if (lm) rows = rows.filter((r) => (r.liq_score || 0) >= lm);
     rows = rows.map((r) => ({ ...r, ref_price: r[refKey], discount: (1 - r.last_min / r[refKey]) * 100, saving: r[refKey] - r.last_min }));
+    if (params.focus === "1") rows = rows.filter(r => focusEligible(r) && r.discount <= 75);
     sortRows(rows, "discount", "desc");
     return { house_id: h.id, basis, threshold: th * 100, deals: rows.slice(0, Math.min(500, num(params.limit) || 50)) };
   }
@@ -398,8 +405,8 @@ const StaticAPI = (() => {
       snapshot_count: snaps.length,
       market_series: snaps.slice(-400),
       categories: (await classes({ house: h.id })).classes,
-      movers: await movers({ ...p, window: "24h", relevant: "1" }),
-      deals: await deals({ ...p, threshold: 15, relevant: "1", liq_min: 30 }),
+      movers: await movers({ ...p, window: "24h", relevant: "1", focus: "1" }),
+      deals: await deals({ ...p, threshold: 15, relevant: "1", liq_min: 30, focus: "1" }),
     };
   }
 

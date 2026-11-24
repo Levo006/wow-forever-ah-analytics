@@ -462,6 +462,7 @@ async function viewDashboard(r) {
       <div class="kpi"><div class="l">${t("Median Preisänderung 24 h")}</div><div class="v">${k.comparisons_reliable ? pct(k.median_chg24) : "–"}</div></div>
     </div>
     <div class="secthead mt"><h2><span class="section-star" aria-hidden="true">✦</span> ${t("Im Fokus")}</h2></div>
+    <details class="focus-method small muted"><summary>${t("Wie wird ausgewaehlt?")}</summary><p>${t("Verbrauchbares (ohne Sonstiges) und Handwerkswaren mit aktuellem vollstaendigem Marktstand: ab 1 Silber, 5 Stueck, 24 Beobachtungen, 5 Angebotssignale und 50 % Praesenz. Extreme Aenderungen ueber 100 % und Rabatte ueber 75 % werden hier ausgeblendet, nicht gekappt. Originalwerte bleiben am Item. Keine Kaufempfehlung oder Verkaufsgarantie.")}</p></details>
     <div class="grid g2">
       <div class="card flush"><div class="cardhead" style="padding:14px 16px 0"><h2>${t("▲ Steigt")}</h2><span class="right small muted">24 h</span></div>${moversMini(d.movers.gainers.slice(0, 6))}</div>
       <div class="card flush"><div class="cardhead" style="padding:14px 16px 0"><h2>${t("Unter dem Wochenschnitt")}</h2><span class="right small muted" title="${t("Mindestens 15 % unter dem 7-Tage-Schnitt und mit beobachtetem Umsatz")}">${t("≥ 15 % unter Ø 7 T · Angebotssignale")}</span></div>

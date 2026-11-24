@@ -281,8 +281,8 @@ def overview(con, params):
                                       (hid,)).fetchone()[0],
         "market_series": snaps,
         "categories": classes(con, {"house": str(hid)})["classes"],
-        "movers": movers(con, {**p, "window": "24h", "relevant": "1"}),
-        "deals": deals(con, {**p, "threshold": "15", "relevant": "1", "liq_min": "30"}),
+        "movers": movers(con, {**p, "window": "24h", "relevant": "1", "focus": "1"}),
+        "deals": deals(con, {**p, "threshold": "15", "relevant": "1", "liq_min": "30", "focus": "1"}),
     }
 
 
@@ -669,6 +669,11 @@ def _correlation(pa, pb):
     return sum((x - ma) * (y - mb) for x, y in zip(ra, rb)) / (sa * sb)
 
 
+FOCUS_WHERE = """(i.class_id=7 OR (i.class_id=0 AND COALESCE(i.subclass_id,-1) != 8)) AND s.last_min >= 100 AND s.last_qty >= 5 AND s.points >= 24
+ AND lq.events >= 5 AND lq.presence >= 0.5 AND lq.score >= 30
+ AND EXISTS (SELECT 1 FROM snapshots fs WHERE fs.house_id=s.house_id AND fs.ts=s.last_ts AND fs.complete=1)"""
+
+
 def movers(con, params):
     hid = _resolve_house(con, params)
     window = params.get("window", "24h")
@@ -691,6 +696,9 @@ def movers(con, params):
         args.append(_int(params, "class"))
     if params.get("relevant") == "1":
         where.append(RELEVANT_WHERE)
+    if params.get("focus") == "1":
+        where.extend([FOCUS_WHERE, f"ABS({col}) <= 100", "s.last_ts >= ?"])
+        args.append(int(time.time()) - 10800)
     limit = _int(params, "limit", 25, lo=1, hi=200)
     base = f"SELECT {SUMMARY_COLS} {SUMMARY_FROM} WHERE {' AND '.join(where)}"
     gain = con.execute(f"SELECT * FROM ({base}) WHERE {col} > 0 ORDER BY {col} DESC LIMIT ?",
@@ -724,6 +732,8 @@ def deals(con, params):
     if liq_min:
         where.append("COALESCE(lq.score, 0) >= ?")
         args.append(liq_min)
+    if params.get("focus") == "1":
+        where.extend([FOCUS_WHERE, f"s.last_min >= {ref} * 0.25"])
     limit = _int(params, "limit", 50, lo=1, hi=500)
     rows = con.execute(
         f"""SELECT {SUMMARY_COLS}, {ref} AS ref_price,

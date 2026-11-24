@@ -43,6 +43,18 @@ class SearchStateTest(unittest.TestCase):
         self.assertEqual(len(other), 1)
         self.assertEqual(other[0]["last_min"], 300)
 
+    def test_focus_excludes_noise_without_changing_raw_values(self):
+        self.con.execute("UPDATE items SET class_id=7 WHERE id=2")
+        self.con.execute("UPDATE item_summary SET points=24,prev24_min=250,avg7_min=1000,last_qty=5 WHERE item_id=2 AND house_id=?",(self.a,))
+        self.con.execute("INSERT OR REPLACE INTO item_liquidity(house_id,item_id,computed_at,score,events,presence) VALUES(?,?,?,30,5,0.5)",(self.a,2,self.ts))
+        params={"house":str(self.a),"focus":"1"}
+        self.assertEqual([r["item_id"] for r in api.movers(self.con,params)["gainers"]],[2])
+        self.assertEqual([r["item_id"] for r in api.deals(self.con,params)["deals"]],[2])
+        self.con.execute("UPDATE item_summary SET prev24_min=1,avg7_min=100000 WHERE item_id=2 AND house_id=?",(self.a,))
+        self.assertEqual(api.movers(self.con,params)["gainers"],[])
+        self.assertEqual(api.deals(self.con,params)["deals"],[])
+        self.assertEqual(api.movers(self.con,{"house":str(self.a)})["gainers"][0]["chg24_min"],49900)
+
     def test_aliases_and_cross_market_catalog(self):
         for q, iid in (("Blutvergießer", 7753), ("Bloodspiller", 7753), ("Der Schlächter", 8226), ("85", 85)):
             r = api.search(self.con, {"q": q, "house": str(self.a)})

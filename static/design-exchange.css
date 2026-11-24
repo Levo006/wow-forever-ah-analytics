@@ -520,3 +520,5 @@ td {padding-top:13px;padding-bottom:13px;}
  #dash .g2 .t th:nth-child(2),#dash .g2 .t td:nth-child(2){width:25%;}
  #dash .g2 .t th:nth-child(3),#dash .g2 .t td:nth-child(3){width:33%;}
 }
+
+.focus-method{margin:-4px 0 14px;}.focus-method summary{cursor:pointer;}.focus-method p{line-height:1.6;max-width:900px;}

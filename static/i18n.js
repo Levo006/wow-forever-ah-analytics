@@ -5,6 +5,8 @@
 (function () {
   "use strict";
   const STR = {
+ "Wie wird ausgewaehlt?": "How are items selected?",
+ "Verbrauchbares (ohne Sonstiges) und Handwerkswaren mit aktuellem vollstaendigem Marktstand: ab 1 Silber, 5 Stueck, 24 Beobachtungen, 5 Angebotssignale und 50 % Praesenz. Extreme Aenderungen ueber 100 % und Rabatte ueber 75 % werden hier ausgeblendet, nicht gekappt. Originalwerte bleiben am Item. Keine Kaufempfehlung oder Verkaufsgarantie.": "Consumables (excluding miscellaneous) and trade goods with recent, complete market snapshots: at least 1 silver, 5 units, 24 observations, 5 listing signals and 50% presence. Changes above 100% and discounts above 75% are hidden here, not capped. Original values stay on the item page. Not a buy recommendation or sales guarantee.",
  "Angebotssignale": "Listing signals",
  "Signale unbekannt": "Signals unknown",
  "kaum Angebotssignale": "Almost no listing signals",
