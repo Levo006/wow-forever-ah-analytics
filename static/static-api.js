@@ -280,6 +280,8 @@ const StaticAPI = (() => {
     // Vollständiger Itemindex; der Markt ist nur ein Preis-Overlay.
     const seen = new Set(rows.map((r) => r.item_id));
     rows = rows.concat((await catalog()).filter((r) => !seen.has(r.item_id)));
+    const wantedItems = ids(params.item_ids);
+    if (wantedItems.length) rows = rows.filter(r => wantedItems.includes(r.item_id));
     const keyOf = (r) => (r._k ??= fold(r.name) + "|" + fold(r.name_en) + "|" + (r.aliases || []).map(fold).join("|"));
     if (q) {
       // zweisprachig (deutscher + englischer Name) und umlaut-tolerant

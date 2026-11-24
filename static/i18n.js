@@ -5,6 +5,25 @@
 (function () {
   "use strict";
   const STR = {
+ "Angebotssignale": "Listing signals",
+ "Signale unbekannt": "Signals unknown",
+ "kaum Angebotssignale": "Almost no listing signals",
+ "viele Angebotssignale": "Many listing signals",
+ "mittlere Angebotssignale": "Moderate listing signals",
+ "wenige Angebotssignale": "Few listing signals",
+ "Maximal 30 Items auf der Merkliste.": "You can save up to 30 items.",
+ "Gemerkt": "Saved",
+ "Merken": "Save",
+ "Merkliste": "Watchlist",
+ "Nur in diesem Browser gespeichert. Keine Anmeldung, keine Benachrichtigungen. Auf Item-Seiten mit dem Stern merken, bis zu 30 Items.": "Saved only in this browser. No account or notifications. Use the star on item pages to save up to 30 items.",
+ "Noch keine Items gemerkt.": "No saved items yet.",
+ "Unter dem Wochenschnitt": "Below the weekly average",
+ "≥ 15 % unter Ø 7 T · Angebotssignale": "≥ 15% below 7-day avg · listing signals",
+ "Aktuell keine passenden Angebote mit Angebotssignalen.": "No matching offers with listing signals right now.",
+ "▲ Aktivste Angebotssignale": "▲ Most active listing signals",
+ "Gelistet, wenige Angebotssignale in 7 Tagen": "Listed, few listing signals in 7 days",
+ "Angebotsbewegungen · {0} · keine Verkaufsnachweise": "Listing activity · {0} · not proof of sales",
+
  "Regelsatz": "Ruleset",
  "Regelsätze": "Rulesets",
  "Regelsätze vergleichen": "Compare rulesets",

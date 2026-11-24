@@ -1,0 +1,13 @@
+'use strict';
+const fs=require('fs'),vm=require('vm'),assert=require('assert/strict');
+const src=fs.readFileSync(require('path').join(__dirname,'../static/app.js'),'utf8');
+let saved=[],listener;
+const context=vm.createContext({Number,Set,Array,store:{get:()=>saved,set:(k,v)=>saved=v},document:{addEventListener:(e,cb)=>listener=cb},state:{route:null},t:x=>x,toast:()=>{},route:()=>{}});
+vm.runInContext(src.slice(src.indexOf('function watchIds()'),src.indexOf('async function viewWatchlist')),context);
+const ids=()=>JSON.parse(vm.runInContext('JSON.stringify(watchIds())',context));
+saved='broken';assert.deepEqual(ids(),[]);
+saved=[1,1,-2,'3',null,4];assert.deepEqual(ids(),[1,4]);
+saved=Array.from({length:40},(_,i)=>i+1);assert.equal(ids().length,30);
+saved=[];const b={dataset:{watch:'2770'},textContent:''};const e={target:{closest:()=>b},preventDefault:()=>{}};listener(e);assert.deepEqual(ids(),[2770]);assert.ok(b.textContent.includes('Gemerkt'));listener(e);assert.deepEqual(ids(),[]);
+b.dataset.watch='NaN';listener(e);assert.deepEqual(ids(),[]);
+console.log('Watchlist storage, validation, cap and toggle OK');

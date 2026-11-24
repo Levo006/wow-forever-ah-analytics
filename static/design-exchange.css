@@ -236,25 +236,25 @@ td {padding-top:13px;padding-bottom:13px;}
  #ff .range {width:100%;}#ff .range input {width:calc((100% - 17px)/2);}
  #ff .qual input {width:0;min-height:0;}
  #ff>.f:last-child>span {display:none;}
- :is(#res,#catitems,#hot,#cold) .tablewrap {overflow:visible;}
- :is(#res,#catitems,#hot,#cold) table.t {display:block;border-collapse:separate;}
- :is(#res,#catitems,#hot,#cold) .t thead {display:block;padding:8px 12px;background:var(--surface-1);border-bottom:1px solid var(--border);}
- :is(#res,#catitems,#hot,#cold) .t thead tr {display:flex;gap:5px;flex-wrap:wrap;}
- :is(#res,#catitems,#hot,#cold) .t thead th {display:none;}
- :is(#res,#catitems,#hot,#cold) .t thead th[data-sort] {display:inline-flex;align-items:center;gap:2px;position:static;white-space:normal;font-size:8px;letter-spacing:0;padding:8px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;min-height:34px;}
- :is(#res,#catitems,#hot,#cold) .t thead th.sorted {color:var(--link);border-color:var(--link);}
- :is(#res,#catitems,#hot,#cold) .t tbody {display:block;padding:0 12px;}
- :is(#res,#catitems,#hot,#cold) .t tbody tr {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 18px;padding:13px 0;border-bottom:1px solid var(--border);}
- :is(#res,#catitems,#hot,#cold) .t tbody td {display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0;text-align:left;padding:9px 0;white-space:normal;border-bottom:0;font-size:12px;}
- :is(#res,#catitems,#hot,#cold) .t tbody td::before {content:attr(data-label);color:var(--text-muted);font-size:9px;font-weight:400;}
- :is(#res,#catitems,#hot,#cold) .t tbody td.itemcell {grid-column:1/-1;max-width:none;padding-bottom:12px;}
- :is(#res,#catitems,#hot,#cold) .t tbody td.itemcell::before {display:none;}
- :is(#res,#catitems,#hot,#cold) .t td.itemcell .item {display:flex;white-space:normal;max-width:100%;font-size:13px;font-weight:600;line-height:1.5;}
- :is(#res,#catitems,#hot,#cold) .t td.itemcell .item>span {min-width:0;overflow-wrap:anywhere;}
- :is(#res,#catitems,#hot,#cold) .t td:last-child:has(button) {justify-content:end;align-items:end;}
- :is(#res,#catitems,#hot,#cold) .t td:last-child:has(button)::before {display:none;}
- :is(#res,#catitems,#hot,#cold) .t .money {font-size:15px;}
- :is(#res,#catitems,#hot,#cold) .t .pill {font-size:10px;}
+ :is(#res,#catitems,#hot,#cold,#watchRows) .tablewrap {overflow:visible;}
+ :is(#res,#catitems,#hot,#cold,#watchRows) table.t {display:block;border-collapse:separate;}
+ :is(#res,#catitems,#hot,#cold,#watchRows) .t thead {display:block;padding:8px 12px;background:var(--surface-1);border-bottom:1px solid var(--border);}
+ :is(#res,#catitems,#hot,#cold,#watchRows) .t thead tr {display:flex;gap:5px;flex-wrap:wrap;}
+ :is(#res,#catitems,#hot,#cold,#watchRows) .t thead th {display:none;}
+ :is(#res,#catitems,#hot,#cold,#watchRows) .t thead th[data-sort] {display:inline-flex;align-items:center;gap:2px;position:static;white-space:normal;font-size:8px;letter-spacing:0;padding:8px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;min-height:34px;}
+ :is(#res,#catitems,#hot,#cold,#watchRows) .t thead th.sorted {color:var(--link);border-color:var(--link);}
+ :is(#res,#catitems,#hot,#cold,#watchRows) .t tbody {display:block;padding:0 12px;}
+ :is(#res,#catitems,#hot,#cold,#watchRows) .t tbody tr {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 18px;padding:13px 0;border-bottom:1px solid var(--border);}
+ :is(#res,#catitems,#hot,#cold,#watchRows) .t tbody td {display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0;text-align:left;padding:9px 0;white-space:normal;border-bottom:0;font-size:12px;}
+ :is(#res,#catitems,#hot,#cold,#watchRows) .t tbody td::before {content:attr(data-label);color:var(--text-muted);font-size:9px;font-weight:400;}
+ :is(#res,#catitems,#hot,#cold,#watchRows) .t tbody td.itemcell {grid-column:1/-1;max-width:none;padding-bottom:12px;}
+ :is(#res,#catitems,#hot,#cold,#watchRows) .t tbody td.itemcell::before {display:none;}
+ :is(#res,#catitems,#hot,#cold,#watchRows) .t td.itemcell .item {display:flex;white-space:normal;max-width:100%;font-size:13px;font-weight:600;line-height:1.5;}
+ :is(#res,#catitems,#hot,#cold,#watchRows) .t td.itemcell .item>span {min-width:0;overflow-wrap:anywhere;}
+ :is(#res,#catitems,#hot,#cold,#watchRows) .t td:last-child:has(button) {justify-content:end;align-items:end;}
+ :is(#res,#catitems,#hot,#cold,#watchRows) .t td:last-child:has(button)::before {display:none;}
+ :is(#res,#catitems,#hot,#cold,#watchRows) .t .money {font-size:15px;}
+ :is(#res,#catitems,#hot,#cold,#watchRows) .t .pill {font-size:10px;}
  #hot .t thead,#cold .t thead {display:none;}
  .pager {font-size:10px;gap:5px;flex-wrap:wrap;}.pager .btn {font-size:10px;padding:7px 9px;}
 }
@@ -497,4 +497,26 @@ td {padding-top:13px;padding-bottom:13px;}
 @media(prefers-reduced-motion:no-preference){
  .goblin-ambient{animation:goblin-settle .8s ease-out both;}
  @keyframes goblin-settle{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:none;}}
+}
+
+/* Quick links wrap without pushing the mobile viewport sideways. */
+.adventure-link,.adventure-link>span {min-width:0;}
+.adventure-link b {overflow-wrap:anywhere;}
+.watch-entry {margin:0 0 18px;}
+@media(max-width:700px){.adventure-links{grid-template-columns:repeat(3,minmax(0,1fr));}.adventure-link{padding:12px 8px;}.adventure-link b{font-size:11px;}}
+
+@media(max-width:700px){
+ .adventure-link{flex-direction:column;align-items:flex-start;gap:7px;}
+ #dash .g2 .t{table-layout:fixed;font-size:11px;}
+ #dash .g2 .t th,#dash .g2 .t td{padding:9px 6px;}
+ #dash .g2 .t th:first-child,#dash .g2 .t td:first-child{width:48%;}
+ #dash .g2 .t .item{white-space:normal;line-height:1.4;overflow-wrap:anywhere;}
+ #dash .g2 .t .item>span{min-width:0;}
+ #watchRows .t thead{display:none;}
+}
+@media(max-width:700px){
+ .adventure-link b{white-space:normal;}
+ #dash .g2 .t th:first-child,#dash .g2 .t td:first-child{width:42%;}
+ #dash .g2 .t th:nth-child(2),#dash .g2 .t td:nth-child(2){width:25%;}
+ #dash .g2 .t th:nth-child(3),#dash .g2 .t td:nth-child(3){width:33%;}
 }

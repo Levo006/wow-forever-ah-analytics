@@ -34,6 +34,15 @@ class SearchStateTest(unittest.TestCase):
     def tearDown(self):
         self.con.close()
 
+    def test_watchlist_exact_ids_preserves_market_and_absence(self):
+        rows = api.search(self.con, {"house": str(self.a), "item_ids": "2,85", "page_size": "30"})["items"]
+        self.assertEqual({r["item_id"] for r in rows}, {2, 85})
+        self.assertEqual(next(r for r in rows if r["item_id"] == 2)["last_min"], 500)
+        self.assertIsNone(next(r for r in rows if r["item_id"] == 85)["last_min"])
+        other = api.search(self.con, {"house": str(self.h), "item_ids": "85"})["items"]
+        self.assertEqual(len(other), 1)
+        self.assertEqual(other[0]["last_min"], 300)
+
     def test_aliases_and_cross_market_catalog(self):
         for q, iid in (("Blutvergießer", 7753), ("Bloodspiller", 7753), ("Der Schlächter", 8226), ("85", 85)):
             r = api.search(self.con, {"q": q, "house": str(self.a)})

@@ -140,7 +140,7 @@ function setParams(patch, replace = true) {
 
 const routes = {
   "": viewDashboard, search: viewSearch, categories: viewCategories, item: viewItem,
-  snapshot: viewSnapshot, compare: viewCompare, liquidity: viewLiquidity, data: viewData,
+  snapshot: viewSnapshot, compare: viewCompare, watchlist: viewWatchlist, liquidity: viewLiquidity, data: viewData,
 };
 // Alte Lesezeichen: Top-Movers und Deals sind in der Übersicht aufgegangen.
 const REDIRECTS = { movers: "/", deals: "/" };
@@ -160,7 +160,7 @@ async function route() {
   if (REDIRECTS[key]) { go(REDIRECTS[key], {}, true); return; }
   $$("#nav a").forEach((a) => a.classList.toggle("active", (a.dataset.route === (key || "dashboard"))));
   const view = routes[key] || viewNotFound;
-  main.innerHTML = '<div class="loading">Lade …</div>';
+  main.innerHTML = `<div class="loading">${t("Lade …")}</div>`;
   try {
     await view(r);
   } catch (e) {
@@ -335,19 +335,19 @@ const COL = {
   spark: { label: t("14 Tage"), fmt: (r) => sparkline(r.spark) },
   updated: { label: t("Stand"), sort: "updated", fmt: (r) => `<span class="muted small">${dt(r.last_ts)}</span>` },
   cmp: { label: "", fmt: (r) => `<button class="btn small" data-cmp="${r.item_id}" title="${t("Zum Vergleich hinzufügen")}">${state.compare.includes(r.item_id) ? "✓" : "+"} ${t("Vgl.")}</button>` },
-  liq: { label: t("Umsatz"), fmt: (r) => liqBadge(r) },
+  liq: { label: t("Angebotssignale"), fmt: (r) => liqBadge(r) },
 }
 
 /** Liquiditäts-Badge: Signale aus Angebotsbewegungen, nie ein Verkaufsnachweis. */
 function liqBadge(x) {
   if (x.liq_score === null || x.liq_score === undefined)
-    return `<span class="pill" title="${t("Für dieses Haus liegen noch keine Umsatzsignale vor - die Auswertung entsteht aus den stündlichen Marktläufen.")}">${t("Umsatz unbekannt")}</span>`;
+    return `<span class="pill" title="${t("Für dieses Haus liegen noch keine Umsatzsignale vor - die Auswertung entsteht aus den stündlichen Marktläufen.")}">${t("Signale unbekannt")}</span>`;
   const tip = tf("{0} Umsatzsignale (davon {1} Ausverkäufe) in 7 Tagen · {2} % der geprüften Stunden gelistet · geschätzt aus Angebotsbewegungen, kein Verkaufsnachweis", num(x.liq_events), num(x.liq_vanish), num((x.liq_presence || 0) * 100, 0));
   if ((x.liq_events || 0) <= 1)
-    return `<span class="pill liq-l" title="${tip}">${t("⚠ kein Umsatz beobachtet")}</span>`;
-  if (x.liq_score >= 60) return `<span class="pill liq-h" title="${tip}">${t("hoher Umsatz")}</span>`;
-  if (x.liq_score >= 30) return `<span class="pill liq-m" title="${tip}">${t("mittlerer Umsatz")}</span>`;
-  return `<span class="pill liq-l" title="${tip}">${t("wenig Umsatz")}</span>`;
+    return `<span class="pill liq-l" title="${tip}">${t("kaum Angebotssignale")}</span>`;
+  if (x.liq_score >= 60) return `<span class="pill liq-h" title="${tip}">${t("viele Angebotssignale")}</span>`;
+  if (x.liq_score >= 30) return `<span class="pill liq-m" title="${tip}">${t("mittlere Angebotssignale")}</span>`;
+  return `<span class="pill liq-l" title="${tip}">${t("wenige Angebotssignale")}</span>`;
 }
 document.addEventListener("click", (e) => {
   const b = e.target.closest("button[data-cmp]");
@@ -371,6 +371,38 @@ function updateCompareBadge() {
   const b = $("#cmpCount");
   b.hidden = !state.compare.length;
   b.textContent = state.compare.length;
+}
+
+// Private Merkliste: nur Item-IDs im Browser, Preise immer im gewaehlten Markt.
+function watchIds() {
+  const saved = store.get("watchlist", []);
+  return Array.isArray(saved) ? [...new Set(saved.filter(n => Number.isSafeInteger(n) && n > 0))].slice(0, 30) : [];
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest("button[data-watch]");
+  if (!b) return;
+  e.preventDefault();
+  const id = Number(b.dataset.watch), ids = watchIds();
+  if (!Number.isSafeInteger(id) || id < 1) return;
+  if (ids.includes(id)) ids.splice(ids.indexOf(id), 1);
+  else { if (ids.length >= 30) { toast(t("Maximal 30 Items auf der Merkliste.")); return; } ids.push(id); }
+  store.set("watchlist", ids);
+  if (state.route?.parts[0] === "watchlist") route();
+  else b.textContent = ids.includes(id) ? "★ " + t("Gemerkt") : "☆ " + t("Merken");
+});
+async function viewWatchlist(r) {
+  const house = curHouse(r.params), ids = watchIds();
+  main.innerHTML = `<div class="pagehead"><h1>${t("Merkliste")}</h1><span class="sub">${esc(hname(houseById(house)))}</span></div>
+    <p class="note">${t("Nur in diesem Browser gespeichert. Keine Anmeldung, keine Benachrichtigungen. Auf Item-Seiten mit dem Stern merken, bis zu 30 Items.")}</p>
+    <div class="card flush" id="watchRows"><div class="loading">${t("Lade …")}</div></div>`;
+  if (!ids.length) { $("#watchRows").innerHTML = `<div class="empty">${t("Noch keine Items gemerkt.")} <a href="#/search">${t("Item suchen")}</a></div>`; return; }
+  const result = await api("search", {house, item_ids:ids.join(","), page_size:30});
+  if (state.route !== r) return;
+  const rows = ids.map(id => result.items.find(x => x.item_id === id) || {item_id:id, name:`Item #${id}`, no_ah:true});
+  $("#watchRows").innerHTML = table([{...COL.item, sort:null}, {...COL.price, sort:null}, {...COL.qty, sort:null}, {...COL.chg24, sort:null},
+    {label:t("Stand"), fmt:x=>x.last_ts ? ago(x.last_ts) : "–"},
+    {label:"", fmt:x=>`<button class="btn small" data-watch="${x.item_id}" aria-label="${t("Entfernen")}: ${esc(AHI18N.dispName(x))}">×</button>`}], rows,
+    {rowHref:x=>`/item/${x.item_id}?house=${house}`});
 }
 
 // Ein zufälliger Händler pro Seite, angedockt an das Layout. Kein Pop-up, kein Klick.
@@ -406,12 +438,13 @@ function homeSearch(house) {
       <a href="#/liquidity${house ? "?house=" + house : ""}" class="adventure-link"><span class="adventure-icon">↗</span><span><b>${t("Marktkompass")}</b></span></a>
       <a href="#/categories?class=7${house ? "&house=" + house : ""}" class="adventure-link"><span class="adventure-icon">◇</span><span><b>${t("Für deine Berufe")}</b></span></a>
     </div>
+    <p class="watch-entry"><a class="btn" href="#/watchlist">☆ ${t("Merkliste")}${watchIds().length ? " · " + watchIds().length : ""}</a></p>
     <div id="dash"><div class="loading">${t("Lade Marktübersicht …")}</div></div>`;
 }
 
 async function viewDashboard(r) {
   const house = curHouse(r.params);
-  main.innerHTML = `<div id="newsTop"></div>` + homeSearch(house);
+  main.innerHTML = homeSearch(house) + `<div id="newsTop" class="mt"></div>`;
   renderNews($("#newsTop"));
   const input = $("#heroInput");
   attachAutocomplete(input, $("#heroResults"), house, (it) => (location.hash = `/item/${it.item_id}${it.house_id ? "?house=" + it.house_id : ""}`));
@@ -431,9 +464,9 @@ async function viewDashboard(r) {
     <div class="secthead mt"><h2><span class="section-star" aria-hidden="true">✦</span> ${t("Im Fokus")}</h2></div>
     <div class="grid g2">
       <div class="card flush"><div class="cardhead" style="padding:14px 16px 0"><h2>${t("▲ Steigt")}</h2><span class="right small muted">24 h</span></div>${moversMini(d.movers.gainers.slice(0, 6))}</div>
-      <div class="card flush"><div class="cardhead" style="padding:14px 16px 0"><h2>${t("Günstig &amp; gefragt")}</h2><span class="right small muted" title="${t("Mindestens 15 % unter dem 7-Tage-Schnitt und mit beobachtetem Umsatz")}">${t("≥ 15 % unter Ø 7 T · mit Umsatz")}</span></div>
+      <div class="card flush"><div class="cardhead" style="padding:14px 16px 0"><h2>${t("Unter dem Wochenschnitt")}</h2><span class="right small muted" title="${t("Mindestens 15 % unter dem 7-Tage-Schnitt und mit beobachtetem Umsatz")}">${t("≥ 15 % unter Ø 7 T · Angebotssignale")}</span></div>
         ${table([{ ...COL.item, sort: null }, { label: t("Preis"), num: true, fmt: (x) => money(x.last_min) }, { label: t("Rabatt"), num: true, fmt: (x) => `<span class="chg up">−${num(x.discount, 0)} %</span>` }],
-          d.deals.deals.slice(0, 6), { rowHref: (x) => `/item/${x.item_id}?house=${x.house_id}`, empty: t("Aktuell keine günstigen Gelegenheiten mit Umsatznachweis.") })}</div>
+          d.deals.deals.slice(0, 6), { rowHref: (x) => `/item/${x.item_id}?house=${x.house_id}`, empty: t("Aktuell keine passenden Angebote mit Angebotssignalen.") })}</div>
     </div>
     <details class="card more-analysis mt" id="moreAn"><summary>${t("Mehr Analyse")}</summary>
       <div class="grid g32 mt">
@@ -475,16 +508,18 @@ async function renderNews(slot) {
     d = await r.json();
   } catch { return; }
   const guides = (d.guides || []).slice(0, 3);
-  const items = (d.items || []).slice(0, 4);
+  const seenNews = new Set();
+  const items = (d.items || []).filter(it => { const key = it.title.toLowerCase().replace(/^\[(eu|us)\]\s*/i, "").trim(); if (seenNews.has(key)) return false; seenNews.add(key); return true; }).slice(0, 4);
   if (!guides.length && !items.length) return;
   const row = (it) => {
     const kind = it.kind === "guide" ? "guide" : it.kind === "blue" ? "blue" : "news";
     return `<a class="newsrow ${kind}" href="${esc(it.url)}" target="_blank" rel="noopener noreferrer"><span class="newsico">${NEWS_ICONS[kind]}</span><span class="newsrow-text"><b>${esc(it.title)}</b><small>${esc(it.source)}${it.published_ts ? " · " + ago(it.published_ts) : ""}</small></span></a>`;
   };
   const col = (title, list) => list.length ? `<div class="newsboard-col"><div class="newsboard-sub">${t(title)}</div>${list.map(row).join("")}</div>` : "";
-  const openAttr = matchMedia("(max-width: 760px)").matches ? "" : " open";
+  const openAttr = store.get("newsOpen", false) ? " open" : "";
   slot.innerHTML = `<details class="newsboard"${openAttr}><summary class="newsboard-head"><span class="newsboard-title"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4h3l5 4V6L7 10H4z"/><path d="M15.5 9.5a4 4 0 0 1 0 5"/></svg>${t("Neuigkeiten & Gold-Guides")}</span><span class="newsboard-side"><span class="newsboard-note muted small">${t("Externe Quellen, stündlich aktualisiert")}</span><span class="news-caret" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span></span></summary>
     <div class="newsboard-cols">${col("Gold-Guides", guides)}${col("Aktuelle News", items)}</div></details>`;
+  slot.querySelector("details").addEventListener("toggle", e => store.set("newsOpen", e.target.open));
 }
 
 function moversMini(rows) {
@@ -1103,6 +1138,7 @@ async function viewItem(r) {
           <div class="en">${altName(it) ? esc(altName(it)) + " · " : ""}ID ${id} · <a href="${AHI18N.whUrl("item", id)}" target="_blank" rel="noopener">Wowhead ↗</a></div>
           ${tags ? `<div class="chiprow">${tags}</div>` : ""}</div></div>
       <div class="actions">
+        <button class="btn" data-watch="${id}">${watchIds().includes(id) ? "★ " + t("Gemerkt") : "☆ " + t("Merken")}</button>
         <button class="btn" id="cmpBtn">${inCmp ? t("✓ Im Vergleich") : t("+ Vergleich")}</button>
         <a class="btn" href="#/compare?items=${[...new Set([...state.compare, id])].join(",")}${hid ? "&house=" + hid : ""}">${t("Vergleichen ›")}</a>
       </div></div>
@@ -1400,6 +1436,7 @@ async function viewCompare(r) {
   const setIds = (n) => { state.compare = n; store.set("compare", n); updateCompareBadge(); setParams({ items: n.join(",") }); };
   attachAutocomplete($("#addItem"), $("#addRes"), house, (it) => { if (!ids.includes(it.item_id) && ids.length < 8) setIds([...ids, it.item_id]); }, { pickFirstOnEnter: true, showAll: false });
   if (!ids.length) {
+    $("#ctab").hidden = true; $("#corr").hidden = true;
     $("#chips").innerHTML = `<span class="muted">${t("Noch keine Items gewählt – über das Suchfeld rechts oder „+ Vgl.“ in Tabellen hinzufügen.")}</span>`;
     $("#cbox").innerHTML = `<div class="empty">${t("Kein Item ausgewählt.")}</div>`;
     return;
@@ -1455,7 +1492,7 @@ async function viewLiquidity(r) {
   const p = { ...r.params };
   const classes = await getClasses(house);
   main.innerHTML = `
-    <div class="goblin-heading"><div class="pagehead"><h1>${t("Liquidität")}</h1><span class="sub">${tf("Wie oft Items wirklich den Besitzer wechseln · {0} · geschätzt aus Angebotsbewegungen, keine Verkaufsnachweise", esc(hname(h)))}</span></div>${goblinScene("head-goblin")}</div>
+    <div class="goblin-heading"><div class="pagehead"><h1>${t("Liquidität")}</h1><span class="sub">${tf("Angebotsbewegungen · {0} · keine Verkaufsnachweise", esc(hname(h)))}</span></div>${goblinScene("head-goblin")}</div>
     <div class="card filters">
       <label class="f"><span>${t("Klasse")}</span><select id="cl"><option value="">${t("Alle")}</option>${classes.map((c) => `<option value="${c.class_id}" ${String(p.class) === String(c.class_id) ? "selected" : ""}>${esc(AHI18N.trClass(c.class_name))}</option>`).join("")}</select></label>
     </div>
@@ -1463,12 +1500,12 @@ async function viewLiquidity(r) {
   $("#cl").onchange = (e) => setParams({ class: e.target.value });
   const d = await api("liquidity", { ...p, house, limit: 40 });
   const listed = { label: t("gelistet"), num: true, title: t("Anteil der geprüften Stunden-Snapshots mit Angebot (7 Tage)"), fmt: (x) => num((x.liq_presence || 0) * 100, 0) + " %" };
-  $("#hot").innerHTML = `<h2>${t("▲ Meistgehandelt")}</h2>` + table([COL.item, COL.liq,
+  $("#hot").innerHTML = `<h2>${t("▲ Aktivste Angebotssignale")}</h2>` + table([COL.item, COL.liq,
     { label: t("Signale 7 T"), num: true, title: t("Ausverkäufe + Mengeneinbrüche zwischen geprüften Stunden-Snapshots"), fmt: (x) => num(x.liq_events) },
     { label: t("davon Ausverkäufe"), num: true, fmt: (x) => num(x.liq_vanish) },
     listed, COL.price, COL.cmp],
     d.hot, { rowHref: (x) => `/item/${x.item_id}?house=${x.house_id}`, empty: t("Noch keine Umsatzsignale für diesen Markt.") });
-  $("#cold").innerHTML = `<h2>${t("⚠ Gelisted, aber (fast) kein Umsatz in 7 Tagen")}</h2>` + table([COL.item, COL.liq,
+  $("#cold").innerHTML = `<h2>${t("Gelistet, wenige Angebotssignale in 7 Tagen")}</h2>` + table([COL.item, COL.liq,
     listed,
     { label: t("aktuelles Angebot"), num: true, fmt: (x) => money(x.last_min) },
     { label: t("Marktwert"), num: true, fmt: (x) => money(x.market_value, { short: true }) }, COL.cmp],

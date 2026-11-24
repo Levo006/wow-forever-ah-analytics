@@ -351,6 +351,9 @@ def search(con, params):
         for key in ("region", "faction", "source"):
             r[key] = params.get(key)
         rows.append(r)
+    wanted_items = _ids(params, "item_ids")
+    if wanted_items:
+        rows = [r for r in rows if r["item_id"] in wanted_items]
     q = db.fold((params.get("q") or "").strip()) or ""
     if q:
         def matches(r):
