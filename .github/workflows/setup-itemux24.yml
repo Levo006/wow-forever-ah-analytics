@@ -1,0 +1,136 @@
+name: Einmal-Setup Item-UX 24.11.
+on: workflow_dispatch
+permissions:
+  contents: write
+  actions: write
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Code-Backup vor Check-up
+        run: git archive --format=tar.gz -o /tmp/before-itemux24.tar.gz HEAD .github static tests ahanalytics README.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: before-itemux24
+          path: /tmp/before-itemux24.tar.gz
+      - name: Geprueften Patch anwenden
+        run: |
+          set -euo pipefail
+          cat > /tmp/patch.b64 <<'B64'
+          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
+          B64
+          base64 -d /tmp/patch.b64 | gzip -d > /tmp/itemux24.patch
+          echo 'c20546c0edf821e40c256072c9a98fedceee5fdf527811e4476b7c4cfb75fb96  /tmp/itemux24.patch' | sha256sum -c -
+          git apply --check /tmp/itemux24.patch
+          git apply /tmp/itemux24.patch
+      - name: Regressionstests
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests
+          node tests/recipes_core.test.js
+          node tests/category_filters.test.js
+          node tests/i18n.test.js
+          node tests/goblins.test.js
+          node tests/watchlist.test.js
+          node tests/focus.test.js
+          node --check static/app.js && node --check static/static-api.js && node --check static/i18n.js
+      - name: Item-UX einspielen
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add ahanalytics static tests
+          git commit -m 'Item- und Rezeptansicht vereinfacht'
+          git rm .github/workflows/setup-itemux24.yml
+          git commit -m 'Einmal-Setup-Workflow entfernt'
+          git pull --rebase origin main
+          git push
+      - name: Veroeffentlichung starten
+        run: gh workflow run update.yml --ref main
