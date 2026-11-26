@@ -1,0 +1,82 @@
+name: Einmal-Setup Chart-Luecken 26.11.
+on: workflow_dispatch
+permissions:
+  contents: write
+  actions: write
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Code-Backup
+        run: git archive --format=tar.gz -o /tmp/before-chartgap26.tar.gz HEAD .github static tests ahanalytics README.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: before-chartgap26
+          path: /tmp/before-chartgap26.tar.gz
+      - name: Patch anwenden
+        run: |
+          set -euo pipefail
+          cat > /tmp/patch.b64 <<'B64'
+          H4sIAAAAAAACA8VW3W7bNhS+91OcGkUhxRJtOY6bOEjS/RRFsLUNkq0DZhgNLVESG4kSSDpR5vo5
+          drmbPUbv8mI7JGXH6Yr0ohh2I5FHh+d85++jEp6mEIYZ10D7SlPN4z6ta/JBwfzhvsNFwhp4Hu8f
+          7KdjQkbRcG//+RiiwWA8GnXCMPzcQqfX6/3LyosXEA5HB8EB9MwrGgJK0oWINa8EFFwwr6BzVgSQ
+          UE0DiKuiku+oDIA1WlI4guXKh2UHAD8JpSGjtULpdHZ4L1OaWaExQVTBY+ZFPilp7Xl1wP2j45o0
+          ofk45TPS+CTlhWbSa46Om+OBT1QltefRYI6aNJz7W5b1bc1jWqBt64MUTGQ6hxO3nb6mOidpUVXS
+          2/7eH/ozmMDueDA47PQA+n14xUquNUO/8AvNmAr74zAPf2ccT4AnjiMf0qrIcMNzyUrIZDXHzTlF
+          u3Jitnd/MQkXcS7RDuJ5x2TC41wvRKaUXqQsgCuG6YSf7z7FV4y0ft8sJDBUY1CyXOq7vzOerXUE
+          aMmEYOIQeAmpOS3gAi0mTEjrGDLMFCScwZyrnElzdhjs3f0ZnrOMFdaJS1RcUakY4vKkD0fH+CIC
+          Tk4A4zqGyGY0rSR4TruGKrXVaku7tlJLdo02TI2n5tHmM4yw2qFR4yl4VunZMzBFNWvSoAtbiZI2
+          3u6OSXvQFm5nSPZ83xok9ULl3rKZuDO9KLidiEVRrHxbo0dsey44+9GHjx9hvfexEXZ39sejwQDL
+          /SiEr2OwabhXqp1oZR4mU21aDu1ERcPhOIgi6OHiwCxQSNWtiO9H65qzm1PNSlOPBzkuWTln0owL
+          LYoLLrKCKTcrua2crG7epl5OeOJvJuX7qioYFWuU7dRhPzBr54Yin5zJquSKEbTqtT6c2dKapTX3
+          LjkC6j9d8mTVz7nSlby9DGAJebVQbAIlsYv3PAlAUpGhqCZ2EQDm9X1dcaHVBEy6V5jSFs3aGfbX
+          Sxrn6DAAbn0mbS4tzbw6f/vr2fufTt/8eEG4iItFwpRXkivkOVPHy6fLlMZvaMk8fPsreLrUXhcn
+          lZa6668uscByUTCrUPqBa0dok2B4xaFzITduBpbQTKAhWgVwaxYlFwGYCIzMhBDAxcvz05cXeD6A
+          rwBcwrySCZO/8UTnSC6wQkifCSMybjPT+1Z4AQizcEP832I1bQ6sQPpoG3WLKaZXAeDlEM8MY0yn
+          XcTYRZBe95ylDNnrjy4C64ahiroIa9otqhumtFN5dfcJTfAMmUzBd9hG80qv1cdOvWQJp63F127d
+          Kgy7s9lmchw5PFF5dSNITpV3ZXngSY0ZVRV2RJvSZno1gydHYGYaRx5D0Fws2OG6Wx40JIZVP14R
+          tPZ5v8Rbxf0Wa18ob7yZqFVnE3NNqoXGkI6gO+gaZqSCGlHBzcg5et5KkytaUSErGDSb6xI308HM
+          RDGBQctho9F+8BwpbLQX4fvLDPZDVdZUsg2JOfs8aYwDUlYJXjkGG0q6W9d2Yv8GiOt+lxO1JoUH
+          ZJhyqcxtqtbzkWIHb6pJrv0Tct1WTzK9kO0viyICeSC4P/bYWOGN5joC82BfExvACXjOOy6MUt+B
+          8WHH/GOhkm0icBYezt+6Bf5PSI/xQzvT2z9SeCuc6QdVSQuqX9vKWIxr3NuHVE2Fu6fOtptpc9ES
+          QtpvW8GaMHH2wlaNi0fVJmCv78POPzOqHOUaCwAA
+          B64
+          base64 -d /tmp/patch.b64 | gzip -d > /tmp/chartgap.patch
+          echo 'f546a389726c459daa39fbaa9fd5683894950a92ef2a2b0e65cea51ab817910e  /tmp/chartgap.patch' | sha256sum -c -
+          git apply --check /tmp/chartgap.patch
+          git apply /tmp/chartgap.patch
+      - name: Regressionstests
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests
+          node tests/recipes_core.test.js
+          node tests/category_filters.test.js
+          node tests/i18n.test.js
+          node tests/goblins.test.js
+          node tests/watchlist.test.js
+          node tests/focus.test.js
+          node --check static/app.js && node --check static/static-api.js && node --check static/i18n.js
+      - name: Einspielen
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add static
+          git commit -m 'Preisverlauf: Tages- und 6-h-Mittel nicht mehr als Luecke trennen'
+          git rm .github/workflows/setup-chartgap26.yml
+          git commit -m 'Einmal-Setup-Workflow entfernt'
+          git pull --rebase origin main
+          git push
+      - name: Veroeffentlichung starten
+        run: gh workflow run update.yml --ref main
