@@ -249,9 +249,12 @@ function line(label, data, colorVar, extra = {}) {
   const gaps = [];
   const steps = data.slice(1).map((p,i)=>p.x-data[i].x).filter(x=>x>0).sort((a,b)=>a-b);
   const typical = steps.length ? steps[Math.floor(steps.length/2)] : 3600;
+  // Gemittelte Tages-/6-h-Zeilen (n>1) folgen ihrem groben Raster: großer Schritt = Verdichtungsstufe, keine Lücke.
+  // Nur echte mehrtägige Lücken trennen; im feinen Stundenraster gilt die bisherige 2,5×-Regel.
+  const coarse = (r) => (r.n ?? 1) > 1;
   for (const p of data) {
     const prev = gaps[gaps.length-1];
-    if (prev && p.x-prev.x > Math.max(3*3600,typical*2.5)) gaps.push({x:prev.x+1,y:null});
+    if (prev && p.x-prev.x > (coarse(prev) || coarse(p) ? 3*86400 : Math.max(3*3600,typical*2.5))) gaps.push({x:prev.x+1,y:null});
     gaps.push(p);
   }
   data = gaps;
@@ -1226,11 +1229,11 @@ async function viewItem(r) {
     const members = allSingles.map((h) => rowOf(h.id)).filter(Boolean);
     const series = await Promise.all(members.map((m) => api(`item/${id}/history`, { house: m.house_id, range: p.range, max_points: 400 })));
     members.forEach((m, i) => ds.push(line(GROUP_KINDS.includes(m.kind) ? `${facName(fac)} ${t("gesamt")}` : ruleName(m),
-      series[i].points.map((x) => ({ x: x.ts, y: x.min, ts: x.ts })), SERIES[i], GROUP_KINDS.includes(m.kind) ? { borderWidth: 3 } : { borderWidth: 1.6 })));
+      series[i].points.map((x) => ({ x: x.ts, y: x.min, ts: x.ts, n: x.n ?? 1 })), SERIES[i], GROUP_KINDS.includes(m.kind) ? { borderWidth: 3 } : { borderWidth: 1.6 })));
   } else {
     for (const [k, l, c] of [["min", t("Referenz"), "--s1"], ["lowest", t("Günstigstes Angebot"), "--s6"], ["median", t("Median"), "--s2"]]) {
       if (!shown.has(k) || !pts.some((x) => x[k] != null)) continue;
-      ds.push(line(l, pts.map((x) => ({ x: x.ts, y: x[k], ts: x.ts })), c));
+      ds.push(line(l, pts.map((x) => ({ x: x.ts, y: x[k], ts: x.ts, n: x.n ?? 1 })), c));
     }
     if (p.out !== "0" && ana.outliers.length) {
       const lo = pts.length ? pts[0].ts : 0;
@@ -1448,7 +1451,7 @@ async function viewCompare(r) {
   const idx = p.mode === "idx";
   const ds = d.series.map((s, i) => {
     const first = s.points.find((x) => x.v)?.v;
-    return line(s.name, s.points.map((x) => ({ x: x.ts, y: x.v == null ? null : idx ? (first ? (x.v / first) * 100 : null) : x.v })), SERIES[i]);
+    return line(s.name, s.points.map((x) => ({ x: x.ts, y: x.v == null ? null : idx ? (first ? (x.v / first) * 100 : null) : x.v, n: x.n ?? 1 })), SERIES[i]);
   });
   const allPts = d.series.flatMap((s) => s.points);
   const span = allPts.length ? Math.max(...allPts.map((x) => x.ts)) - Math.min(...allPts.map((x) => x.ts)) : 86400;
